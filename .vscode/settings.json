@@ -1,3 +1,36 @@
 {
-  "cmake.ignoreCMakeListsMissing": true
+  "files.watcherExclude": {
+    "**/.git/**": true,
+    "**/build/**": true,
+    "**/build-debug/**": true,
+    "**/cmake-build-*/**": true,
+    "**/CMakeFiles/**": true,
+    "**/_deps/**": true,
+    "**/third_party/**": true,
+    "**/third_party/.src/**": true,
+    "**/third_party/.local/**": true,
+    "**/third_party/.build/**": true
+  },
+  "search.exclude": {
+    "**/.git": true,
+    "**/build": true,
+    "**/build-debug": true,
+    "**/cmake-build-*": true,
+    "**/CMakeFiles": true,
+    "**/_deps": true,
+    "**/third_party": true
+  },
+  "files.exclude": {
+    "**/build": true,
+    "**/build-debug": true,
+    "**/third_party": true
+  },
+  "git.autorefresh": false,
+  "git.autoRepositoryDetection": false,
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "C_Cpp.errorSquiggles": "disabled",
+  "C_Cpp.autocomplete": "disabled",
+  "cmake.configureOnOpen": false,
+  "cmake.autostart": false,
+  "search.followSymlinks": false
 }
