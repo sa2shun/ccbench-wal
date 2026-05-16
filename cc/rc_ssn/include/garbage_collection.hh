@@ -63,10 +63,10 @@ public:
   void gcTMTelement(Result *eres_);
   // -----
 
-  // Publish the smallest cstamp currently held in this thread's
-  // gcq_for_version_ (UINT32_MAX if empty). gcRecord on any thread will
-  // refuse to free a Tuple unless every thread's published min strictly
-  // exceeds the Tuple's delete-version cstamp.
+  // EBR-style guard: publish smallest cstamp in this thread's
+  // gcq_for_version_ (UINT32_MAX if empty). gcRecord refuses to free a
+  // Tuple whose delete cstamp >= min(MinQueuedCstamp[*]). See
+  // si/include/garbage_collection.hh for the matching definition.
   INLINE void publishMinQueuedCstamp() {
     uint32_t v = gcq_for_version_.empty()
                  ? UINT32_MAX
@@ -76,6 +76,6 @@ public:
 };
 
 #ifdef GLOBAL_VALUE_DEFINE
-// declare in si.cc
+// declare in ermia.cc
 std::atomic<uint32_t> GarbageCollection::GC_threshold_(0);
 #endif

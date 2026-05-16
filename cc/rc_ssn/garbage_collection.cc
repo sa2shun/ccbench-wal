@@ -86,6 +86,18 @@ void GarbageCollection::gcVersion([[maybe_unused]] Result *eres_) {
       continue;
     }
 
+    bool has_reader = false;
+    for (Version *v = delTarget; v != nullptr; v = v->prev_) {
+      if (v->readers_.load(std::memory_order_acquire) != 0) {
+        has_reader = true;
+        break;
+      }
+    }
+    if (has_reader) {
+      tuple->gc_lock_.store(0, std::memory_order_release);
+      break;
+    }
+
     // the thread detaches the rest of the version list from v
     gcq_for_version_.front().ver_->prev_ = nullptr;
     // updates record.min_wts
@@ -115,11 +127,11 @@ void GarbageCollection::gcVersion([[maybe_unused]] Result *eres_) {
 }
 
 void GarbageCollection::gcRecord() {
-  // Compute the global minimum across every thread's published
-  // gcq_for_version_ front cstamp. We may only free a Tuple whose
-  // delete-version cstamp is strictly less than this min — otherwise
-  // some other thread still has a reference to that Tuple in its own
-  // gcq_for_version_ and would deref it (UAF) on its next gcVersion.
+  // EBR-style cross-thread guard: only free a Tuple whose delete
+  // version cstamp is strictly less than every thread's published
+  // gcq_for_version_ front. Otherwise some other thread still holds
+  // the Tuple* in its gcq and would dereference it on its next
+  // gcVersion (UAF -> SEGV in pure Release; ASan/UBSan/-O0 hide it).
   uint32_t global_min_queued = UINT32_MAX;
   for (unsigned int i = 0; i < TotalThreadNum; ++i) {
     uint32_t v = MinQueuedCstamp[i].load(std::memory_order_acquire);
@@ -131,9 +143,7 @@ void GarbageCollection::gcRecord() {
     Tuple* rec = gcq_for_record_.front();
     Version* latest = rec->latest_.load(memory_order_acquire);
     uint32_t cs = latest->cstamp_.load(memory_order_acquire);
-    // Original gate: don't free things still potentially being read.
     if (cs >= threshold) break;
-    // Cross-thread gate: don't free things still in someone's gcq.
     if (cs >= global_min_queued) break;
     if (latest->status_ != VersionStatus::deleted) ERR;
     delete rec;

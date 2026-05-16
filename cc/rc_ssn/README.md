@@ -1,7 +1,7 @@
-# RC
-<!-- It was proposed at SIGMOD'2016 by Kangnyeon Kim.
+# ERMIA
+It was proposed at SIGMOD'2016 by Kangnyeon Kim.
 SSN is serialization certifier which has to be executed serial.
-Latch-free SSN was proposed at VLDB'2017 by Tianzheng Wang. -->
+Latch-free SSN was proposed at VLDB'2017 by Tianzheng Wang.
 
 ## How to use
 - Build masstree
@@ -9,13 +9,13 @@ Latch-free SSN was proposed at VLDB'2017 by Tianzheng Wang. -->
 $ cd ../
 $ ./bootstrap.sh
 ```
-This makes ../third_party/masstree/libkohler_masstree_json.a used by building si.
+This makes ../third_party/masstree/libkohler_masstree_json.a used by building ermia.
 - Build mimalloc
 ```
 $ cd ../
 $ ./bootstrap_mimalloc.sh
 ```
-This makes ../third_party/mimalloc/out/release/libmimalloc.a used by building si.
+This makes ../third_party/mimalloc/out/release/libmimalloc.a used by building ermia.
 - Build 
 ```
 $ mkdir build
@@ -25,11 +25,11 @@ $ ninja
 ```
 - Confirm usage 
 ```
-$ ./si.exe -help
+$ ./ermia.exe -help
 ```
 - Execution example 
 ```
-$ numactl --interleave=all ./si.exe -tuple_num=1000 -max_ope=10 -thread_num=224 -rratio=100 -rmw=0 -zipf_skew=0 -ycsb=1 -clocks_per_us=2100 -gc_inter_us=10 -pre_reserve_version=10000 -pre_reserve_tmt_element=100 -extime=3
+$ numactl --interleave=all ./ermia.exe -tuple_num=1000 -max_ope=10 -thread_num=224 -rratio=100 -rmw=0 -zipf_skew=0 -ycsb=1 -clocks_per_us=2100 -gc_inter_us=10 -pre_reserve_version=10000 -pre_reserve_tmt_element=100 -extime=3
 ```
 
 ## How to customize options in CMakeLists.txt

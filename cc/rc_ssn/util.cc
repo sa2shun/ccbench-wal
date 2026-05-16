@@ -233,7 +233,7 @@ void naiveGarbageCollection(const bool &quit) {
   }
 }
 
-void siLeaderWork(GarbageCollection &gcob) {
+void rcSsnLeaderWork(GarbageCollection &gcob) {
   if (gcob.chkSecondRange()) {
     gcob.decideGcThreshold();
     gcob.mvSecondRangeToFirstRange();

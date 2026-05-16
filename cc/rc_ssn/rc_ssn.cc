@@ -32,10 +32,10 @@
 using namespace std;
 
 void worker(size_t thid, char &ready, const bool &start, const bool &quit) {
-  TxExecutor trans(thid, (Result *)   RCResult[thid]);
+  TxExecutor trans(thid, (Result *) &RCSSNResult[thid]);
   Xoroshiro128Plus rnd;
   rnd.init();
-  Result &myres = std::ref  RCResult[thid]);
+  Result &myres = std::ref(RCSSNResult[thid]);
   FastZipf zipf(&rnd, FLAGS_zipf_skew, FLAGS_tuple_num);
   GarbageCollection gcob;
   /**
@@ -86,7 +86,7 @@ void worker(size_t thid, char &ready, const bool &start, const bool &quit) {
 RETRY:
     if (thid == 0) {
       leaderWork(std::ref(gcob));
-      leaderBackoffWork(backoff,  RCResult);
+      leaderBackoffWork(backoff, RCSSNResult);
     }
     if (loadAcquire(quit)) break;
 
@@ -166,7 +166,7 @@ RETRY:
 }
 
 int main(int argc, char *argv[]) try {
-  gflags::SetUsageMessage("RC benchmark.");
+  gflags::SetUsageMessage("ERMIA benchmark.");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   chkArg();
   makeDB();
@@ -193,11 +193,11 @@ int main(int argc, char *argv[]) try {
     ((long double)FLAGS_clocks_per_us * powl(10.0, 6.0)));
 
   for (unsigned int i = 0; i < TotalThreadNum; ++i) {
-    RCResult[0].addLocalAllResult RCResult[i]);
+    RCSSNResult[0].addLocalAllResult(RCSSNResult[i]);
   }
   ShowOptParameters();
   std::cout << "actual_extime:\t" << actual_extime << std::endl;
-  RCResult[0].displayAllResult(FLAGS_clocks_per_us, FLAGS_extime,
+  RCSSNResult[0].displayAllResult(FLAGS_clocks_per_us, FLAGS_extime,
                                   TotalThreadNum,
                                   FLAGS_max_ope, FLAGS_batch_max_ope);
 

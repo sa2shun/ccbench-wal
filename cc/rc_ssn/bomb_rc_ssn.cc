@@ -39,7 +39,7 @@ void worker(size_t thid, char &ready, const bool &start, const bool &quit) {
 #endif
 
   Backoff backoff(FLAGS_clocks_per_us); // Cicada's backoff opt.
-  TxExecutor trans(thid, backoff, (Result *) &RCResult[thid], quit);
+  TxExecutor trans(thid, backoff, (Result *) &RCSSNResult[thid], quit);
   BombWorkload<Tuple,void> workload;
 
 #ifdef Linux
@@ -63,7 +63,7 @@ void worker(size_t thid, char &ready, const bool &start, const bool &quit) {
 }
 
 int main(int argc, char *argv[]) try {
-  gflags::SetUsageMessage("BOMB RC benchmark.");
+  gflags::SetUsageMessage("BOMB ERMIA benchmark.");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   chkArg();
   BombWorkload<Tuple,void>::displayWorkloadParameter();
@@ -97,14 +97,14 @@ int main(int argc, char *argv[]) try {
 
   std::cout << "done" << std::endl;
   for (unsigned int i = 0; i < TotalThreadNum; ++i) {
-    RCResult[0].addLocalAllResult(RCResult[i]);
-    RCResult[0].addLocalPerTxResult(RCResult[i], TxTypes);
+    RCSSNResult[0].addLocalAllResult(RCSSNResult[i]);
+    RCSSNResult[0].addLocalPerTxResult(RCSSNResult[i], TxTypes);
   }
   ShowOptParameters();
   std::cout << "actual_extime:\t" << actual_extime << std::endl;
-  RCResult[0].displayAllResult(FLAGS_clocks_per_us, FLAGS_extime, TotalThreadNum);
+  RCSSNResult[0].displayAllResult(FLAGS_clocks_per_us, FLAGS_extime, TotalThreadNum);
   std::cout << "Details per transaction type:" << std::endl;
-  RCResult[0].displayPerTxResult(TxTypes);
+  RCSSNResult[0].displayPerTxResult(TxTypes);
 
   return 0;
 } catch (const bad_alloc&) {

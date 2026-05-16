@@ -90,7 +90,9 @@ public:
               std::string_view right_key, bool r_exclusive,
               std::vector<TupleBody *>&result, int64_t limit);
 
-  void rc_commit();
+  void ssn_commit();
+
+  void ssn_parallel_commit();
 
   void abort();
 

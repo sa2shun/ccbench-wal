@@ -4,6 +4,6 @@
 
 #include "../../../include/result.hh"
 
-extern std::vector <Result> RCResult;
+extern std::vector <Result> RCSSNResult;
 
 extern void initResult();
