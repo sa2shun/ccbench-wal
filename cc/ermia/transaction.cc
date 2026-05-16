@@ -292,6 +292,9 @@ Status TxExecutor::update(Storage s, std::string_view key, TupleBody&& body) {
   }
   desired->cstamp_.store(this->txid_, memory_order_relaxed);  // read operation, write operation,
   // it is also accessed by garbage collection.
+  // scan() may inspect latest_->body_ even while this version is inflight.
+  // Initialize the body before publishing desired via install_version().
+  desired->body_ = std::move(body);
 
   stat = install_version(tuple, desired);
   if (stat != Status::OK) {
@@ -312,7 +315,6 @@ Status TxExecutor::update(Storage s, std::string_view key, TupleBody&& body) {
    */
   this->pstamp_ =
           max(this->pstamp_, desired->prev_->psstamp_.atomicLoadPstamp());
-  desired->body_ = std::move(body);
   write_set_.emplace_back(s, key, tuple, desired, OpType::UPDATE);
 
   verify_exclusion_or_abort();
@@ -383,6 +385,8 @@ Status TxExecutor::delete_record(Storage s, std::string_view key) {
     if ((*itr).storage_ != s) continue;
     if ((*itr).key_ == key) {
       write_set_.erase(itr);
+      // erase後のiteratorは無効なので、ここで必ず抜ける。
+      break;
     }
   }
 
@@ -422,6 +426,9 @@ Status TxExecutor::delete_record(Storage s, std::string_view key) {
   desired->cstamp_.store(this->txid_, memory_order_relaxed);  // read operation, write operation,
 
   // it is also accessed by garbage collection.
+  // scan() derives a tuple key from latest_->body_; DELETE versions need a key
+  // before they become visible as latest_.
+  desired->body_.set_key(key);
 
   stat = install_version(tuple, desired);
   if (stat != Status::OK) {
@@ -818,7 +825,10 @@ void TxExecutor::abort() {
     } else {
       // remove inserted records
       Masstrees[get_storage((*itr).storage_)].remove_value((*itr).key_);
-      delete (*itr).rcdptr_;
+      // FIXED_FOR_RC: abortしたINSERTのTupleを即deleteしない。
+    // 他スレッドがMasstreeから取得済みのTuple*をまだ参照している可能性があるため。
+    // TODO: GCで安全に回収する
+      // delete (*itr).rcdptr_;
     }
     (*itr).ver_->status_.store(VersionStatus::aborted, memory_order_release);
   }

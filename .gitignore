@@ -11,6 +11,9 @@ cmake-build-release
 # CMake build directories (allow build/, build-dbg/, build-rel/, etc.)
 build*/
 
+# Local benchmark outputs
+results/
+
 # Claude Code worktrees / local state
 .claude/
 

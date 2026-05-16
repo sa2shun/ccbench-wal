@@ -86,6 +86,18 @@ void GarbageCollection::gcVersion([[maybe_unused]] Result *eres_) {
       continue;
     }
 
+    bool has_reader = false;
+    for (Version *v = delTarget; v != nullptr; v = v->prev_) {
+      if (v->readers_.load(std::memory_order_acquire) != 0) {
+        has_reader = true;
+        break;
+      }
+    }
+    if (has_reader) {
+      tuple->gc_lock_.store(0, std::memory_order_release);
+      break;
+    }
+
     // the thread detaches the rest of the version list from v
     gcq_for_version_.front().ver_->prev_ = nullptr;
     // updates record.min_wts

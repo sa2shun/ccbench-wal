@@ -255,8 +255,6 @@ Status TxExecutor::update(Storage s, std::string_view key, TupleBody&& body) {
   }
   desired->cstamp_.store(this->txid_, memory_order_relaxed);  // read operation, write operation,
   // it is also accessed by garbage collection.
-  // FIXED_FOR_RC: scan() は latest_->body_ からkeyを見るため、公開前にbodyを初期化する。
-  desired->body_ = std::move(body);
 
   stat = install_version(tuple, desired);
   if (stat != Status::OK) {
@@ -264,6 +262,7 @@ Status TxExecutor::update(Storage s, std::string_view key, TupleBody&& body) {
   }
 
   // FIXED_FOR_RC: SSN用stamp更新は不要。commit時にcommittedへ公開するためwrite_set_へ記録する。
+  desired->body_ = std::move(body);
   write_set_.emplace_back(s, key, tuple, desired, OpType::UPDATE);
 
 FINISH_WRITE:
@@ -361,8 +360,6 @@ Status TxExecutor::delete_record(Storage s, std::string_view key) {
   desired->cstamp_.store(this->txid_, memory_order_relaxed);  // read operation, write operation,
 
   // it is also accessed by garbage collection.
-  // FIXED_FOR_RC: DELETE版もscan()からkeyを読まれるので、latest_へ積む前にkeyだけ入れる。
-  desired->body_.set_key(key);
 
   stat = install_version(tuple, desired);
   if (stat != Status::OK) {
