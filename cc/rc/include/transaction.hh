@@ -13,7 +13,7 @@
 #include "../../../include/string.hh"
 #include "../../../include/util.hh"
 #include "common.hh"
-#include "si_op_element.hh"
+#include "rc_op_element.hh"
 #include "garbage_collection.hh"
 #include "scan_callback.hh"
 #include "transaction_status.hh"
@@ -90,7 +90,7 @@ public:
               std::string_view right_key, bool r_exclusive,
               std::vector<TupleBody *>&result, int64_t limit);
 
-  void si_commit();
+  void rc_commit();
 
   void abort();
 

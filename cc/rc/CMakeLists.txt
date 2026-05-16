@@ -1,4 +1,4 @@
-ccbench_add_protocol(si
+ccbench_add_protocol(rc
   SOURCES   transaction.cc util.cc result.cc garbage_collection.cc
   WORKLOADS ycsb tpcc bomb sbomb
   OPTIONS

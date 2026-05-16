@@ -6,6 +6,6 @@
 
 using namespace std;
 
-alignas(CACHE_LINE_SIZE) std::vector<Result> SIResult;
+alignas(CACHE_LINE_SIZE) std::vector<Result> RCResult;
 
-void initResult() { SIResult.resize(TotalThreadNum); }
+void initResult() { RCResult.resize(TotalThreadNum); }

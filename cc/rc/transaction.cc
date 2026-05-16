@@ -11,7 +11,7 @@
 #include "include/transaction.hh"
 #include "include/version.hh"
 
-extern std::vector<Result> SIResult;
+extern std::vector<Result> RCResult;
 extern bool chkClkSpan(const uint64_t start, const uint64_t stop,
                        const uint64_t threshold);
 
@@ -93,25 +93,17 @@ void TxExecutor::begin() {
  * @param [in] key The key of key-value
  */
 
-
-//  TODO: read_set_ キャッシュを弱める
-//      SIの read() は一度読んだキーを read_set_ から返します。これはRepeatable Read寄りなので、Read
-//      Committedでは同じトランザクション内の再読でも最新commitを見に行くべきです。
-//      ただし write_set_ は残します。自分のwriteは読める必要があります。
 Status TxExecutor::read(Storage s, std::string_view key, TupleBody** body) {
 #if ADD_ANALYSIS
   uint64_t start(rdtscp());
 #endif
 
   /**
-   * read-own-writes, re-read from previous read in the same tx.
+   * FIXED_FOR_RC: read_set_ は再利用しない。
+   * RCでは同じtx内の再読でも、その時点でcommit済みの最新版を読みに行く。
+   * ただし自分のwriteはcommit前でも見える必要があるため write_set_ は確認する。
    */
-  SetElement<Tuple>* e = searchReadSet(s, key);
-  if (e) {
-    *body = &(e->ver_->body_);
-    goto FINISH_READ;
-  }
-  e = searchWriteSet(s, key);
+  SetElement<Tuple>* e = searchWriteSet(s, key);
   if (e) {
     if (e->op_ == OpType::DELETE) {
       // deleted by myself
@@ -151,74 +143,34 @@ FINISH_READ:
   return Status::OK;
 }
 
-
-// TODO rc用に修正
-// #read_internal() をRead Committed化する
-//      SIのこの条件を外します:
-
-//   || txid_ < ver->cstamp_.load(memory_order_acquire)
-
-//   Read Committedでは「今見える最新の committed/deleted 版」を読むので、未commit版だけスキップします。
 Version* TxExecutor::read_internal(Storage s, std::string_view key, Tuple* tuple) { 
   /**
-   * Move to the points of this view.
+   * FIXED_FOR_RC: begin時刻(txid_)によるsnapshot判定を外した。
+   * latest_から辿り、最初に見つかったcommitted/deleted版を読む。
    */
   Version *ver;
   ver = tuple->latest_.load(memory_order_acquire);
   while ((ver->status_.load(memory_order_acquire) != VersionStatus::committed
-      && ver->status_.load(memory_order_acquire) != VersionStatus::deleted)
-      || txid_ < ver->cstamp_.load(memory_order_acquire)) {
+      && ver->status_.load(memory_order_acquire) != VersionStatus::deleted)) {
     ver = ver->prev_;
     if (ver == nullptr) {
       return nullptr;
     }
   }
 
-  // SI: just record the version we observed in the snapshot.
-  // (ERMIA tracked sstamp via psstamp_ for SSN's anti-dependency check;
-  //  pure SI doesn't validate, so we drop that.)
+  // FIXED_FOR_RC: 再読キャッシュには使わないが、GC保護のためreader bitは維持する。
   read_set_.emplace_back(s, key, tuple, ver);
   upReadersBits(ver);
 
   return ver;
 }
-// TODO:  install_version() のSI判定を外す
+
 Status TxExecutor::install_version(Tuple* tuple, Version* desired) {
-  Version* vertmp;
   Version* expected = tuple->latest_.load(memory_order_acquire);
   for (;;) {
-    // w-w conflict
-    // first updater wins rule
+    // FIXED_FOR_RC: dirty write防止。latestが他txの未commit版ならno-waitでabortする。
     if (expected->status_.load(memory_order_acquire) ==
         VersionStatus::inflight) {
-      if (this->txid_ <= expected->cstamp_.load(memory_order_acquire)) {
-        this->status_ = TransactionStatus::aborted;
-        TMT[thid_]->status_.store(TransactionStatus::aborted,
-                                  memory_order_release);
-        gcobject_.reuse_version_from_gc_.emplace_back(desired);
-        return Status::ERROR_CONCURRENT_WRITE_OR_DELETE;
-      }
-
-      expected = tuple->latest_.load(memory_order_acquire);
-      continue;
-    }
-
-    // if latest version is not comitted.
-    vertmp = expected;
-    while (vertmp->status_.load(memory_order_acquire) != VersionStatus::committed
-        && vertmp->status_.load(memory_order_acquire) != VersionStatus::deleted)
-      vertmp = vertmp->prev_;
-
-    // vertmp is latest committed version.
-
-    //TODO: install_version() のSI判定を外す
-  //   Read Committedでは、書く時点の最新commit版に対して新しい版を積めばよいので、このsnapshot由来のabortは不
-  // 要です。
-  // 一方、最新が inflight の場合は dirty write 防止のため、まずは no-wait abort で十分です。
-    if (txid_ < vertmp->cstamp_.load(memory_order_acquire)) {
-      //  write - write conflict, first-updater-wins rule.
-      // Writers must abort if they would overwirte a version created after
-      // their snapshot.
       this->status_ = TransactionStatus::aborted;
       TMT[thid_]->status_.store(TransactionStatus::aborted,
                                 memory_order_release);
@@ -226,6 +178,8 @@ Status TxExecutor::install_version(Tuple* tuple, Version* desired) {
       return Status::ERROR_CONCURRENT_WRITE_OR_DELETE;
     }
 
+    // FIXED_FOR_RC: SIの「snapshot後にcommitされた版ならabort」は行わない。
+    // 現在のlatestの前に、自分の未commit版を積む。
     desired->prev_ = expected;
     if (tuple->latest_.compare_exchange_strong(
             expected, desired, memory_order_acq_rel, memory_order_acquire))
@@ -240,6 +194,7 @@ Status TxExecutor::install_version(Tuple* tuple, Version* desired) {
  * @brief Transaction write function.
  * @param [in] key The key of key-value
  */
+
 Status TxExecutor::update(Storage s, std::string_view key, TupleBody&& body) {
 #if ADD_ANALYSIS
   uint64_t start = rdtscp();
@@ -280,10 +235,8 @@ Status TxExecutor::update(Storage s, std::string_view key, TupleBody&& body) {
   if (tuple == nullptr) return Status::WARN_NOT_FOUND;
 
   /**
-   * If v not in t.writes:
-   * first-updater-wins rule
-   * Forbid a transaction to update  a record that has a committed head version
-   * later than its begin timestamp.
+   * FIXED_FOR_RC: 新しい未commit版を作り、install_version()でlatestの前に積む。
+   * snapshot後のcommit版チェックはinstall_version()側で削除済み。
    */
   Version *desired;
   desired = new Version();
@@ -308,7 +261,7 @@ Status TxExecutor::update(Storage s, std::string_view key, TupleBody&& body) {
     goto FINISH_WRITE;
   }
 
-  // SI: no SSN bookkeeping (sstamp/pstamp updates) — just record the write.
+  // FIXED_FOR_RC: SSN用stamp更新は不要。commit時にcommittedへ公開するためwrite_set_へ記録する。
   desired->body_ = std::move(body);
   write_set_.emplace_back(s, key, tuple, desired, OpType::UPDATE);
 
@@ -343,19 +296,8 @@ Status TxExecutor::insert(Storage s, std::string_view key, TupleBody&& body) {
     delete tuple;
     return stat;
   }
-  if (insert_info.node) {
-    if (!node_map_.empty()) {
-      auto it = node_map_.find((void*)insert_info.node);
-      if (it != node_map_.end()) {
-        if (unlikely(it->second != insert_info.old_version)) {
-          status_ = TransactionStatus::aborted;
-          return Status::ERROR_CONCURRENT_WRITE_OR_DELETE;
-        }
-        // otherwise, bump the version
-        it->second = insert_info.new_version;
-      }
-    }
-  } else {
+  // FIXED_FOR_RC: SIのnode version検証は使わない。insert成功時の最低限の整合性だけ確認する。
+  if (!insert_info.node) {
     ERR;
   }
 
@@ -373,11 +315,12 @@ Status TxExecutor::delete_record(Storage s, std::string_view key) {
 #endif  // if ADD_ANALYSIS
   Status stat = Status::OK;
 
-  // cancel previous write
+  // FIXED_FOR_RC: 同じtx内の過去writeはdeleteで上書きする。erase後はiteratorを使わない。
   for (auto itr = write_set_.begin(); itr != write_set_.end(); ++itr) {
     if ((*itr).storage_ != s) continue;
     if ((*itr).key_ == key) {
       write_set_.erase(itr);
+      break;
     }
   }
 
@@ -423,7 +366,7 @@ Status TxExecutor::delete_record(Storage s, std::string_view key) {
     goto FINISH_DELETE;
   }
 
-  // SI: no SSN bookkeeping for deletes either.
+  // FIXED_FOR_RC: deleteも未commit版として積み、commit時にdeletedとして公開する。
   write_set_.emplace_back(s, key, tuple, desired, OpType::DELETE);
 
 FINISH_DELETE:
@@ -441,63 +384,49 @@ Status TxExecutor::scan(const Storage s,
 }
 
 Status TxExecutor::scan(const Storage s,
-                        std::string_view left_key, bool l_exclusive,
-                        std::string_view right_key, bool r_exclusive,
-                        std::vector<TupleBody*>& result, int64_t limit) {
-  result.clear();
+                          std::string_view left_key, bool l_exclusive,
+                          std::string_view right_key, bool r_exclusive,
+                          std::vector<TupleBody*>& result, int64_t limit) {
+    result.clear();
 
-  std::vector<Tuple*> scan_res;
-  Masstrees[get_storage(s)].scan(
-            left_key.empty() ? nullptr : left_key.data(), left_key.size(),
-            l_exclusive, right_key.empty() ? nullptr : right_key.data(),
-            right_key.size(), r_exclusive, &scan_res, limit,
-            callback_);
+    std::vector<Tuple*> scan_res;
+    Masstrees[get_storage(s)].scan(
+              left_key.empty() ? nullptr : left_key.data(), left_key.size(),
+              l_exclusive, right_key.empty() ? nullptr : right_key.data(),
+              right_key.size(), r_exclusive, &scan_res, limit,
+              callback_);
 
-  std::set<Version*> seen;
-  for (auto &&itr : scan_res) {
-    // TODO: Tuple should have key? Accessing key through the latest ver is ugly
-    // Must be a copy to avoid buffer overflow when changing the latest
-    std::string key(itr->latest_.load(memory_order_acquire)->body_.get_key());
-    SetElement<Tuple>* re = searchReadSet(s, key);
-    if (re && seen.find(re->ver_) == seen.end()) {
-      result.emplace_back(&(re->ver_->body_));
-      seen.emplace(re->ver_);
-      continue;
+    std::set<Version*> seen;
+    for (auto &&itr : scan_res) {
+      std::string key(itr->latest_.load(memory_order_acquire)->body_.get_key());
+
+      // FIXED_FOR_RC: scanでもread_set_は再利用しない。自分のwriteだけread-own-writesとして優先する。
+      SetElement<Tuple>* we = searchWriteSet(s, key);
+      if (we && seen.find(we->ver_) == seen.end()) {
+        // FIXED_FOR_RC: 自分がdeleteしたkeyはscan結果に含めない。
+        if (we->op_ != OpType::DELETE) {
+          result.emplace_back(&(we->ver_->body_));
+          seen.emplace(we->ver_);
+        }
+        continue;
+      }
+
+      // FIXED_FOR_RC: read_internal()で、その時点の最新committed/deleted版を読む。
+      Version* v = read_internal(s, key, itr);
+      if (this->status_ == TransactionStatus::aborted)
+        return Status::ERROR_PREEMPTIVE_ABORT;
+      if (v == nullptr || v->status_.load(memory_order_acquire) == VersionStatus::deleted)
+        continue;
+      if (seen.find(v) == seen.end()) {
+        result.emplace_back(&(v->body_));
+        seen.emplace(v);
+      }
     }
 
-    SetElement<Tuple>* we = searchWriteSet(s, key);
-    if (we && seen.find(we->ver_) == seen.end()) {
-      result.emplace_back(&(we->ver_->body_));
-      seen.emplace(we->ver_);
-      continue;
-    }
-
-    Version* v = read_internal(s, key, itr);
-    if (this->status_ == TransactionStatus::aborted)
-      return Status::ERROR_PREEMPTIVE_ABORT;
-    if (v == nullptr || v->status_.load(memory_order_acquire) == VersionStatus::deleted)
-      continue;
-    if (seen.find(v) == seen.end()) {
-      result.emplace_back(&(v->body_));
-      seen.emplace(v);
-    }
+    return Status::OK;
   }
 
-  return Status::OK;
-}
-
-/**
- * Snapshot Isolation commit:
- *   - Take cstamp.
- *   - Validate masstree node versions (phantom prevention; required for
- *     scan-based snapshot consistency).
- *   - Install writes and mark them committed.
- * No SSN anti-dependency check — that is what would upgrade SI to SSI.
- */
-
- //TODO: rename to RC_commit
- //commit時に cstamp_ = ++Lsn を取り、write_setの版を committed / deleted にする流れはそのまま使えます。
-void TxExecutor::si_commit() {
+void TxExecutor::rc_commit() {
 #if ADD_ANALYSIS
   uint64_t start(rdtscp());
 #endif
@@ -508,17 +437,8 @@ void TxExecutor::si_commit() {
   this->cstamp_ = ++Lsn;
   tmt->cstamp_.store(this->cstamp_, memory_order_release);
 
-  // Validate the node set (phantom prevention). SI's snapshot semantics
-  // for scans require that no concurrent insert/delete have changed the
-  // structure of nodes we scanned through.
-  for (auto it : node_map_) {
-    auto node = (MasstreeWrapper<Tuple>::node_type *) it.first;
-    if (node->full_version_value() != it.second) {
-      status_ = TransactionStatus::aborted;
-      tmt->status_.store(TransactionStatus::aborted, memory_order_release);
-      goto FINISH_SI_COMMIT;
-    }
-  }
+  // FIXED_FOR_RC: SIのphantom防止用node_map_ validationは行わない。
+  // RCではscan範囲のsnapshot整合性をcommit時に検証しない。
 
   status_ = TransactionStatus::committed;
   tmt->status_.store(TransactionStatus::committed, memory_order_release);
@@ -528,12 +448,12 @@ void TxExecutor::si_commit() {
   start = rdtscp();
 #endif
 
-  // Drop our reader bit on each read version.
+  // FIXED_FOR_RC: read_set_は再読には使わないが、reader bitを立てた分はcommit時に必ず外す。
   for (auto itr = read_set_.begin(); itr != read_set_.end(); ++itr) {
     downReadersBits((*itr).ver_);
   }
 
-  // Install writes: stamp cstamp, mark version committed (or apply delete).
+  // FIXED_FOR_RC: commit timestampを確定し、write_set_の版をcommitted/deletedとして公開する。
   for (auto itr = write_set_.begin(); itr != write_set_.end(); ++itr) {
     (*itr).ver_->cstamp_.store(this->cstamp_, memory_order_release);
 #if ADD_ANALYSIS
@@ -558,7 +478,6 @@ void TxExecutor::si_commit() {
   node_map_.clear();
   TMT[thid_]->lastcstamp_.store(cstamp_, memory_order_release);
 
-FINISH_SI_COMMIT:
 #if ADD_ANALYSIS
   result_->local_commit_latency_ += rdtscp() - start;
 #endif
@@ -578,7 +497,7 @@ void TxExecutor::abort() {
       Masstrees[get_storage((*itr).storage_)].remove_value((*itr).key_);
       delete (*itr).rcdptr_;
     }
-    // SI: no successor-mark cancellation needed (we never set sstamp on writes).
+    // FIXED_FOR_RC: abortした未commit版はabortedにする。read_internal()はこれを読み飛ばす。
     (*itr).ver_->status_.store(VersionStatus::aborted, memory_order_release);
   }
   write_set_.clear();
@@ -608,7 +527,7 @@ void TxExecutor::abort() {
 }
 
 void TxExecutor::verify_exclusion_or_abort() {
-  // SI: no SSN anti-dependency check; this is a no-op kept for API compat.
+  // FIXED_FOR_RC: RCではsnapshot検証もSSNのanti-dependency検証も行わない。
 }
 
 void TxExecutor::mainte() {
@@ -647,7 +566,8 @@ void TxExecutor::mainte() {
 // }
 
 bool TxExecutor::commit() {
-  si_commit();
+  // FIXED_FOR_RC: SI用commitではなく、RC用の検証なしcommitを呼ぶ。
+  rc_commit();
   if (status_ == TransactionStatus::aborted)
     return false;
 
@@ -668,7 +588,7 @@ void TxExecutor::leaderWork() {
     gcob.mvSecondRangeToFirstRange();
   }
 #if BACK_OFF
-  leaderBackoffWork(backoff_, SIResult);
+  leaderBackoffWork(backoff_, RCResult);
 #endif
 }
 
@@ -683,11 +603,8 @@ void TxExecutor::reconnoiter_end() {
   begin();
 }
 
-void TxScanCallback::on_resp_node(const MasstreeWrapper<Tuple>::node_type *n, uint64_t version) {
-  auto it = tx_->node_map_.find((void*)n);
-  if (it == tx_->node_map_.end()) {
-    tx_->node_map_.emplace_hint(it, (void*)n, version);
-  } else if ((*it).second != version) {
-    tx_->status_ = TransactionStatus::aborted;
+void TxScanCallback::on_resp_node(
+      [[maybe_unused]] const MasstreeWrapper<Tuple>::node_type *n,
+      [[maybe_unused]] uint64_t version) {
+    // FIXED_FOR_RC: scan node versionは記録しない。RCではcommit時のphantom検証をしない。
   }
-}

@@ -35,7 +35,7 @@ using namespace std;
 
 void worker(size_t thid, char &ready, const bool &start, const bool &quit) {
   Backoff backoff(FLAGS_clocks_per_us); // Cicada's backoff opt.
-  TxExecutor trans(thid, backoff, (Result *) &SIResult[thid], quit);
+  TxExecutor trans(thid, backoff, (Result *) &RCResult[thid], quit);
   YcsbWorkload workload;
 
 #if MASSTREE_USE
@@ -62,7 +62,7 @@ void worker(size_t thid, char &ready, const bool &start, const bool &quit) {
 }
 
 int main(int argc, char *argv[]) try {
-  gflags::SetUsageMessage("SI benchmark.");
+  gflags::SetUsageMessage("RC benchmark.");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   chkArg();
   YcsbWorkload::displayWorkloadParameter();
@@ -90,11 +90,11 @@ int main(int argc, char *argv[]) try {
     ((long double)FLAGS_clocks_per_us * powl(10.0, 6.0)));
 
   for (unsigned int i = 0; i < TotalThreadNum; ++i) {
-    SIResult[0].addLocalAllResult(SIResult[i]);
+    RCResult[0].addLocalAllResult(RCResult[i]);
   }
   ShowOptParameters();
   std::cout << "actual_extime:\t" << actual_extime << std::endl;
-  SIResult[0].displayAllResult(FLAGS_clocks_per_us, FLAGS_extime,
+  RCResult[0].displayAllResult(FLAGS_clocks_per_us, FLAGS_extime,
                                   TotalThreadNum,
                                   FLAGS_max_ope, FLAGS_batch_max_ope);
 

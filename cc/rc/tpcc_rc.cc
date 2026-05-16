@@ -39,7 +39,7 @@ void worker(size_t thid, char &ready, const bool &start, const bool &quit) {
 #endif
 
   Backoff backoff(FLAGS_clocks_per_us); // Cicada's backoff opt.
-  TxExecutor trans(thid, backoff, (Result *) &SIResult[thid], quit);
+  TxExecutor trans(thid, backoff, (Result *) &RCResult[thid], quit);
   TPCCWorkload<Tuple,void> workload;
 
 #ifdef Linux
@@ -63,7 +63,7 @@ void worker(size_t thid, char &ready, const bool &start, const bool &quit) {
 }
 
 int main(int argc, char *argv[]) try {
-  gflags::SetUsageMessage("TPC-C SI benchmark.");
+  gflags::SetUsageMessage("TPC-C RC benchmark.");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   chkArg();
   TPCCWorkload<Tuple,void>::displayWorkloadParameter();
@@ -92,14 +92,14 @@ int main(int argc, char *argv[]) try {
 
   std::cout << "done" << std::endl;
   for (unsigned int i = 0; i < TotalThreadNum; ++i) {
-    SIResult[0].addLocalAllResult(SIResult[i]);
-    SIResult[0].addLocalPerTxResult(SIResult[i], TxTypes);
+    RCResult[0].addLocalAllResult(RCResult[i]);
+    RCResult[0].addLocalPerTxResult(RCResult[i], TxTypes);
   }
   ShowOptParameters();
   std::cout << "actual_extime:\t" << actual_extime << std::endl;
-  SIResult[0].displayAllResult(FLAGS_clocks_per_us, FLAGS_extime, TotalThreadNum);
+  RCResult[0].displayAllResult(FLAGS_clocks_per_us, FLAGS_extime, TotalThreadNum);
   std::cout << "Details per transaction type:" << std::endl;
-  SIResult[0].displayPerTxResult(TxTypes);
+  RCResult[0].displayPerTxResult(TxTypes);
 
   return 0;
 } catch (const bad_alloc&) {

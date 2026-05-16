@@ -6,7 +6,7 @@
 #include "../../../include/inline.hh"
 #include "../../../include/op_element.hh"
 
-#include "si_op_element.hh"
+#include "rc_op_element.hh"
 #include "tuple.hh"
 #include "version.hh"
 
