@@ -32,10 +32,10 @@
 using namespace std;
 
 void worker(size_t thid, char &ready, const bool &start, const bool &quit) {
-  TxExecutor trans(thid, (Result *) &RCResult[thid]);
+  TxExecutor trans(thid, (Result *)   RCResult[thid]);
   Xoroshiro128Plus rnd;
   rnd.init();
-  Result &myres = std::ref(RCResult[thid]);
+  Result &myres = std::ref  RCResult[thid]);
   FastZipf zipf(&rnd, FLAGS_zipf_skew, FLAGS_tuple_num);
   GarbageCollection gcob;
   /**
@@ -86,7 +86,7 @@ void worker(size_t thid, char &ready, const bool &start, const bool &quit) {
 RETRY:
     if (thid == 0) {
       leaderWork(std::ref(gcob));
-      leaderBackoffWork(backoff, RCResult);
+      leaderBackoffWork(backoff,  RCResult);
     }
     if (loadAcquire(quit)) break;
 
@@ -193,7 +193,7 @@ int main(int argc, char *argv[]) try {
     ((long double)FLAGS_clocks_per_us * powl(10.0, 6.0)));
 
   for (unsigned int i = 0; i < TotalThreadNum; ++i) {
-    RCResult[0].addLocalAllResult(RCResult[i]);
+    RCResult[0].addLocalAllResult RCResult[i]);
   }
   ShowOptParameters();
   std::cout << "actual_extime:\t" << actual_extime << std::endl;
