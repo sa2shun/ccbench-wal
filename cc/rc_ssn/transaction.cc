@@ -98,12 +98,7 @@ Status TxExecutor::read(Storage s, std::string_view key, TupleBody** body) {
   /**
    * read-own-writes, re-read from previous read in the same tx.
    */
-  SetElement<Tuple>* e = searchReadSet(s, key);
-  if (e) {
-    *body = &(e->ver_->body_);
-    goto FINISH_READ;
-  }
-  e = searchWriteSet(s, key);
+  SetElement<Tuple>* e = searchWriteSet(s, key);
   if (e) {
     if (e->op_ == OpType::DELETE) {
       // deleted by myself
@@ -150,20 +145,17 @@ Version* TxExecutor::read_internal(Storage s, std::string_view key, Tuple* tuple
   Version *ver;
   ver = tuple->latest_.load(memory_order_acquire);
   while ((ver->status_.load(memory_order_acquire) != VersionStatus::committed
-      && ver->status_.load(memory_order_acquire) != VersionStatus::deleted)
-      || txid_ < ver->cstamp_.load(memory_order_acquire)) {
+      && ver->status_.load(memory_order_acquire) != VersionStatus::deleted)) {
     ver = ver->prev_;
     if (ver == nullptr) {
       return nullptr;
     }
   }
 
+  read_set_.emplace_back(s, key, tuple, ver);
   uint32_t v_sstamp;
   v_sstamp = ver->psstamp_.atomicLoadSstamp();
-  if (v_sstamp & TIDFLAG || v_sstamp == (UINT32_MAX & ~(TIDFLAG))) {
-    // no overwrite yet
-    read_set_.emplace_back(s, key, tuple, ver);
-  } else {
+  if (!(v_sstamp & TIDFLAG) && v_sstamp != (UINT32_MAX & ~(TIDFLAG))) {
     // update pi with r:w edge
     this->sstamp_ =
             min(this->sstamp_, (v_sstamp >> TIDFLAG));
@@ -179,36 +171,12 @@ Version* TxExecutor::read_internal(Storage s, std::string_view key, Tuple* tuple
 }
 
 Status TxExecutor::install_version(Tuple* tuple, Version* desired) {
-  Version* vertmp;
   Version* expected = tuple->latest_.load(memory_order_acquire);
   for (;;) {
     // w-w conflict
     // first updater wins rule
     if (expected->status_.load(memory_order_acquire) ==
         VersionStatus::inflight) {
-      if (this->txid_ <= expected->cstamp_.load(memory_order_acquire)) {
-        this->status_ = TransactionStatus::aborted;
-        TMT[thid_]->status_.store(TransactionStatus::aborted,
-                                  memory_order_release);
-        gcobject_.reuse_version_from_gc_.emplace_back(desired);
-        return Status::ERROR_CONCURRENT_WRITE_OR_DELETE;
-      }
-
-      expected = tuple->latest_.load(memory_order_acquire);
-      continue;
-    }
-
-    // if latest version is not comitted.
-    vertmp = expected;
-    while (vertmp->status_.load(memory_order_acquire) != VersionStatus::committed
-        && vertmp->status_.load(memory_order_acquire) != VersionStatus::deleted)
-      vertmp = vertmp->prev_;
-
-    // vertmp is latest committed version.
-    if (txid_ < vertmp->cstamp_.load(memory_order_acquire)) {
-      //  write - write conflict, first-updater-wins rule.
-      // Writers must abort if they would overwirte a version created after
-      // their snapshot.
       this->status_ = TransactionStatus::aborted;
       TMT[thid_]->status_.store(TransactionStatus::aborted,
                                 memory_order_release);
@@ -218,10 +186,10 @@ Status TxExecutor::install_version(Tuple* tuple, Version* desired) {
 
     desired->prev_ = expected;
     if (tuple->latest_.compare_exchange_strong(
-            expected, desired, memory_order_acq_rel, memory_order_acquire))
+            expected, desired, memory_order_acq_rel, memory_order_acquire)) {
       break;
+    }
   }
-
   return Status::OK;
 }
 
@@ -276,7 +244,6 @@ Status TxExecutor::update(Storage s, std::string_view key, TupleBody&& body) {
    * later than its begin timestamp.
    */
   Version *desired;
-  desired = new Version();
   if (gcobject_.reuse_version_from_gc_.empty()) {
     desired = new Version();
 #if ADD_ANALYSIS
@@ -350,19 +317,7 @@ Status TxExecutor::insert(Storage s, std::string_view key, TupleBody&& body) {
     delete tuple;
     return stat;
   }
-  if (insert_info.node) {
-    if (!node_map_.empty()) {
-      auto it = node_map_.find((void*)insert_info.node);
-      if (it != node_map_.end()) {
-        if (unlikely(it->second != insert_info.old_version)) {
-          status_ = TransactionStatus::aborted;
-          return Status::ERROR_CONCURRENT_WRITE_OR_DELETE;
-        }
-        // otherwise, bump the version
-        it->second = insert_info.new_version;
-      }
-    }
-  } else {
+  if (!insert_info.node) {
     ERR;
   }
 
@@ -409,7 +364,6 @@ Status TxExecutor::delete_record(Storage s, std::string_view key) {
   }
 
   Version *desired;
-  desired = new Version();
   if (gcobject_.reuse_version_from_gc_.empty()) {
     desired = new Version();
 #if ADD_ANALYSIS
@@ -484,17 +438,13 @@ Status TxExecutor::scan(const Storage s,
     // TODO: Tuple should have key? Accessing key through the latest ver is ugly
     // Must be a copy to avoid buffer overflow when changing the latest
     std::string key(itr->latest_.load(memory_order_acquire)->body_.get_key());
-    SetElement<Tuple>* re = searchReadSet(s, key);
-    if (re && seen.find(re->ver_) == seen.end()) {
-      result.emplace_back(&(re->ver_->body_));
-      seen.emplace(re->ver_);
-      continue;
-    }
 
     SetElement<Tuple>* we = searchWriteSet(s, key);
     if (we && seen.find(we->ver_) == seen.end()) {
-      result.emplace_back(&(we->ver_->body_));
-      seen.emplace(we->ver_);
+      if (we->op_ != OpType::DELETE) {
+        result.emplace_back(&(we->ver_->body_));
+        seen.emplace(we->ver_);
+      }
       continue;
     }
 
@@ -726,15 +676,6 @@ void TxExecutor::ssn_parallel_commit() {
     goto FINISH_PARALLEL_COMMIT;
   }
 
-  // validate the node set
-  for (auto it : node_map_) {
-    auto node = (MasstreeWrapper<Tuple>::node_type *) it.first;
-    if (node->full_version_value() != it.second) {
-      status_ = TransactionStatus::aborted;
-      tmt->status_.store(TransactionStatus::aborted, memory_order_release);
-      goto FINISH_PARALLEL_COMMIT;
-    }
-  }
 #if ADD_ANALYSIS
   result_->local_vali_latency_ += rdtscp() - start;
   start = rdtscp();
@@ -946,10 +887,6 @@ void TxExecutor::reconnoiter_end() {
 }
 
 void TxScanCallback::on_resp_node(const MasstreeWrapper<Tuple>::node_type *n, uint64_t version) {
-  auto it = tx_->node_map_.find((void*)n);
-  if (it == tx_->node_map_.end()) {
-    tx_->node_map_.emplace_hint(it, (void*)n, version);
-  } else if ((*it).second != version) {
-    tx_->status_ = TransactionStatus::aborted;
-  }
+  (void)n;
+  (void)version;
 }

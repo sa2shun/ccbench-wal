@@ -239,7 +239,6 @@ Status TxExecutor::update(Storage s, std::string_view key, TupleBody&& body) {
    * snapshot後のcommit版チェックはinstall_version()側で削除済み。
    */
   Version *desired;
-  desired = new Version();
   if (gcobject_.reuse_version_from_gc_.empty()) {
     desired = new Version();
 #if ADD_ANALYSIS
@@ -344,7 +343,6 @@ Status TxExecutor::delete_record(Storage s, std::string_view key) {
   }
 
   Version *desired;
-  desired = new Version();
   if (gcobject_.reuse_version_from_gc_.empty()) {
     desired = new Version();
 #if ADD_ANALYSIS
