@@ -5,7 +5,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <chrono>
 #include <cstring>
+#include <iostream>
 #include <deque>
 #include <filesystem>
 #include <mutex>
@@ -85,12 +87,53 @@ class WalLogger {
     return durable_prefix_lsn_.load(std::memory_order_acquire);
   }
 
+  ~WalLogger() {
+    printStats();
+  }
+
  private:
   struct PendingCommit {
     uint64_t commit_lsn;
   };
 
+  struct Stats {
+    std::atomic<uint64_t> commits{0};
+    std::atomic<uint64_t> payload_build_ns{0};
+    std::atomic<uint64_t> mutex_wait_ns{0};
+    std::atomic<uint64_t> write_ns{0};
+    std::atomic<uint64_t> fdatasync_ns{0};
+    std::atomic<uint64_t> notify_wait_ns{0};
+    std::atomic<uint64_t> bytes{0};
+  };
+
   WalLogger() = default;
+
+  static uint64_t nowNs() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+  }
+
+  void printStats() const {
+    const uint64_t commits = stats_.commits.load(std::memory_order_acquire);
+    if (commits == 0) return;
+    const uint64_t payload = stats_.payload_build_ns.load(std::memory_order_acquire);
+    const uint64_t mutex = stats_.mutex_wait_ns.load(std::memory_order_acquire);
+    const uint64_t write = stats_.write_ns.load(std::memory_order_acquire);
+    const uint64_t fsync = stats_.fdatasync_ns.load(std::memory_order_acquire);
+    const uint64_t notify = stats_.notify_wait_ns.load(std::memory_order_acquire);
+    const uint64_t bytes = stats_.bytes.load(std::memory_order_acquire);
+    const uint64_t total = payload + mutex + write + fsync + notify;
+    std::cout << "wal_stats_commits:	" << commits << std::endl;
+    std::cout << "wal_stats_bytes:	" << bytes << std::endl;
+    std::cout << "wal_stats_payload_build_ns:	" << payload << std::endl;
+    std::cout << "wal_stats_mutex_wait_ns:	" << mutex << std::endl;
+    std::cout << "wal_stats_write_ns:	" << write << std::endl;
+    std::cout << "wal_stats_fdatasync_ns:	" << fsync << std::endl;
+    std::cout << "wal_stats_notify_wait_ns:	" << notify << std::endl;
+    std::cout << "wal_stats_total_accounted_ns:	" << total << std::endl;
+    std::cout << "wal_stats_avg_accounted_ns_per_commit:	" << (total / commits) << std::endl;
+  }
 
   static std::string makeBaseDir(const std::string& protocol_name) {
     const char* env = std::getenv("CCBENCH_WAL_DIR");
@@ -180,18 +223,38 @@ class WalLogger {
 
   template <class WriteSet>
   uint64_t logShared(uint32_t thid, uint32_t cstamp, const WriteSet& write_set) {
-    std::lock_guard<std::mutex> guard(shared_mutex_);
+    const uint64_t wait_start = nowNs();
+    shared_mutex_.lock();
+    const uint64_t lock_acquired = nowNs();
+    std::unique_lock<std::mutex> guard(shared_mutex_, std::adopt_lock);
+    stats_.mutex_wait_ns.fetch_add(lock_acquired - wait_start, std::memory_order_relaxed);
+
     uint64_t commit_lsn = 0;
+    uint64_t bytes = 0;
     for (const auto& we : write_set) {
       const uint64_t lsn = next_lsn_.fetch_add(1, std::memory_order_acq_rel);
+      const uint64_t build_start = nowNs();
       const std::string line = makeRecordLine(lsn, thid, cstamp, we);
+      stats_.payload_build_ns.fetch_add(nowNs() - build_start, std::memory_order_relaxed);
+      const uint64_t write_start = nowNs();
       writeAll(shared_fd_, line);
+      stats_.write_ns.fetch_add(nowNs() - write_start, std::memory_order_relaxed);
+      bytes += line.size();
     }
     commit_lsn = next_lsn_.fetch_add(1, std::memory_order_acq_rel);
+    const uint64_t build_start = nowNs();
     const std::string line = makeCommitLine(commit_lsn, thid, cstamp);
+    stats_.payload_build_ns.fetch_add(nowNs() - build_start, std::memory_order_relaxed);
+    const uint64_t write_start = nowNs();
     writeAll(shared_fd_, line);
+    stats_.write_ns.fetch_add(nowNs() - write_start, std::memory_order_relaxed);
+    bytes += line.size();
+    const uint64_t fsync_start = nowNs();
     fdatasync(shared_fd_);
+    stats_.fdatasync_ns.fetch_add(nowNs() - fsync_start, std::memory_order_relaxed);
     markDurableThrough(commit_lsn);
+    stats_.bytes.fetch_add(bytes, std::memory_order_relaxed);
+    stats_.commits.fetch_add(1, std::memory_order_relaxed);
     return commit_lsn;
   }
 
@@ -201,6 +264,7 @@ class WalLogger {
     std::vector<uint64_t> lsns;
     lsns.reserve(write_set.size() + 1);
     std::string payload;
+    const uint64_t build_start = nowNs();
     for (const auto& we : write_set) {
       const uint64_t lsn = next_lsn_.fetch_add(1, std::memory_order_acq_rel);
       lsns.push_back(lsn);
@@ -209,18 +273,31 @@ class WalLogger {
     const uint64_t commit_lsn = next_lsn_.fetch_add(1, std::memory_order_acq_rel);
     lsns.push_back(commit_lsn);
     payload += makeCommitLine(commit_lsn, thid, cstamp);
+    stats_.payload_build_ns.fetch_add(nowNs() - build_start, std::memory_order_relaxed);
 
     {
-      std::lock_guard<std::mutex> guard(worker_mutexes_[thid]);
+      const uint64_t wait_start = nowNs();
+      worker_mutexes_[thid].lock();
+      const uint64_t lock_acquired = nowNs();
+      std::unique_lock<std::mutex> guard(worker_mutexes_[thid], std::adopt_lock);
+      stats_.mutex_wait_ns.fetch_add(lock_acquired - wait_start, std::memory_order_relaxed);
       buffers_[thid] += payload;
       commit_queues_[thid].push_back(PendingCommit{commit_lsn});
+      const uint64_t write_start = nowNs();
       writeAll(worker_fds_[thid], buffers_[thid]);
+      stats_.write_ns.fetch_add(nowNs() - write_start, std::memory_order_relaxed);
       buffers_[thid].clear();
+      const uint64_t fsync_start = nowNs();
       fdatasync(worker_fds_[thid]);
+      stats_.fdatasync_ns.fetch_add(nowNs() - fsync_start, std::memory_order_relaxed);
       for (uint64_t lsn : lsns) markDurable(lsn);
     }
 
+    const uint64_t notify_start = nowNs();
     waitForCommit(thid, commit_lsn);
+    stats_.notify_wait_ns.fetch_add(nowNs() - notify_start, std::memory_order_relaxed);
+    stats_.bytes.fetch_add(payload.size(), std::memory_order_relaxed);
+    stats_.commits.fetch_add(1, std::memory_order_relaxed);
     return commit_lsn;
   }
 
@@ -300,6 +377,7 @@ class WalLogger {
 
   std::mutex durable_mutex_;
   std::vector<bool> durable_{false};
+  Stats stats_;
 };
 
 }  // namespace ccbench

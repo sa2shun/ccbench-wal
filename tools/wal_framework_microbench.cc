@@ -61,6 +61,10 @@ class WalFrameworkBench {
     fds_.fill(-1);
     commits_.fill(0);
     bytes_.fill(0);
+    payload_build_ns_.fill(0);
+    mutex_wait_ns_.fill(0);
+    write_ns_.fill(0);
+    fdatasync_ns_.fill(0);
     std::filesystem::create_directories(cfg_.output_root);
     output_dir_ = cfg_.output_root + "/" + modeName() + "_" + std::to_string(getpid());
     std::filesystem::create_directories(output_dir_);
@@ -99,7 +103,18 @@ class WalFrameworkBench {
     std::cout << "throughput_tps: " << commits / cfg_.seconds << "\n";
     std::cout << "bytes_written: " << bytes << "\n";
     std::cout << "write_mib_per_sec: " << (bytes / 1048576.0 / cfg_.seconds) << "\n";
+    const uint64_t payload_ns = total(payload_build_ns_);
+    const uint64_t mutex_ns = total(mutex_wait_ns_);
+    const uint64_t write_ns = total(write_ns_);
+    const uint64_t fsync_ns = total(fdatasync_ns_);
+    const uint64_t accounted_ns = payload_ns + mutex_ns + write_ns + fsync_ns;
     std::cout << "wal_dir: " << output_dir_ << "\n";
+    std::cout << "cost_payload_build_ns: " << payload_ns << "\n";
+    std::cout << "cost_mutex_wait_ns: " << mutex_ns << "\n";
+    std::cout << "cost_write_ns: " << write_ns << "\n";
+    std::cout << "cost_fdatasync_ns: " << fsync_ns << "\n";
+    std::cout << "cost_total_accounted_ns: " << accounted_ns << "\n";
+    std::cout << "cost_avg_accounted_ns_per_commit: " << (commits ? accounted_ns / commits : 0) << "\n";
   }
 
  private:
@@ -122,6 +137,12 @@ class WalFrameworkBench {
     }
   }
 
+  static uint64_t nowNs() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+  }
+
   std::string makePayload(uint32_t worker, uint64_t txid) {
     std::ostringstream out;
     const uint64_t base_key = static_cast<uint64_t>(worker) << 48;
@@ -140,14 +161,27 @@ class WalFrameworkBench {
     while (!start_.load(std::memory_order_acquire)) std::this_thread::yield();
     uint64_t local_txid = 0;
     while (!stop_.load(std::memory_order_acquire)) {
+      const uint64_t build_start = nowNs();
       std::string payload = makePayload(worker, local_txid++);
+      payload_build_ns_[worker] += nowNs() - build_start;
       if (cfg_.mode == Mode::kSharedWal) {
-        std::lock_guard<std::mutex> guard(shared_mutex_);
+        const uint64_t wait_start = nowNs();
+        shared_mutex_.lock();
+        mutex_wait_ns_[worker] += nowNs() - wait_start;
+        std::unique_lock<std::mutex> guard(shared_mutex_, std::adopt_lock);
+        const uint64_t write_start = nowNs();
         writeAll(shared_fd_, payload);
+        write_ns_[worker] += nowNs() - write_start;
+        const uint64_t fsync_start = nowNs();
         if (::fdatasync(shared_fd_) != 0) { perror("fdatasync shared wal"); std::abort(); }
+        fdatasync_ns_[worker] += nowNs() - fsync_start;
       } else {
+        const uint64_t write_start = nowNs();
         writeAll(fds_[worker], payload);
+        write_ns_[worker] += nowNs() - write_start;
+        const uint64_t fsync_start = nowNs();
         if (::fdatasync(fds_[worker]) != 0) { perror("fdatasync pwal"); std::abort(); }
+        fdatasync_ns_[worker] += nowNs() - fsync_start;
       }
       ++commits_[worker];
       bytes_[worker] += payload.size();
@@ -168,6 +202,10 @@ class WalFrameworkBench {
   std::mutex shared_mutex_;
   std::array<uint64_t, kMaxWorkers> commits_;
   std::array<uint64_t, kMaxWorkers> bytes_;
+  std::array<uint64_t, kMaxWorkers> payload_build_ns_;
+  std::array<uint64_t, kMaxWorkers> mutex_wait_ns_;
+  std::array<uint64_t, kMaxWorkers> write_ns_;
+  std::array<uint64_t, kMaxWorkers> fdatasync_ns_;
   std::atomic<uint64_t> next_lsn_{1};
   std::atomic<bool> start_{false};
   std::atomic<bool> stop_{false};
