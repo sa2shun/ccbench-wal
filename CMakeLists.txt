@@ -61,6 +61,10 @@ target_link_libraries(ccbench_common PUBLIC
   glog::glog
 )
 
+add_executable(wal_framework_microbench.exe tools/wal_framework_microbench.cc)
+target_compile_features(wal_framework_microbench.exe PRIVATE cxx_std_20)
+target_link_libraries(wal_framework_microbench.exe PRIVATE Threads::Threads)
+
 # All concurrency-control protocols live under cc/. Each one's
 # CMakeLists.txt is just a single ccbench_add_protocol(...) call.
 include(ProtocolHelpers)

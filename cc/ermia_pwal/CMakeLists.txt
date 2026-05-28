@@ -1,6 +1,6 @@
 ccbench_add_protocol(ermia_pwal
   SOURCES   transaction.cc util.cc result.cc garbage_collection.cc
-  WORKLOADS ycsb tpcc
+  WORKLOADS ycsb ycsb_abort0 tpcc
   OPTIONS
     CCBENCH_WAL_PWAL=1
     CCBENCH_WAL_PROTOCOL_NAME="ermia_pwal"
