@@ -8,7 +8,7 @@ from pathlib import Path
 
 THREADS = [1, 16, 32]
 SECONDS = 5
-ABORT0_PROTOS = ["ermia_wal", "ermia_pwal"]
+ERMIA_PROTOS = ["ermia_wal", "ermia_pwal"]
 FRAMEWORK_MODES = ["wal", "pwal"]
 COST_FIELDS = [
     "payload_build_ns", "mutex_wait_ns", "write_ns", "fdatasync_ns", "notify_wait_ns"
@@ -21,19 +21,18 @@ def metric(text, name):
 
 
 def normalize_costs(row):
-    total = 0
-    for field in COST_FIELDS:
-        total += int(row.get(field, "0") or 0)
+    total = sum(int(row.get(field, "0") or 0) for field in COST_FIELDS)
     row["total_accounted_ns"] = str(total)
     for field in COST_FIELDS:
         value = int(row.get(field, "0") or 0)
         row[field + "_pct"] = f"{(value / total * 100.0) if total else 0:.2f}"
 
 
-def run_abort0(root, logs, wal_dir, proto, th):
-    exe = root / "build" / "cc" / proto / f"ycsb_abort0_{proto}.exe"
-    out = logs / f"abort0_{proto}_{th}.out"
-    err = logs / f"abort0_{proto}_{th}.err"
+def run_ycsb(root, logs, wal_dir, experiment, proto, th):
+    workload = "ycsb_abort0" if experiment == "abort0_ycsb" else "ycsb"
+    exe = root / "build" / "cc" / proto / f"{workload}_{proto}.exe"
+    out = logs / f"{experiment}_{proto}_{th}.out"
+    err = logs / f"{experiment}_{proto}_{th}.err"
     cmd = [str(exe), f"--extime={SECONDS}", f"--thread_num={th}",
            "--ycsb_tuple_num=100000", "--ycsb_max_ope=10", "--ycsb_rratio=50", "--ycsb_zipf_skew=0"]
     env = dict(os.environ, CCBENCH_WAL_DIR=str(wal_dir))
@@ -41,7 +40,7 @@ def run_abort0(root, logs, wal_dir, proto, th):
         proc = subprocess.run(cmd, cwd=root, stdout=stdout, stderr=stderr, env=env)
     text = out.read_text(errors="replace")
     row = {
-        "experiment": "abort0_ycsb",
+        "experiment": experiment,
         "mode": proto,
         "thread_num": th,
         "seconds": SECONDS,
@@ -63,8 +62,8 @@ def run_abort0(root, logs, wal_dir, proto, th):
 
 def run_framework(root, logs, wal_dir, mode, th):
     exe = root / "build" / "wal_framework_microbench.exe"
-    out = logs / f"framework_{mode}_{th}.out"
-    err = logs / f"framework_{mode}_{th}.err"
+    out = logs / f"wal_framework_{mode}_{th}.out"
+    err = logs / f"wal_framework_{mode}_{th}.err"
     cmd = [str(exe), f"--mode={mode}", f"--threads={th}", f"--seconds={SECONDS}",
            "--writes_per_tx=1", "--payload_bytes=128", f"--output_root={wal_dir}"]
     with out.open("w") as stdout, err.open("w") as stderr:
@@ -101,15 +100,17 @@ def main():
     wal_dir.mkdir(parents=True, exist_ok=True)
     rows = []
     for th in THREADS:
-        for proto in ABORT0_PROTOS:
-            print(f"RUN abort0 {proto} threads={th}", flush=True)
-            rows.append(run_abort0(root, logs, wal_dir, proto, th))
+        for experiment in ["normal_ycsb", "abort0_ycsb"]:
+            for proto in ERMIA_PROTOS:
+                print(f"RUN {experiment} {proto} threads={th}", flush=True)
+                rows.append(run_ycsb(root, logs, wal_dir, experiment, proto, th))
         for mode in FRAMEWORK_MODES:
-            print(f"RUN framework {mode} threads={th}", flush=True)
+            print(f"RUN wal_framework {mode} threads={th}", flush=True)
             rows.append(run_framework(root, logs, wal_dir, mode, th))
     with result.open("w") as f:
         print("WAL cost breakdown", file=f)
         print(f"date: {datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds')}", file=f)
+        print("experiments: normal_ycsb abort0_ycsb wal_framework", file=f)
         print("threads: " + " ".join(map(str, THREADS)), file=f)
         print(f"seconds: {SECONDS}", file=f)
         print("cost fields: payload_build mutex_wait write fdatasync notify_wait", file=f)
