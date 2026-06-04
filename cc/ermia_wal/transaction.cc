@@ -10,6 +10,7 @@
 #include "include/scan_callback.hh"
 #include "include/transaction.hh"
 #include "include/version.hh"
+#include "../../include/tx_breakdown_profiler.hh"
 #include "../../include/wal_logger.hh"
 
 extern std::vector<Result> ErmiaResult;
@@ -92,6 +93,8 @@ void TxExecutor::begin() {
  * @param [in] key The key of key-value
  */
 Status TxExecutor::read(Storage s, std::string_view key, TupleBody** body) {
+  ccbench::TxBreakdownProfiler::ScopedTimer tx_breakdown_timer(
+      ccbench::TxBreakdownProfiler::Phase::Read);
 #if ADD_ANALYSIS
   uint64_t start(rdtscp());
 #endif
@@ -232,6 +235,8 @@ Status TxExecutor::install_version(Tuple* tuple, Version* desired) {
  * @param [in] key The key of key-value
  */
 Status TxExecutor::update(Storage s, std::string_view key, TupleBody&& body) {
+  ccbench::TxBreakdownProfiler::ScopedTimer tx_breakdown_timer(
+      ccbench::TxBreakdownProfiler::Phase::Update);
 #if ADD_ANALYSIS
   uint64_t start = rdtscp();
 #endif
@@ -328,6 +333,8 @@ FINISH_WRITE:
 }
 
 Status TxExecutor::insert(Storage s, std::string_view key, TupleBody&& body) {
+  ccbench::TxBreakdownProfiler::ScopedTimer tx_breakdown_timer(
+      ccbench::TxBreakdownProfiler::Phase::Insert);
 #if ADD_ANALYSIS
   uint64_t start = rdtscp();
 #endif  // if ADD_ANALYSIS
@@ -376,6 +383,8 @@ Status TxExecutor::insert(Storage s, std::string_view key, TupleBody&& body) {
 }
 
 Status TxExecutor::delete_record(Storage s, std::string_view key) {
+  ccbench::TxBreakdownProfiler::ScopedTimer tx_breakdown_timer(
+      ccbench::TxBreakdownProfiler::Phase::DeleteRecord);
 #if ADD_ANALYSIS
   uint64_t start = rdtscp();
 #endif  // if ADD_ANALYSIS
@@ -610,6 +619,14 @@ void TxExecutor::ssn_parallel_commit() {
 #if ADD_ANALYSIS
   uint64_t start(rdtscp());
 #endif
+  uint64_t breakdown_phase_start = ccbench::TxBreakdownProfiler::nowNs();
+#define RECORD_TX_BREAKDOWN_PHASE(phase) \
+  do { \
+    uint64_t now = ccbench::TxBreakdownProfiler::nowNs(); \
+    ccbench::TxBreakdownProfiler::instance().add( \
+        ccbench::TxBreakdownProfiler::Phase::phase, now - breakdown_phase_start); \
+    breakdown_phase_start = now; \
+  } while (0)
   this->status_ = TransactionStatus::committing;
   TransactionTable *tmt = TMT[thid_];
   tmt->status_.store(TransactionStatus::committing);
@@ -663,6 +680,7 @@ void TxExecutor::ssn_parallel_commit() {
       this->sstamp_ = min(this->sstamp_, v_sstamp >> TIDFLAG);
     }
   }
+  RECORD_TX_BREAKDOWN_PHASE(SsnFinalizePi);
 
   /**
    * finalize eta.
@@ -712,28 +730,34 @@ void TxExecutor::ssn_parallel_commit() {
      */
     this->pstamp_ = max(this->pstamp_, ver->psstamp_.atomicLoadPstamp());
   }
+  RECORD_TX_BREAKDOWN_PHASE(SsnFinalizeEta);
 
   tmt = TMT[thid_];
   /**
    * ssn_check_exclusion
    */
   if (pstamp_ >= sstamp_) {
+    RECORD_TX_BREAKDOWN_PHASE(SsnExclusion);
     status_ = TransactionStatus::aborted;
     tmt->status_.store(TransactionStatus::aborted, memory_order_release);
     goto FINISH_PARALLEL_COMMIT;
   }
+  RECORD_TX_BREAKDOWN_PHASE(SsnExclusion);
 
   // validate the node set
   for (auto it : node_map_) {
     auto node = (MasstreeWrapper<Tuple>::node_type *) it.first;
     if (node->full_version_value() != it.second) {
+      RECORD_TX_BREAKDOWN_PHASE(NodeValidation);
       status_ = TransactionStatus::aborted;
       tmt->status_.store(TransactionStatus::aborted, memory_order_release);
       goto FINISH_PARALLEL_COMMIT;
     }
   }
+  RECORD_TX_BREAKDOWN_PHASE(NodeValidation);
 
   ccbench::WalLogger::instance().logCommit(thid_, cstamp_, write_set_);
+  RECORD_TX_BREAKDOWN_PHASE(WalLog);
 
   status_ = TransactionStatus::committed;
   tmt->sstamp_.store(this->sstamp_, memory_order_release);
@@ -792,6 +816,7 @@ void TxExecutor::ssn_parallel_commit() {
   // After pushing this commit's GCElements, expose the (possibly new)
   // queue front cstamp so other threads' gcRecord can advance safely.
   gcobject_.publishMinQueuedCstamp();
+  RECORD_TX_BREAKDOWN_PHASE(VersionInstall);
 
   // logging
   //?*
@@ -800,11 +825,13 @@ void TxExecutor::ssn_parallel_commit() {
   write_set_.clear();
   node_map_.clear();
   TMT[thid_]->lastcstamp_.store(cstamp_, memory_order_release);
+  RECORD_TX_BREAKDOWN_PHASE(CommitCleanup);
 
 FINISH_PARALLEL_COMMIT:
 #if ADD_ANALYSIS
   result_->local_commit_latency_ += rdtscp() - start;
 #endif
+#undef RECORD_TX_BREAKDOWN_PHASE
   return;
 }
 
@@ -815,6 +842,8 @@ FINISH_PARALLEL_COMMIT:
  * @return void
  */
 void TxExecutor::abort() {
+  ccbench::TxBreakdownProfiler::ScopedTimer tx_breakdown_timer(
+      ccbench::TxBreakdownProfiler::Phase::AbortCleanup);
   for (auto itr = write_set_.begin(); itr != write_set_.end(); ++itr) {
     if ((*itr).op_ == OpType::UPDATE || (*itr).op_ == OpType::DELETE) {
       Version *next_committed = (*itr).ver_->prev_;
@@ -870,6 +899,8 @@ void TxExecutor::verify_exclusion_or_abort() {
 }
 
 void TxExecutor::mainte() {
+  ccbench::TxBreakdownProfiler::ScopedTimer tx_breakdown_timer(
+      ccbench::TxBreakdownProfiler::Phase::Maintenance);
   gcstop_ = rdtscp();
   if (chkClkSpan(gcstart_, gcstop_, FLAGS_gc_inter_us * FLAGS_clocks_per_us)) {
     uint32_t loadThreshold = gcobject_.getGcThreshold();
