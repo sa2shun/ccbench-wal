@@ -94,4 +94,8 @@ Session.vim
 # auto-generated tag files
 tags
 
+# Python helper cache
+__pycache__/
+*.pyc
+
 # End of https://www.gitignore.io/api/vim,c++,macos
