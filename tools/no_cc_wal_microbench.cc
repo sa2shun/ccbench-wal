@@ -35,6 +35,7 @@ enum class Mode {
   PwalGroupCommit,
   PwalGroupCommitNoPrefix,
   PwalGroupDepFrontier,
+  AsyncGlobalLsnPrefix,
   AsyncGlobalPrefixLsn,
   AsyncLocalOnlyLsn,
   AsyncDepFrontierLsn,
@@ -97,6 +98,7 @@ struct Stats {
   std::atomic<uint64_t> ready_queue_pushes{0};
   std::atomic<uint64_t> max_ready_queue_len{0};
   std::atomic<uint64_t> max_waitlist_len{0};
+  std::atomic<uint64_t> max_global_waitlist_len{0};
   std::atomic<uint64_t> max_pending_len{0};
   std::atomic<uint64_t> waiting_conditions{0};
   std::atomic<uint64_t> bytes{0};
@@ -172,6 +174,8 @@ std::string modeName(Mode mode) {
       return "pwal_group_commit_no_prefix";
     case Mode::PwalGroupDepFrontier:
       return "pwal_group_dep_frontier";
+    case Mode::AsyncGlobalLsnPrefix:
+      return "async_global_lsn_prefix";
     case Mode::AsyncGlobalPrefixLsn:
       return "async_global_prefix_lsn";
     case Mode::AsyncLocalOnlyLsn:
@@ -192,6 +196,7 @@ Mode parseMode(const std::string& s) {
   if (s == "pwal_group_commit") return Mode::PwalGroupCommit;
   if (s == "pwal_group_commit_no_prefix") return Mode::PwalGroupCommitNoPrefix;
   if (s == "pwal_group_dep_frontier") return Mode::PwalGroupDepFrontier;
+  if (s == "async_global_lsn_prefix") return Mode::AsyncGlobalLsnPrefix;
   if (s == "async_global_prefix_lsn") return Mode::AsyncGlobalPrefixLsn;
   if (s == "async_local_only_lsn") return Mode::AsyncLocalOnlyLsn;
   if (s == "async_dep_frontier_lsn") return Mode::AsyncDepFrontierLsn;
@@ -202,7 +207,8 @@ Mode parseMode(const std::string& s) {
 }
 
 bool isAsyncMode(Mode mode) {
-  return mode == Mode::AsyncGlobalPrefixLsn ||
+  return mode == Mode::AsyncGlobalLsnPrefix ||
+         mode == Mode::AsyncGlobalPrefixLsn ||
          mode == Mode::AsyncLocalOnlyLsn ||
          mode == Mode::AsyncDepFrontierLsn ||
          mode == Mode::AsyncDepFrontierCstamp;
@@ -222,7 +228,8 @@ bool asyncUsesDependencyFrontier(Mode mode) {
 }
 
 bool asyncUsesSeparateLsn(Mode mode) {
-  return mode == Mode::AsyncGlobalPrefixLsn ||
+  return mode == Mode::AsyncGlobalLsnPrefix ||
+         mode == Mode::AsyncGlobalPrefixLsn ||
          mode == Mode::AsyncLocalOnlyLsn ||
          mode == Mode::AsyncDepFrontierLsn;
 }
@@ -415,6 +422,10 @@ std::vector<uint64_t> buildAsyncRequirement(Mode mode, uint32_t logger_id,
                                             const std::vector<uint64_t>& dep,
                                             const std::vector<WorkerState>& loggers) {
   std::vector<uint64_t> req(loggers.size(), 0);
+  if (mode == Mode::AsyncGlobalLsnPrefix) {
+    req[logger_id] = local_seq;
+    return req;
+  }
   if (mode == Mode::AsyncGlobalPrefixLsn) {
     for (uint32_t i = 0; i < loggers.size(); ++i) {
       req[i] = loggers[i].local_seq.load(std::memory_order_acquire);
@@ -544,6 +555,7 @@ struct PendingTxn {
   uint64_t bytes = 0;
   uint32_t remaining = 0;
   bool ready_enqueued = false;
+  bool needs_global_lsn_prefix = false;
   std::vector<uint64_t> req;
 };
 
@@ -559,6 +571,7 @@ struct WaitEntryGreater {
 };
 
 using WaitList = std::priority_queue<WaitEntry, std::vector<WaitEntry>, WaitEntryGreater>;
+using GlobalWaitList = std::priority_queue<WaitEntry, std::vector<WaitEntry>, WaitEntryGreater>;
 
 struct CommitterState {
   explicit CommitterState(uint32_t logger_num) : waitlists(logger_num) {}
@@ -566,6 +579,9 @@ struct CommitterState {
   std::mutex mutex;
   std::condition_variable cv;
   std::vector<WaitList> waitlists;
+  GlobalWaitList global_waitlist;
+  std::vector<uint8_t> completed_lsn;
+  uint64_t durable_global_lsn = 0;
   std::deque<std::shared_ptr<PendingTxn>> ready;
   std::vector<uint32_t> ack_latency_samples;
   uint64_t sample_counter = 0;
@@ -582,6 +598,41 @@ void pushReadyLocked(CommitterState& state, const std::shared_ptr<PendingTxn>& t
   updateMax(stats.max_ready_queue_len, state.ready.size());
 }
 
+void drainGlobalWaitlistLocked(CommitterState& state, Stats& stats) {
+  while (!state.global_waitlist.empty() &&
+         state.global_waitlist.top().need <= state.durable_global_lsn) {
+    std::shared_ptr<PendingTxn> txn = state.global_waitlist.top().txn;
+    state.global_waitlist.pop();
+    stats.waitlist_pops.fetch_add(1, std::memory_order_relaxed);
+    pushReadyLocked(state, txn, stats);
+  }
+}
+
+void markGlobalLsnCompleteLocked(CommitterState& state,
+                                 const std::shared_ptr<PendingTxn>& txn,
+                                 Stats& stats) {
+  if (txn->lsn == 0) return;
+  if (state.completed_lsn.size() <= txn->lsn) {
+    state.completed_lsn.resize(txn->lsn + 1, 0);
+  }
+  state.completed_lsn[txn->lsn] = 1;
+  while (state.durable_global_lsn + 1 < state.completed_lsn.size() &&
+         state.completed_lsn[state.durable_global_lsn + 1] != 0) {
+    state.durable_global_lsn++;
+  }
+  drainGlobalWaitlistLocked(state, stats);
+}
+
+void onLocalConditionsClosedLocked(CommitterState& state,
+                                   const std::shared_ptr<PendingTxn>& txn,
+                                   Stats& stats) {
+  if (txn->needs_global_lsn_prefix) {
+    markGlobalLsnCompleteLocked(state, txn, stats);
+  } else {
+    pushReadyLocked(state, txn, stats);
+  }
+}
+
 void drainWaitlistLocked(CommitterState& state, uint32_t logger_id, uint64_t durable,
                          Stats& stats) {
   auto& waitlist = state.waitlists[logger_id];
@@ -594,7 +645,7 @@ void drainWaitlistLocked(CommitterState& state, uint32_t logger_id, uint64_t dur
     }
     --txn->remaining;
     if (txn->remaining == 0) {
-      pushReadyLocked(state, txn, stats);
+      onLocalConditionsClosedLocked(state, txn, stats);
     }
   }
 }
@@ -609,6 +660,15 @@ void registerTxn(CommitterState& state, const std::shared_ptr<PendingTxn>& txn,
     txn->remaining = 0;
     state.pending_count++;
     updateMax(stats.max_pending_len, state.pending_count);
+    if (txn->needs_global_lsn_prefix) {
+      if (state.completed_lsn.size() <= txn->lsn) {
+        state.completed_lsn.resize(txn->lsn + 1, 0);
+      }
+      state.global_waitlist.push(WaitEntry{txn->lsn, txn});
+      stats.waitlist_registrations.fetch_add(1, std::memory_order_relaxed);
+      stats.waiting_conditions.fetch_add(1, std::memory_order_relaxed);
+      updateMax(stats.max_global_waitlist_len, state.global_waitlist.size());
+    }
     for (uint32_t i = 0; i < txn->req.size(); ++i) {
       const uint64_t need = txn->req[i];
       if (need == 0) continue;
@@ -626,7 +686,7 @@ void registerTxn(CommitterState& state, const std::shared_ptr<PendingTxn>& txn,
       drainWaitlistLocked(state, i, durable, stats);
     }
     if (txn->remaining == 0) {
-      pushReadyLocked(state, txn, stats);
+      onLocalConditionsClosedLocked(state, txn, stats);
     }
     ready = state.ready.size() != ready_before;
   }
@@ -870,6 +930,7 @@ void runAsyncWorker(
     txn->op_start_ns = op_start;
     txn->enqueue_ns = nowNs();
     txn->bytes = header.size() + record.size();
+    txn->needs_global_lsn_prefix = opt.mode == Mode::AsyncGlobalLsnPrefix;
     txn->req = std::move(req);
     app_worker.outstanding.fetch_add(1, std::memory_order_acq_rel);
     stats.logical_commits.fetch_add(1, std::memory_order_relaxed);
@@ -970,6 +1031,7 @@ int main(int argc, char** argv) {
                              std::ref(stats), std::ref(frontier_states), std::ref(start),
                              std::ref(stop), std::ref(samples[i]));
         break;
+      case Mode::AsyncGlobalLsnPrefix:
       case Mode::AsyncGlobalPrefixLsn:
       case Mode::AsyncLocalOnlyLsn:
       case Mode::AsyncDepFrontierLsn:
@@ -1067,6 +1129,11 @@ int main(int argc, char** argv) {
     all_lat.insert(all_lat.end(), committer_state.ack_latency_samples.begin(),
                    committer_state.ack_latency_samples.end());
   }
+  uint64_t durable_global_lsn = 0;
+  {
+    std::lock_guard<std::mutex> guard(committer_state.mutex);
+    durable_global_lsn = committer_state.durable_global_lsn;
+  }
   uint32_t p50 = percentile(all_lat, 0.50);
   uint32_t p99 = percentile(all_lat, 0.99);
   const uint64_t bytes = stats.bytes.load(std::memory_order_acquire);
@@ -1144,7 +1211,9 @@ int main(int argc, char** argv) {
   std::cout << "ready_queue_pushes: " << stats.ready_queue_pushes.load(std::memory_order_acquire) << "\n";
   std::cout << "max_ready_queue_len: " << stats.max_ready_queue_len.load(std::memory_order_acquire) << "\n";
   std::cout << "max_waitlist_len: " << stats.max_waitlist_len.load(std::memory_order_acquire) << "\n";
+  std::cout << "max_global_waitlist_len: " << stats.max_global_waitlist_len.load(std::memory_order_acquire) << "\n";
   std::cout << "max_pending_len: " << stats.max_pending_len.load(std::memory_order_acquire) << "\n";
   std::cout << "waiting_conditions: " << stats.waiting_conditions.load(std::memory_order_acquire) << "\n";
+  std::cout << "durable_global_lsn: " << durable_global_lsn << "\n";
   return 0;
 }

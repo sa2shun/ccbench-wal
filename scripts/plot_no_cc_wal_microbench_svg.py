@@ -13,6 +13,7 @@ SERIES_COLORS = {
     "pwal_group_commit": "#1f77b4",
     "pwal_group_commit_no_prefix": "#2ca02c",
     "pwal_group_dep_frontier": "#17becf",
+    "async_global_lsn_prefix": "#d62728",
     "async_global_prefix_lsn": "#1f77b4",
     "async_local_only_lsn": "#2ca02c",
     "async_dep_frontier_lsn": "#17becf",

@@ -13,6 +13,7 @@ EXE = ROOT / "build" / "no_cc_wal_microbench.exe"
 SRC = ROOT / "tools" / "no_cc_wal_microbench.cc"
 
 MODES = [
+    "async_global_lsn_prefix",
     "async_global_prefix_lsn",
     "async_local_only_lsn",
     "async_dep_frontier_lsn",
@@ -20,6 +21,7 @@ MODES = [
 ]
 
 MODE_LABELS = {
+    "async_global_lsn_prefix": "async global LSN prefix",
     "async_global_prefix_lsn": "async global prefix",
     "async_local_only_lsn": "async local-only upper",
     "async_dep_frontier_lsn": "async dep frontier LSN",
@@ -27,6 +29,7 @@ MODE_LABELS = {
 }
 
 COLORS = {
+    "async_global_lsn_prefix": "#d62728",
     "async_global_prefix_lsn": "#1f77b4",
     "async_local_only_lsn": "#2ca02c",
     "async_dep_frontier_lsn": "#17becf",

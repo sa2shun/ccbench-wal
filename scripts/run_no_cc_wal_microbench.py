@@ -20,6 +20,7 @@ MODES = [
     "pwal_group_commit",
     "pwal_group_commit_no_prefix",
     "pwal_group_dep_frontier",
+    "async_global_lsn_prefix",
     "async_global_prefix_lsn",
     "async_local_only_lsn",
     "async_dep_frontier_lsn",

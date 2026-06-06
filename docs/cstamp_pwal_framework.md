@@ -23,6 +23,7 @@ WAL durability protocol だけで次の比較ができる状態を作ること�
 | `pwal_group_commit` | P-WAL + group commit + global prefix | safe but conservative | logger shard ごとに batch flush し、全 shard の durable prefix を待つ |
 | `pwal_group_commit_no_prefix` | local-durable only upper bound | unsafe | 自分の logger shard だけ durable なら ack |
 | `pwal_group_dep_frontier` | dependency frontier baseline | synthetic 条件では safe | 自分の log と synthetic dependency frontier の durable を worker が待つ |
+| `async_global_lsn_prefix` | true global LSN prefix baseline | safe but conservative | `completed[LSN]` bitmap から `durable_global_lsn` を前進させ、`durable_global_lsn >= LSN(T)` で ack |
 | `async_global_prefix_lsn` | async pipeline + global prefix | safe but conservative | 同じ async pipeline で global durable frontier snapshot を待つ |
 | `async_local_only_lsn` | async local-only upper bound | unsafe | 同じ async pipeline で自分の shard だけ待つ |
 | `async_dep_frontier_lsn` | async dependency frontier baseline | synthetic 条件では safe | dependency frontier は使うが cstamp と global LSN は別々に取る |
@@ -54,6 +55,7 @@ crash recovery 後に依存先が欠ける可能性がある。
 | mode | durable condition | order id | pipeline |
 |---|---|---|---|
 | `pwal_group_dep_frontier` | dependency frontier | separate LSN 相当 | worker-wait |
+| `async_global_lsn_prefix` | true global LSN prefix | separate LSN | async |
 | `async_global_prefix_lsn` | global prefix | separate LSN | async |
 | `async_local_only_lsn` | local only | separate LSN | async |
 | `async_dep_frontier_lsn` | dependency frontier | separate LSN | async |
@@ -100,6 +102,27 @@ no-CC では本物の read/write dependency がないため、dependency は syn
 
 依存を作る transaction は、target shard が publish している frontier を merge する。
 これにより、transitive dependency frontier を近似する。
+
+## Actual KV dependency
+
+`tools/kv_dep_wal_microbench.cc` は、synthetic dependency ではなく、
+record metadata から actual read/write dependency frontier を作る。
+
+各 record は次を持つ。
+
+```text
+read_frontier
+write_frontier
+```
+
+transaction は read 時に `record.write_frontier` を merge し、
+write 時に `record.write_frontier` と `record.read_frontier` を merge する。
+commit で local log position が決まった後、
+`closed_frontier = dep; closed_frontier[log_id] = local_seq` とし、
+read/write set の record frontier に publish する。
+
+これは ERMIA 接続前の小さい actual-dependency workload であり、
+依存関係を作り物の確率だけにしないための中間段階である。
 
 ## 主要 counter
 
@@ -167,6 +190,35 @@ CSTAMP_PWAL_PREALLOC_MB=64 \
 CSTAMP_PWAL_STRAGGLER_LOGGER=3 \
 CSTAMP_PWAL_STRAGGLER_SLEEP_US=1000 \
 python3 scripts/run_cstamp_pwal_dep_sweep.py
+```
+
+deterministic correctness test を実行する。
+
+```bash
+g++ -O2 -std=c++17 tools/cstamp_pwal_correctness_test.cc \
+  -o build/cstamp_pwal_correctness_test.exe
+./build/cstamp_pwal_correctness_test.exe
+```
+
+actual KV dependency sweep を取る。
+
+```bash
+KV_DEP_SECONDS=5 \
+KV_DEP_REPEATS=5 \
+KV_DEP_THREAD_NUM=32 \
+KV_DEP_LOGGER_NUM=4 \
+KV_DEP_KEYS_PER_LOGGER=1024 \
+python3 scripts/run_kv_dep_wal_microbench.py
+```
+
+actual KV 上で worker-wait と async pipeline を比較する。
+
+```bash
+KV_DEP_SECONDS=5 \
+KV_DEP_REPEATS=5 \
+KV_DEP_LOGGER_NUM=4 \
+KV_DEP_REMOTE_READ_PROB_PPM=100000 \
+python3 scripts/run_kv_dep_pipeline_sweep.py
 ```
 
 async pipeline の `max_inflight` sweep を取る。
@@ -250,6 +302,56 @@ results/cstamp_pwal_dep_sweep_20260606_131744/
 
 ```text
 results/cstamp_pwal_inflight_sweep_20260606_131836/
+```
+
+## Smoke result: correctness
+
+2026-06-06 13:40 JST に deterministic correctness test を実行した。
+
+| mode | independent reversed flush | dependent reversed flush | acked recovered | dependency violation |
+|---|---|---|---|---|
+| local-only | pass | fail | no | yes |
+| global-prefix | pass | pass | yes | no |
+| dep-frontier-lsn | pass | pass | yes | no |
+| dep-frontier-cstamp | pass | pass | yes | no |
+
+この表の意味は、local-only は依存先 U が durable でない時点でも T に ack を返せるため unsafe であり、
+global prefix / dependency frontier / cstamp frontier は reversed physical flush order でも安全ということ。
+
+## Smoke result: actual KV dependency
+
+2026-06-06 13:41 JST に、4 threads / 2 loggers / 1 second の actual KV dependency sweep を実行した。
+
+| mode | remote=0 | remote=0.10 | remote=1.00 |
+|---|---:|---:|---:|
+| `async_global_lsn_prefix` | 372320 | 438537 | 384287 |
+| `async_local_only_lsn` | 548400 | 563160 | 530402 |
+| `async_dep_frontier_lsn` | 591865 | 507835 | 445498 |
+| `async_dep_frontier_cstamp` | 575891 | 564791 | 522448 |
+
+生成物:
+
+```text
+results/kv_dep_wal_microbench_20260606_134105/
+```
+
+2026-06-06 13:44 JST に、actual KV 上で worker-wait と async pipeline の軽量 thread sweep を実行した。
+
+| mode | 1 | 2 | 4 | 8 | 16 | 32 |
+|---|---:|---:|---:|---:|---:|---:|
+| `pwal_group_dep_frontier` | 5574 | 11010 | 21652 | 42829 | 85250 | 550567 |
+| `async_dep_frontier_lsn` | 534927 | 454805 | 585792 | 426183 | 342099 | 359282 |
+| `async_dep_frontier_cstamp` | 575085 | 491604 | 623891 | 528885 | 373296 | 361334 |
+
+この smoke は最終値ではない。
+ただし actual read/write dependency から frontier を作り、
+`async_dep_frontier_lsn` は `atomic/tx=2`、
+`async_dep_frontier_cstamp` は `atomic/tx=1` として測れることを確認している。
+
+生成物:
+
+```text
+results/kv_dep_pipeline_sweep_20260606_134414/
 ```
 
 ## 現在の範囲
