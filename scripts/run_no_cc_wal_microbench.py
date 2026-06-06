@@ -20,7 +20,10 @@ MODES = [
     "pwal_group_commit",
     "pwal_group_commit_no_prefix",
     "pwal_group_dep_frontier",
-    "cstamp_pwal_async_dep_frontier",
+    "async_global_prefix_lsn",
+    "async_local_only_lsn",
+    "async_dep_frontier_lsn",
+    "async_dep_frontier_cstamp",
 ]
 SECONDS = int(os.environ.get("NO_CC_WAL_SECONDS", "2"))
 REPEATS = int(os.environ.get("NO_CC_WAL_REPEATS", "1"))
@@ -34,6 +37,10 @@ DEP_PROB_PPM = int(os.environ.get("NO_CC_WAL_DEP_PROB_PPM", "0"))
 DEP_FANOUT = int(os.environ.get("NO_CC_WAL_DEP_FANOUT", "1"))
 MAX_INFLIGHT = int(os.environ.get("NO_CC_WAL_MAX_INFLIGHT", "1024"))
 COMMITTER_POLL_US = int(os.environ.get("NO_CC_WAL_COMMITTER_POLL_US", "50"))
+STRAGGLER_LOGGER = int(os.environ.get("NO_CC_WAL_STRAGGLER_LOGGER", "-1"))
+STRAGGLER_SLEEP_US = int(os.environ.get("NO_CC_WAL_STRAGGLER_SLEEP_US", "0"))
+STRAGGLER_EXTRA_BYTES = int(os.environ.get("NO_CC_WAL_STRAGGLER_EXTRA_BYTES", "0"))
+SKIP_FDATASYNC = int(os.environ.get("NO_CC_WAL_SKIP_FDATASYNC", "0"))
 
 
 def build():
@@ -105,6 +112,10 @@ def run_case(stamp, mode, th, repeat):
         f"--dep_fanout={DEP_FANOUT}",
         f"--max_inflight={MAX_INFLIGHT}",
         f"--committer_poll_us={COMMITTER_POLL_US}",
+        f"--straggler_logger={STRAGGLER_LOGGER}",
+        f"--straggler_sleep_us={STRAGGLER_SLEEP_US}",
+        f"--straggler_extra_bytes={STRAGGLER_EXTRA_BYTES}",
+        f"--skip_fdatasync={SKIP_FDATASYNC}",
         f"--wal_dir={wal_dir}",
     ]
     stdout_path = logs / f"{mode}_{th}_r{repeat}.out"
@@ -153,6 +164,10 @@ def write_markdown(result_path, rows):
         print(f"dep_fanout: {DEP_FANOUT}", file=f)
         print(f"max_inflight: {MAX_INFLIGHT}", file=f)
         print(f"committer_poll_us: {COMMITTER_POLL_US}", file=f)
+        print(f"straggler_logger: {STRAGGLER_LOGGER}", file=f)
+        print(f"straggler_sleep_us: {STRAGGLER_SLEEP_US}", file=f)
+        print(f"straggler_extra_bytes: {STRAGGLER_EXTRA_BYTES}", file=f)
+        print(f"skip_fdatasync: {SKIP_FDATASYNC}", file=f)
         print("", file=f)
         print("## Throughput mean", file=f)
         print("", file=f)
@@ -178,8 +193,8 @@ def write_markdown(result_path, rows):
         print("", file=f)
         print("## 32-thread detail", file=f)
         print("", file=f)
-        print("| mode | tps mean | tps stddev | closed-loop avg us | sampled p50 us | sampled p99 us | fdatasync/s | commits/fdatasync | MB/s | build% | cstamp% | mutex% | write% | fdatasync% | prefix_wait% | dep_edges/tx |", file=f)
-        print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|", file=f)
+        print("| mode | tps mean | tps stddev | closed-loop avg us | sampled p50 us | sampled p99 us | fdatasync/s | commits/fdatasync | MB/s | build% | cstamp% | lsn% | mutex% | write% | fdatasync% | prefix_wait% | dep_edges/tx | atomic/tx |", file=f)
+        print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|", file=f)
         for mode in MODES:
             rs = by_mode_th[(mode, 32)]
             r = rs[0]
@@ -203,11 +218,13 @@ def write_markdown(result_path, rows):
                         f"{mbps:.1f}",
                         pct(r.get("payload_build_ns", "0"), denom_ns),
                         pct(r.get("cstamp_alloc_ns", "0"), denom_ns),
+                        pct(r.get("lsn_alloc_ns", "0"), denom_ns),
                         pct(r.get("mutex_wait_ns", "0"), denom_ns),
                         pct(r.get("write_ns", "0"), denom_ns),
                         pct(r.get("fdatasync_ns", "0"), denom_ns),
                         pct(r.get("prefix_wait_ns", "0"), denom_ns),
                         f"{avg('dep_edges') / max(avg('commits'), 1.0):.3f}",
+                        f"{avg('global_atomic_count') / max(avg('commits'), 1.0):.2f}",
                     ]
                 )
                 + " |",
@@ -222,7 +239,7 @@ def write_markdown(result_path, rows):
         print("- `pwal_group_commit` batches fdatasync but waits for a global durable prefix across logger shards.", file=f)
         print("- `pwal_group_commit_no_prefix` waits only for the local logger shard. This is an unsafe upper bound for general transaction workloads.", file=f)
         print("- `pwal_group_dep_frontier` waits for local durability plus a synthetic dependency frontier. Workers still wait.", file=f)
-        print("- `cstamp_pwal_async_dep_frontier` uses cstamp as the logical LSN and splits worker / flusher / committer. Throughput is durable ack throughput.", file=f)
+        print("- `async_global_prefix_lsn`, `async_local_only_lsn`, `async_dep_frontier_lsn`, and `async_dep_frontier_cstamp` use the same worker/flusher/committer pipeline.", file=f)
     return md
 
 

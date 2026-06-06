@@ -23,15 +23,22 @@ WAL durability protocol だけで次の比較ができる状態を作ること�
 | `pwal_group_commit` | P-WAL + group commit + global prefix | safe but conservative | logger shard ごとに batch flush し、全 shard の durable prefix を待つ |
 | `pwal_group_commit_no_prefix` | local-durable only upper bound | unsafe | 自分の logger shard だけ durable なら ack |
 | `pwal_group_dep_frontier` | dependency frontier baseline | synthetic 条件では safe | 自分の log と synthetic dependency frontier の durable を worker が待つ |
-| `cstamp_pwal_async_dep_frontier` | 提案方式の no-CC skeleton | synthetic 条件では safe | cstamp を logical LSN とし、worker / flusher / committer を分離 |
+| `async_global_prefix_lsn` | async pipeline + global prefix | safe but conservative | 同じ async pipeline で global durable frontier snapshot を待つ |
+| `async_local_only_lsn` | async local-only upper bound | unsafe | 同じ async pipeline で自分の shard だけ待つ |
+| `async_dep_frontier_lsn` | async dependency frontier baseline | synthetic 条件では safe | dependency frontier は使うが cstamp と global LSN は別々に取る |
+| `async_dep_frontier_cstamp` | 提案方式の no-CC skeleton | synthetic 条件では safe | cstamp を logical LSN とし、worker / flusher / committer を分離 |
 
 `pwal_group_commit_no_prefix` は必ず unsafe upper bound として扱う。
 一般 workload では、別 shard の transaction に依存しているのに local log だけ durable で ack を返すと、
 crash recovery 後に依存先が欠ける可能性がある。
+`async_local_only_lsn` も同じ理由で unsafe upper bound である。
+
+旧名 `cstamp_pwal_async_dep_frontier` は互換用 alias として残しているが、
+新しい実験では `async_dep_frontier_cstamp` を使う。
 
 ## Cstamp-PWAL skeleton
 
-`cstamp_pwal_async_dep_frontier` は次の分離を実装している。
+`async_dep_frontier_cstamp` は次の分離を実装している。
 
 | 要素 | 役割 |
 |---|---|
@@ -40,6 +47,17 @@ crash recovery 後に依存先が欠ける可能性がある。
 | `local_seq` | WAL shard 内の physical log position |
 | `dep` | ack に必要な per-shard durable frontier |
 | `durable_seq[logger_id]` | flusher が `fdatasync` 完了後に更新する local durable point |
+
+`async_dep_frontier_lsn` は、これに加えて separate global LSN を atomic allocate する。
+つまり no-CC ablation では次を比較できる。
+
+| mode | durable condition | order id | pipeline |
+|---|---|---|---|
+| `pwal_group_dep_frontier` | dependency frontier | separate LSN 相当 | worker-wait |
+| `async_global_prefix_lsn` | global prefix | separate LSN | async |
+| `async_local_only_lsn` | local only | separate LSN | async |
+| `async_dep_frontier_lsn` | dependency frontier | separate LSN | async |
+| `async_dep_frontier_cstamp` | dependency frontier | cstamp as logical LSN | async |
 
 worker は log record を作り、synthetic dependency frontier を作り、WAL queue に enqueue する。
 その後、worker は `fdatasync` や durable wait を直接待たず、次の transaction 生成に進む。
@@ -94,6 +112,8 @@ no-CC では本物の read/write dependency がないため、dependency は syn
 | `acked_throughput_tps` | durable ack throughput。論文の main metric |
 | `payload_build_ns` | log payload 作成時間 |
 | `cstamp_alloc_ns` | cstamp atomic allocation 時間 |
+| `lsn_alloc_ns` | separate global LSN allocation 時間 |
+| `global_atomic_count` | cstamp / LSN の global atomic allocation 回数 |
 | `mutex_wait_ns` | WAL queue / single WAL mutex 待ち |
 | `write_ns` | `write` system call 時間 |
 | `fdatasync_ns` | `fdatasync` 時間 |
@@ -136,11 +156,11 @@ CSTAMP_PWAL_PREALLOC_MB=64 \
 python3 scripts/run_cstamp_pwal_dep_sweep.py
 ```
 
-straggler + dependency probability sweep を取る。
+straggler + async ablation dependency probability sweep を取る。
 
 ```bash
-CSTAMP_PWAL_SECONDS=1 \
-CSTAMP_PWAL_REPEATS=1 \
+CSTAMP_PWAL_SECONDS=5 \
+CSTAMP_PWAL_REPEATS=5 \
 CSTAMP_PWAL_THREAD_NUM=32 \
 CSTAMP_PWAL_LOGGER_NUM=4 \
 CSTAMP_PWAL_PREALLOC_MB=64 \
@@ -162,58 +182,74 @@ CSTAMP_PWAL_STRAGGLER_SLEEP_US=1000 \
 python3 scripts/run_cstamp_pwal_inflight_sweep.py
 ```
 
+I/O-light 条件で cstamp と separate LSN の atomic cost を見る。
+これは durability correctness 用の条件ではなく、fdatasync bottleneck を外して
+global atomic allocation cost を見やすくするための条件である。
+
+```bash
+CSTAMP_PWAL_SECONDS=2 \
+CSTAMP_PWAL_REPEATS=3 \
+CSTAMP_PWAL_THREAD_NUM=32 \
+CSTAMP_PWAL_LOGGER_NUM=4 \
+CSTAMP_PWAL_GROUP_SIZE=64 \
+CSTAMP_PWAL_FLUSH_US=1000 \
+CSTAMP_PWAL_SKIP_FDATASYNC=1 \
+python3 scripts/run_cstamp_pwal_dep_sweep.py
+```
+
 dependency sweep は次を出力する。
 
 - CSV
 - Markdown report
 - throughput SVG
 - p99 latency SVG
+inflight sweep は上記に加えて Pareto SVG も出力する。
 
-## Smoke result: event-driven committer
+## Smoke result: async ablation
 
-2026-06-06 12:56 JST に、8 threads / 4 loggers / 1 second /
+2026-06-06 13:17 JST に、8 threads / 4 loggers / 1 second /
 `straggler_logger=3` / `straggler_sleep_us=1000` の軽量 sweep を実行した。
 これは論文用の最終値ではなく、実装と出力形式の確認である。
 
 | mode | dep=0 tps | dep=0.10 tps | dep=1.00 tps |
 |---|---:|---:|---:|
-| `pwal_group_commit` | 6320 | 6304 | 6336 |
-| `pwal_group_commit_no_prefix` | 29809 | 30665 | 30643 |
-| `pwal_group_dep_frontier` | 30212 | 28689 | 13764 |
-| `cstamp_pwal_async_dep_frontier` | 568365 | 373959 | 321158 |
+| `async_global_prefix_lsn` | 332011 | 345648 | 382169 |
+| `async_local_only_lsn` | 540631 | 553861 | 528920 |
+| `async_dep_frontier_lsn` | 527440 | 497304 | 347806 |
+| `async_dep_frontier_cstamp` | 526408 | 496032 | 356498 |
 
-この条件では、global prefix は slow logger に全体が引っ張られて約 6.3K tx/s に落ちる。
-local-only は約 30K tx/s だが一般には unsafe upper bound である。
+この表は、すべて同じ async pipeline 上での比較である。
+そのため、worker/flusher/committer 分離の効果ではなく、
+durable condition と cstamp/LSN 統合の差を見るための smoke result である。
+
+local-only は同じ async pipeline 上の unsafe upper bound である。
 dependency frontier は dep_prob が低いと local-only に近く、
-dep_prob が 1.0 に近づくほど slow logger への依存が増えて落ちる。
-
-`cstamp_pwal_async_dep_frontier` は event-driven waitlist committer により、
-旧 scan 型 smoke の約 20K tx/s から大きく改善した。
-ただし max_inflight が大きい条件では p99 durable ack latency が ms 単位まで増えるため、
-throughput と latency の trade-off として扱う。
+dep_prob が 1.0 に近づくほど global-prefix 側へ近づく。
+`async_dep_frontier_lsn` は global atomic allocation が 2 回/tx、
+`async_dep_frontier_cstamp` は 1 回/tx であり、表の `atomic/tx` で確認できる。
 
 生成物:
 
 ```text
-results/cstamp_pwal_dep_sweep_20260606_125548/
+results/cstamp_pwal_dep_sweep_20260606_131744/
 ```
 
-同条件で `max_inflight` sweep も実行した。
+同条件で `async_dep_frontier_cstamp` の `max_inflight` sweep も実行した。
 
 | max_inflight | ack tps | p99 us | queue_wait_us/tx | max_pending |
 |---:|---:|---:|---:|---:|
-| 1 | 28180 | 1239 | 276.6 | 9 |
-| 2 | 49776 | 1343 | 311.0 | 17 |
-| 4 | 103759 | 1243 | 293.0 | 33 |
-| 8 | 136962 | 2386 | 451.2 | 65 |
-| 16 | 196830 | 2579 | 630.8 | 129 |
-| 32 | 298291 | 2638 | 820.9 | 257 |
-| 64 | 391852 | 2856 | 1240.9 | 513 |
+| 1 | 27579 | 1242 | 282.5 | 9 |
+| 2 | 48589 | 1340 | 318.5 | 17 |
+| 4 | 98902 | 1250 | 307.0 | 33 |
+| 8 | 128125 | 2464 | 482.8 | 65 |
+| 16 | 193909 | 2591 | 638.5 | 129 |
+| 32 | 335635 | 2648 | 724.8 | 257 |
+| 64 | 423314 | 2838 | 1118.8 | 513 |
 
 生成物:
 
 ```text
-results/cstamp_pwal_inflight_sweep_20260606_125632/
+results/cstamp_pwal_inflight_sweep_20260606_131836/
 ```
 
 ## 現在の範囲

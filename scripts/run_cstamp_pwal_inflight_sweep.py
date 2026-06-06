@@ -27,6 +27,8 @@ PREALLOC_MB = int(os.environ.get("CSTAMP_PWAL_PREALLOC_MB", "64"))
 STRAGGLER_LOGGER = int(os.environ.get("CSTAMP_PWAL_STRAGGLER_LOGGER", "-1"))
 STRAGGLER_SLEEP_US = int(os.environ.get("CSTAMP_PWAL_STRAGGLER_SLEEP_US", "0"))
 STRAGGLER_EXTRA_BYTES = int(os.environ.get("CSTAMP_PWAL_STRAGGLER_EXTRA_BYTES", "0"))
+MODE = os.environ.get("CSTAMP_PWAL_MODE", "async_dep_frontier_cstamp")
+SKIP_FDATASYNC = int(os.environ.get("CSTAMP_PWAL_SKIP_FDATASYNC", "0"))
 
 
 def build():
@@ -54,7 +56,7 @@ def run_case(stamp, max_inflight, repeat):
     logs.mkdir(parents=True, exist_ok=True)
     cmd = [
         str(EXE),
-        "--mode=cstamp_pwal_async_dep_frontier",
+        f"--mode={MODE}",
         f"--thread_num={THREAD_NUM}",
         f"--seconds={SECONDS}",
         f"--write_set_size={WRITE_SET_SIZE}",
@@ -69,6 +71,7 @@ def run_case(stamp, max_inflight, repeat):
         f"--straggler_logger={STRAGGLER_LOGGER}",
         f"--straggler_sleep_us={STRAGGLER_SLEEP_US}",
         f"--straggler_extra_bytes={STRAGGLER_EXTRA_BYTES}",
+        f"--skip_fdatasync={SKIP_FDATASYNC}",
         f"--wal_dir={wal_dir}",
     ]
     stdout_path = logs / f"inflight{max_inflight}_r{repeat}.out"
@@ -142,6 +145,55 @@ def write_svg(path, grouped, metric, title, y_label):
         print("</svg>", file=f)
 
 
+def write_pareto_svg(path, grouped):
+    width = 900
+    height = 520
+    left = 88
+    right = 36
+    top = 48
+    bottom = 74
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+    xs = [mean(grouped[v], "latency_p99_us") for v in INFLIGHTS]
+    ys = [mean(grouped[v], "throughput_tps") for v in INFLIGHTS]
+    xmax = max(xs) * 1.10 if xs else 1.0
+    ymax = max(ys) * 1.10 if ys else 1.0
+
+    def x_pos(x):
+        return left + (x / xmax) * plot_w
+
+    def y_pos(y):
+        return top + plot_h - (y / ymax) * plot_h
+
+    with path.open("w") as f:
+        print('<?xml version="1.0" encoding="UTF-8"?>', file=f)
+        print(f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">', file=f)
+        print('<rect width="100%" height="100%" fill="white"/>', file=f)
+        print(f'<text x="{left}" y="28" font-family="sans-serif" font-size="20" font-weight="700">Throughput-latency Pareto</text>', file=f)
+        print(f'<line x1="{left}" y1="{top + plot_h}" x2="{left + plot_w}" y2="{top + plot_h}" stroke="#333"/>', file=f)
+        print(f'<line x1="{left}" y1="{top}" x2="{left}" y2="{top + plot_h}" stroke="#333"/>', file=f)
+        for i in range(6):
+            xv = xmax * i / 5
+            px = x_pos(xv)
+            print(f'<line x1="{px:.1f}" y1="{top}" x2="{px:.1f}" y2="{top + plot_h}" stroke="#eeeeee"/>', file=f)
+            print(f'<text x="{px:.1f}" y="{top + plot_h + 24}" text-anchor="middle" font-family="sans-serif" font-size="12">{xv:.0f}</text>', file=f)
+            yv = ymax * i / 5
+            py = y_pos(yv)
+            print(f'<line x1="{left}" y1="{py:.1f}" x2="{left + plot_w}" y2="{py:.1f}" stroke="#e6e6e6"/>', file=f)
+            print(f'<text x="{left - 10}" y="{py + 4:.1f}" text-anchor="end" font-family="sans-serif" font-size="12">{yv:.0f}</text>', file=f)
+        pts = []
+        for v, x, y in zip(INFLIGHTS, xs, ys):
+            px = x_pos(x)
+            py = y_pos(y)
+            pts.append(f"{px:.1f},{py:.1f}")
+            print(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="5" fill="#8c564b"/>', file=f)
+            print(f'<text x="{px + 8:.1f}" y="{py - 8:.1f}" font-family="sans-serif" font-size="12">{v}</text>', file=f)
+        print(f'<polyline points="{" ".join(pts)}" fill="none" stroke="#8c564b" stroke-width="2.5"/>', file=f)
+        print(f'<text x="{left + plot_w / 2:.1f}" y="{height - 20}" text-anchor="middle" font-family="sans-serif" font-size="14">p99 durable ack latency (us)</text>', file=f)
+        print(f'<text x="18" y="{top + plot_h / 2:.1f}" text-anchor="middle" font-family="sans-serif" font-size="14" transform="rotate(-90 18 {top + plot_h / 2:.1f})">acked tx/s</text>', file=f)
+        print("</svg>", file=f)
+
+
 def write_report(csv_path, rows):
     md = csv_path.with_suffix(".md")
     grouped = {}
@@ -149,8 +201,10 @@ def write_report(csv_path, rows):
         grouped.setdefault(int(r["max_inflight_per_worker"]), []).append(r)
     throughput_svg = csv_path.with_name(csv_path.stem + "_throughput.svg")
     p99_svg = csv_path.with_name(csv_path.stem + "_p99_latency.svg")
+    pareto_svg = csv_path.with_name(csv_path.stem + "_pareto.svg")
     write_svg(throughput_svg, grouped, "throughput_tps", "Acked throughput vs max_inflight", "acked tx/s")
     write_svg(p99_svg, grouped, "latency_p99_us", "Durable ack p99 latency vs max_inflight", "p99 us")
+    write_pareto_svg(pareto_svg, grouped)
 
     with md.open("w") as f:
         print("# Cstamp-PWAL max_inflight sweep", file=f)
@@ -163,18 +217,22 @@ def write_report(csv_path, rows):
         print(f"| logger_num | {LOGGER_NUM} |", file=f)
         print(f"| seconds | {SECONDS} |", file=f)
         print(f"| repeats | {REPEATS} |", file=f)
+        print(f"| mode | {MODE} |", file=f)
         print(f"| group_size | {GROUP_SIZE} |", file=f)
         print(f"| flush_us | {FLUSH_US} |", file=f)
         print(f"| dep_prob_ppm | {DEP_PROB_PPM} |", file=f)
         print(f"| dep_fanout | {DEP_FANOUT} |", file=f)
         print(f"| straggler_logger | {STRAGGLER_LOGGER} |", file=f)
         print(f"| straggler_sleep_us | {STRAGGLER_SLEEP_US} |", file=f)
+        print(f"| skip_fdatasync | {SKIP_FDATASYNC} |", file=f)
         print("", file=f)
         print("## Graphs", file=f)
         print("", file=f)
         print(f"![throughput]({throughput_svg.name})", file=f)
         print("", file=f)
         print(f"![p99 latency]({p99_svg.name})", file=f)
+        print("", file=f)
+        print(f"![pareto]({pareto_svg.name})", file=f)
         print("", file=f)
         print("## Detail", file=f)
         print("", file=f)

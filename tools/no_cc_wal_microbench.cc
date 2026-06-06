@@ -35,7 +35,10 @@ enum class Mode {
   PwalGroupCommit,
   PwalGroupCommitNoPrefix,
   PwalGroupDepFrontier,
-  CstampPwalAsyncDepFrontier,
+  AsyncGlobalPrefixLsn,
+  AsyncLocalOnlyLsn,
+  AsyncDepFrontierLsn,
+  AsyncDepFrontierCstamp,
 };
 
 struct Options {
@@ -55,6 +58,7 @@ struct Options {
   uint32_t dep_fanout = 1;
   uint32_t max_inflight = 1024;
   uint32_t committer_poll_us = 50;
+  bool skip_fdatasync = false;
   std::string wal_dir = "results/no_cc_wal_files";
 };
 
@@ -71,6 +75,7 @@ struct Stats {
   std::atomic<uint64_t> payload_build_ns{0};
   std::atomic<uint64_t> dep_frontier_build_ns{0};
   std::atomic<uint64_t> cstamp_alloc_ns{0};
+  std::atomic<uint64_t> lsn_alloc_ns{0};
   std::atomic<uint64_t> log_enqueue_ns{0};
   std::atomic<uint64_t> mutex_wait_ns{0};
   std::atomic<uint64_t> write_ns{0};
@@ -86,6 +91,7 @@ struct Stats {
   std::atomic<uint64_t> acked_commits{0};
   std::atomic<uint64_t> dep_edges{0};
   std::atomic<uint64_t> dep_frontier_bytes{0};
+  std::atomic<uint64_t> global_atomic_count{0};
   std::atomic<uint64_t> waitlist_registrations{0};
   std::atomic<uint64_t> waitlist_pops{0};
   std::atomic<uint64_t> ready_queue_pushes{0};
@@ -166,8 +172,14 @@ std::string modeName(Mode mode) {
       return "pwal_group_commit_no_prefix";
     case Mode::PwalGroupDepFrontier:
       return "pwal_group_dep_frontier";
-    case Mode::CstampPwalAsyncDepFrontier:
-      return "cstamp_pwal_async_dep_frontier";
+    case Mode::AsyncGlobalPrefixLsn:
+      return "async_global_prefix_lsn";
+    case Mode::AsyncLocalOnlyLsn:
+      return "async_local_only_lsn";
+    case Mode::AsyncDepFrontierLsn:
+      return "async_dep_frontier_lsn";
+    case Mode::AsyncDepFrontierCstamp:
+      return "async_dep_frontier_cstamp";
   }
   return "unknown";
 }
@@ -180,9 +192,39 @@ Mode parseMode(const std::string& s) {
   if (s == "pwal_group_commit") return Mode::PwalGroupCommit;
   if (s == "pwal_group_commit_no_prefix") return Mode::PwalGroupCommitNoPrefix;
   if (s == "pwal_group_dep_frontier") return Mode::PwalGroupDepFrontier;
-  if (s == "cstamp_pwal_async_dep_frontier") return Mode::CstampPwalAsyncDepFrontier;
+  if (s == "async_global_prefix_lsn") return Mode::AsyncGlobalPrefixLsn;
+  if (s == "async_local_only_lsn") return Mode::AsyncLocalOnlyLsn;
+  if (s == "async_dep_frontier_lsn") return Mode::AsyncDepFrontierLsn;
+  if (s == "async_dep_frontier_cstamp") return Mode::AsyncDepFrontierCstamp;
+  if (s == "cstamp_pwal_async_dep_frontier") return Mode::AsyncDepFrontierCstamp;
   std::cerr << "unknown mode: " << s << "\n";
   std::exit(2);
+}
+
+bool isAsyncMode(Mode mode) {
+  return mode == Mode::AsyncGlobalPrefixLsn ||
+         mode == Mode::AsyncLocalOnlyLsn ||
+         mode == Mode::AsyncDepFrontierLsn ||
+         mode == Mode::AsyncDepFrontierCstamp;
+}
+
+bool isGroupedWalMode(Mode mode) {
+  return mode == Mode::SingleWalGroupCommit ||
+         mode == Mode::PwalGroupCommit ||
+         mode == Mode::PwalGroupCommitNoPrefix ||
+         mode == Mode::PwalGroupDepFrontier ||
+         isAsyncMode(mode);
+}
+
+bool asyncUsesDependencyFrontier(Mode mode) {
+  return mode == Mode::AsyncDepFrontierLsn ||
+         mode == Mode::AsyncDepFrontierCstamp;
+}
+
+bool asyncUsesSeparateLsn(Mode mode) {
+  return mode == Mode::AsyncGlobalPrefixLsn ||
+         mode == Mode::AsyncLocalOnlyLsn ||
+         mode == Mode::AsyncDepFrontierLsn;
 }
 
 bool startsWith(const char* arg, const char* prefix) {
@@ -213,6 +255,7 @@ Options parseOptions(int argc, char** argv) {
     else if (startsWith(a, "--dep_fanout=")) opt.dep_fanout = std::stoul(argValue(a, "--dep_fanout="));
     else if (startsWith(a, "--max_inflight=")) opt.max_inflight = std::stoul(argValue(a, "--max_inflight="));
     else if (startsWith(a, "--committer_poll_us=")) opt.committer_poll_us = std::stoul(argValue(a, "--committer_poll_us="));
+    else if (startsWith(a, "--skip_fdatasync=")) opt.skip_fdatasync = std::stoul(argValue(a, "--skip_fdatasync=")) != 0;
     else if (startsWith(a, "--wal_dir=")) opt.wal_dir = argValue(a, "--wal_dir=");
     else {
       std::cerr << "unknown arg: " << a << "\n";
@@ -367,6 +410,27 @@ bool isDependencyFrontierClosed(const std::vector<WorkerState>& loggers,
   return true;
 }
 
+std::vector<uint64_t> buildAsyncRequirement(Mode mode, uint32_t logger_id,
+                                            uint64_t local_seq,
+                                            const std::vector<uint64_t>& dep,
+                                            const std::vector<WorkerState>& loggers) {
+  std::vector<uint64_t> req(loggers.size(), 0);
+  if (mode == Mode::AsyncGlobalPrefixLsn) {
+    for (uint32_t i = 0; i < loggers.size(); ++i) {
+      req[i] = loggers[i].local_seq.load(std::memory_order_acquire);
+    }
+    req[logger_id] = std::max(req[logger_id], local_seq);
+    return req;
+  }
+  if (mode == Mode::AsyncLocalOnlyLsn) {
+    req[logger_id] = local_seq;
+    return req;
+  }
+  req = dep;
+  req[logger_id] = std::max(req[logger_id], local_seq);
+  return req;
+}
+
 uint32_t percentile(std::vector<uint32_t>& values, double p) {
   if (values.empty()) return 0;
   std::sort(values.begin(), values.end());
@@ -417,12 +481,14 @@ void runSingleWalWorker(uint32_t thid, const Options& opt, int fd, std::mutex& m
     const uint64_t write_start = nowNs();
     writeAll(fd, record.data(), record.size());
     stats.write_ns.fetch_add(nowNs() - write_start, std::memory_order_relaxed);
-    const uint64_t fsync_start = nowNs();
-    if (::fdatasync(fd) != 0) die("fdatasync");
-    stats.fdatasync_ns.fetch_add(nowNs() - fsync_start, std::memory_order_relaxed);
+    if (!opt.skip_fdatasync) {
+      const uint64_t fsync_start = nowNs();
+      if (::fdatasync(fd) != 0) die("fdatasync");
+      stats.fdatasync_ns.fetch_add(nowNs() - fsync_start, std::memory_order_relaxed);
+      stats.fsync_count.fetch_add(1, std::memory_order_relaxed);
+      worker.fsync_count.fetch_add(1, std::memory_order_relaxed);
+    }
     mutex.unlock();
-    stats.fsync_count.fetch_add(1, std::memory_order_relaxed);
-    worker.fsync_count.fetch_add(1, std::memory_order_relaxed);
     worker.commits.fetch_add(1, std::memory_order_relaxed);
     stats.logical_commits.fetch_add(1, std::memory_order_relaxed);
     stats.acked_commits.fetch_add(1, std::memory_order_relaxed);
@@ -447,12 +513,14 @@ void runPwalPerTxnWorker(uint32_t thid, const Options& opt, int fd, WorkerState&
     const uint64_t write_start = nowNs();
     writeAll(fd, record.data(), record.size());
     stats.write_ns.fetch_add(nowNs() - write_start, std::memory_order_relaxed);
-    const uint64_t fsync_start = nowNs();
-    if (::fdatasync(fd) != 0) die("fdatasync");
-    stats.fdatasync_ns.fetch_add(nowNs() - fsync_start, std::memory_order_relaxed);
+    if (!opt.skip_fdatasync) {
+      const uint64_t fsync_start = nowNs();
+      if (::fdatasync(fd) != 0) die("fdatasync");
+      stats.fdatasync_ns.fetch_add(nowNs() - fsync_start, std::memory_order_relaxed);
+      stats.fsync_count.fetch_add(1, std::memory_order_relaxed);
+      worker.fsync_count.fetch_add(1, std::memory_order_relaxed);
+    }
     worker.durable_seq.store(seq, std::memory_order_release);
-    stats.fsync_count.fetch_add(1, std::memory_order_relaxed);
-    worker.fsync_count.fetch_add(1, std::memory_order_relaxed);
     worker.commits.fetch_add(1, std::memory_order_relaxed);
     stats.logical_commits.fetch_add(1, std::memory_order_relaxed);
     stats.acked_commits.fetch_add(1, std::memory_order_relaxed);
@@ -468,6 +536,7 @@ struct PendingTxn {
   uint32_t thid = 0;
   uint64_t worker_seq = 0;
   uint64_t cstamp = 0;
+  uint64_t lsn = 0;
   uint32_t logger_id = 0;
   uint64_t local_seq = 0;
   uint64_t op_start_ns = 0;
@@ -616,13 +685,15 @@ void groupFlusher(uint32_t logger_id, const Options& opt, int fd, GroupQueue& q,
     const uint64_t write_start = nowNs();
     writeAll(fd, data.data(), data.size());
     stats.write_ns.fetch_add(nowNs() - write_start, std::memory_order_relaxed);
-    const uint64_t fsync_start = nowNs();
-    if (::fdatasync(fd) != 0) die("fdatasync");
-    stats.fdatasync_ns.fetch_add(nowNs() - fsync_start, std::memory_order_relaxed);
+    if (!opt.skip_fdatasync) {
+      const uint64_t fsync_start = nowNs();
+      if (::fdatasync(fd) != 0) die("fdatasync");
+      stats.fdatasync_ns.fetch_add(nowNs() - fsync_start, std::memory_order_relaxed);
+      stats.fsync_count.fetch_add(1, std::memory_order_relaxed);
+      logger_state.fsync_count.fetch_add(1, std::memory_order_relaxed);
+    }
     logger_state.durable_seq.store(durable_to, std::memory_order_release);
     onDurableAdvanced(committer_state, logger_id, durable_to, stats);
-    stats.fsync_count.fetch_add(1, std::memory_order_relaxed);
-    logger_state.fsync_count.fetch_add(1, std::memory_order_relaxed);
     logger_state.bytes.fetch_add(data.size(), std::memory_order_relaxed);
     lock.lock();
     q.cv.notify_all();
@@ -725,15 +796,18 @@ void eventDrivenCommitterThread(CommitterState& state,
   }
 }
 
-void runAsyncDepFrontierWorker(
+void runAsyncWorker(
     uint32_t thid, const Options& opt, GroupQueue& q, WorkerState& app_worker,
     uint32_t logger_id, std::vector<WorkerState>& loggers, Stats& stats,
     std::vector<std::unique_ptr<FrontierState>>& frontier_states,
     CommitterState& committer_state, std::atomic<uint64_t>& cstamp_allocator,
+    std::atomic<uint64_t>& lsn_allocator,
     std::atomic<bool>& start, std::atomic<bool>& stop) {
   while (!start.load(std::memory_order_acquire)) {}
   uint64_t seq = 0;
   uint64_t rng = 0x517cc1b727220a95ULL ^ (static_cast<uint64_t>(thid) << 32);
+  const bool use_dep_frontier = asyncUsesDependencyFrontier(opt.mode);
+  const bool use_separate_lsn = asyncUsesSeparateLsn(opt.mode);
   while (!stop.load(std::memory_order_acquire)) {
     const uint64_t stall_start = nowNs();
     while (app_worker.outstanding.load(std::memory_order_acquire) >= opt.max_inflight &&
@@ -748,42 +822,59 @@ void runAsyncDepFrontierWorker(
     std::string record = makeRecord(thid, ++seq, opt);
     stats.payload_build_ns.fetch_add(nowNs() - build_start, std::memory_order_relaxed);
 
-    const uint64_t dep_start = nowNs();
-    std::vector<uint64_t> dep = buildDependencyFrontier(logger_id, opt, frontier_states, rng, stats);
-    stats.dep_frontier_build_ns.fetch_add(nowNs() - dep_start, std::memory_order_relaxed);
+    std::vector<uint64_t> dep(opt.logger_num, 0);
+    if (use_dep_frontier) {
+      const uint64_t dep_start = nowNs();
+      dep = buildDependencyFrontier(logger_id, opt, frontier_states, rng, stats);
+      stats.dep_frontier_build_ns.fetch_add(nowNs() - dep_start, std::memory_order_relaxed);
+    }
 
     const uint64_t cstamp_start = nowNs();
     const uint64_t cstamp = cstamp_allocator.fetch_add(1, std::memory_order_acq_rel) + 1;
     stats.cstamp_alloc_ns.fetch_add(nowNs() - cstamp_start, std::memory_order_relaxed);
+    stats.global_atomic_count.fetch_add(1, std::memory_order_relaxed);
+    uint64_t lsn = 0;
+    if (use_separate_lsn) {
+      const uint64_t lsn_start = nowNs();
+      lsn = lsn_allocator.fetch_add(1, std::memory_order_acq_rel) + 1;
+      stats.lsn_alloc_ns.fetch_add(nowNs() - lsn_start, std::memory_order_relaxed);
+      stats.global_atomic_count.fetch_add(1, std::memory_order_relaxed);
+    }
     const uint64_t local_seq = loggers[logger_id].local_seq.fetch_add(1, std::memory_order_acq_rel) + 1;
+    std::string header = "CSTAMP=" + std::to_string(cstamp) + " ";
+    if (use_separate_lsn) {
+      header += "LSN=" + std::to_string(lsn) + " ";
+    }
     const uint64_t enqueue_start = nowNs();
     {
       const uint64_t wait_start = nowNs();
       std::lock_guard<std::mutex> guard(q.mutex);
       stats.mutex_wait_ns.fetch_add(nowNs() - wait_start, std::memory_order_relaxed);
-      q.buffer += "CSTAMP=" + std::to_string(cstamp) + " ";
+      q.buffer += header;
       q.buffer += record;
       q.max_seq = std::max(q.max_seq, local_seq);
     }
     q.cv.notify_one();
-    publishFrontier(logger_id, local_seq, dep, frontier_states);
+    if (use_dep_frontier) {
+      publishFrontier(logger_id, local_seq, dep, frontier_states);
+    }
 
-    std::vector<uint64_t> req = std::move(dep);
-    req[logger_id] = std::max(req[logger_id], local_seq);
+    std::vector<uint64_t> req = buildAsyncRequirement(opt.mode, logger_id, local_seq, dep, loggers);
     auto txn = std::make_shared<PendingTxn>();
     txn->thid = thid;
     txn->worker_seq = seq;
     txn->cstamp = cstamp;
+    txn->lsn = lsn;
     txn->logger_id = logger_id;
     txn->local_seq = local_seq;
     txn->op_start_ns = op_start;
     txn->enqueue_ns = nowNs();
-    txn->bytes = record.size();
+    txn->bytes = header.size() + record.size();
     txn->req = std::move(req);
     app_worker.outstanding.fetch_add(1, std::memory_order_acq_rel);
     stats.logical_commits.fetch_add(1, std::memory_order_relaxed);
     app_worker.local_seq.store(seq, std::memory_order_release);
-    stats.bytes.fetch_add(record.size(), std::memory_order_relaxed);
+    stats.bytes.fetch_add(txn->bytes, std::memory_order_relaxed);
     registerTxn(committer_state, txn, loggers, stats);
     stats.log_enqueue_ns.fetch_add(nowNs() - enqueue_start, std::memory_order_relaxed);
   }
@@ -807,6 +898,7 @@ int main(int argc, char** argv) {
   std::atomic<bool> start{false};
   std::atomic<bool> stop{false};
   std::atomic<uint64_t> cstamp_allocator{0};
+  std::atomic<uint64_t> lsn_allocator{0};
   std::vector<std::thread> threads;
   std::vector<int> fds;
   std::vector<std::unique_ptr<GroupQueue>> queues;
@@ -822,11 +914,7 @@ int main(int argc, char** argv) {
 
   if (opt.mode == Mode::SingleWal) {
     shared_fd = openWalFile(base + "/shared.wal", opt.prealloc_mb);
-  } else if (opt.mode == Mode::SingleWalGroupCommit ||
-             opt.mode == Mode::PwalGroupCommit ||
-             opt.mode == Mode::PwalGroupCommitNoPrefix ||
-             opt.mode == Mode::PwalGroupDepFrontier ||
-             opt.mode == Mode::CstampPwalAsyncDepFrontier) {
+  } else if (isGroupedWalMode(opt.mode)) {
     fds.resize(opt.logger_num, -1);
     for (uint32_t i = 0; i < opt.logger_num; ++i) {
       fds[i] = openWalFile(base + "/logger_" + std::to_string(i) + ".wal", opt.prealloc_mb);
@@ -838,21 +926,17 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (opt.mode == Mode::SingleWalGroupCommit ||
-      opt.mode == Mode::PwalGroupCommit ||
-      opt.mode == Mode::PwalGroupCommitNoPrefix ||
-      opt.mode == Mode::PwalGroupDepFrontier ||
-      opt.mode == Mode::CstampPwalAsyncDepFrontier) {
+  if (isGroupedWalMode(opt.mode)) {
     queues.reserve(opt.logger_num);
     for (uint32_t i = 0; i < opt.logger_num; ++i) {
       queues.emplace_back(std::make_unique<GroupQueue>());
       flushers.emplace_back(groupFlusher, i, std::cref(opt), fds[i], std::ref(*queues.back()),
                             std::ref(logger_states[i]), std::ref(stats),
-                            opt.mode == Mode::CstampPwalAsyncDepFrontier ? &committer_state : nullptr);
+                            isAsyncMode(opt.mode) ? &committer_state : nullptr);
     }
   }
 
-  if (opt.mode == Mode::CstampPwalAsyncDepFrontier) {
+  if (isAsyncMode(opt.mode)) {
     committer = std::thread(eventDrivenCommitterThread, std::ref(committer_state),
                             std::ref(workers), std::ref(stats));
   }
@@ -886,12 +970,16 @@ int main(int argc, char** argv) {
                              std::ref(stats), std::ref(frontier_states), std::ref(start),
                              std::ref(stop), std::ref(samples[i]));
         break;
-      case Mode::CstampPwalAsyncDepFrontier:
-        threads.emplace_back(runAsyncDepFrontierWorker, i, std::cref(opt),
+      case Mode::AsyncGlobalPrefixLsn:
+      case Mode::AsyncLocalOnlyLsn:
+      case Mode::AsyncDepFrontierLsn:
+      case Mode::AsyncDepFrontierCstamp:
+        threads.emplace_back(runAsyncWorker, i, std::cref(opt),
                              std::ref(*queues[i % opt.logger_num]), std::ref(workers[i]),
                              i % opt.logger_num, std::ref(logger_states), std::ref(stats),
                              std::ref(frontier_states), std::ref(committer_state),
-                             std::ref(cstamp_allocator), std::ref(start), std::ref(stop));
+                             std::ref(cstamp_allocator), std::ref(lsn_allocator),
+                             std::ref(start), std::ref(stop));
         break;
     }
   }
@@ -911,7 +999,7 @@ int main(int argc, char** argv) {
   }
   for (auto& t : flushers) t.join();
 
-  if (opt.mode == Mode::CstampPwalAsyncDepFrontier) {
+  if (isAsyncMode(opt.mode)) {
     for (uint32_t i = 0; i < opt.logger_num; ++i) {
       const uint64_t durable = logger_states[i].durable_seq.load(std::memory_order_acquire);
       onDurableAdvanced(&committer_state, i, durable, stats);
@@ -927,12 +1015,16 @@ int main(int argc, char** argv) {
   const double actual_sec = static_cast<double>(elapsedNs(begin)) / 1e9;
 
   if (shared_fd >= 0) {
-    ::fdatasync(shared_fd);
+    if (!opt.skip_fdatasync) {
+      ::fdatasync(shared_fd);
+    }
     ::close(shared_fd);
   }
   for (int fd : fds) {
     if (fd >= 0) {
-      ::fdatasync(fd);
+      if (!opt.skip_fdatasync) {
+        ::fdatasync(fd);
+      }
       ::close(fd);
     }
   }
@@ -1001,6 +1093,7 @@ int main(int argc, char** argv) {
   std::cout << "dep_fanout: " << opt.dep_fanout << "\n";
   std::cout << "max_inflight: " << opt.max_inflight << "\n";
   std::cout << "committer_poll_us: " << opt.committer_poll_us << "\n";
+  std::cout << "skip_fdatasync: " << (opt.skip_fdatasync ? 1 : 0) << "\n";
   std::cout << "commits: " << commits << "\n";
   std::cout << "logical_commits: " << logical_commits << "\n";
   std::cout << "acked_commits: " << acked_commits << "\n";
@@ -1026,6 +1119,7 @@ int main(int argc, char** argv) {
   std::cout << "payload_build_ns: " << stats.payload_build_ns.load(std::memory_order_acquire) << "\n";
   std::cout << "dep_frontier_build_ns: " << stats.dep_frontier_build_ns.load(std::memory_order_acquire) << "\n";
   std::cout << "cstamp_alloc_ns: " << stats.cstamp_alloc_ns.load(std::memory_order_acquire) << "\n";
+  std::cout << "lsn_alloc_ns: " << stats.lsn_alloc_ns.load(std::memory_order_acquire) << "\n";
   std::cout << "log_enqueue_ns: " << stats.log_enqueue_ns.load(std::memory_order_acquire) << "\n";
   std::cout << "mutex_wait_ns: " << stats.mutex_wait_ns.load(std::memory_order_acquire) << "\n";
   std::cout << "write_ns: " << stats.write_ns.load(std::memory_order_acquire) << "\n";
@@ -1044,6 +1138,7 @@ int main(int argc, char** argv) {
   std::cout << "worker_stall_ns: " << stats.worker_stall_ns.load(std::memory_order_acquire) << "\n";
   std::cout << "dep_edges: " << stats.dep_edges.load(std::memory_order_acquire) << "\n";
   std::cout << "dep_frontier_bytes: " << stats.dep_frontier_bytes.load(std::memory_order_acquire) << "\n";
+  std::cout << "global_atomic_count: " << stats.global_atomic_count.load(std::memory_order_acquire) << "\n";
   std::cout << "waitlist_registrations: " << stats.waitlist_registrations.load(std::memory_order_acquire) << "\n";
   std::cout << "waitlist_pops: " << stats.waitlist_pops.load(std::memory_order_acquire) << "\n";
   std::cout << "ready_queue_pushes: " << stats.ready_queue_pushes.load(std::memory_order_acquire) << "\n";

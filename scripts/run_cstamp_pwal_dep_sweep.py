@@ -13,24 +13,24 @@ EXE = ROOT / "build" / "no_cc_wal_microbench.exe"
 SRC = ROOT / "tools" / "no_cc_wal_microbench.cc"
 
 MODES = [
-    "pwal_group_commit",
-    "pwal_group_commit_no_prefix",
-    "pwal_group_dep_frontier",
-    "cstamp_pwal_async_dep_frontier",
+    "async_global_prefix_lsn",
+    "async_local_only_lsn",
+    "async_dep_frontier_lsn",
+    "async_dep_frontier_cstamp",
 ]
 
 MODE_LABELS = {
-    "pwal_group_commit": "global prefix",
-    "pwal_group_commit_no_prefix": "local-only upper",
-    "pwal_group_dep_frontier": "dep frontier",
-    "cstamp_pwal_async_dep_frontier": "cstamp async dep",
+    "async_global_prefix_lsn": "async global prefix",
+    "async_local_only_lsn": "async local-only upper",
+    "async_dep_frontier_lsn": "async dep frontier LSN",
+    "async_dep_frontier_cstamp": "async dep frontier cstamp",
 }
 
 COLORS = {
-    "pwal_group_commit": "#1f77b4",
-    "pwal_group_commit_no_prefix": "#2ca02c",
-    "pwal_group_dep_frontier": "#17becf",
-    "cstamp_pwal_async_dep_frontier": "#8c564b",
+    "async_global_prefix_lsn": "#1f77b4",
+    "async_local_only_lsn": "#2ca02c",
+    "async_dep_frontier_lsn": "#17becf",
+    "async_dep_frontier_cstamp": "#8c564b",
 }
 
 DEP_PROBS = [0, 1_000, 10_000, 50_000, 100_000, 500_000, 1_000_000]
@@ -48,6 +48,7 @@ PREALLOC_MB = int(os.environ.get("CSTAMP_PWAL_PREALLOC_MB", "64"))
 STRAGGLER_LOGGER = int(os.environ.get("CSTAMP_PWAL_STRAGGLER_LOGGER", "-1"))
 STRAGGLER_SLEEP_US = int(os.environ.get("CSTAMP_PWAL_STRAGGLER_SLEEP_US", "0"))
 STRAGGLER_EXTRA_BYTES = int(os.environ.get("CSTAMP_PWAL_STRAGGLER_EXTRA_BYTES", "0"))
+SKIP_FDATASYNC = int(os.environ.get("CSTAMP_PWAL_SKIP_FDATASYNC", "0"))
 
 
 def build():
@@ -90,6 +91,7 @@ def run_case(stamp, mode, dep_prob, repeat):
         f"--straggler_logger={STRAGGLER_LOGGER}",
         f"--straggler_sleep_us={STRAGGLER_SLEEP_US}",
         f"--straggler_extra_bytes={STRAGGLER_EXTRA_BYTES}",
+        f"--skip_fdatasync={SKIP_FDATASYNC}",
         f"--wal_dir={wal_dir}",
     ]
     stdout_path = logs / f"{mode}_dep{dep_prob}_r{repeat}.out"
@@ -190,7 +192,7 @@ def write_report(csv_path, rows):
         print("", file=f)
         print(f"date: {datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds')}", file=f)
         print("", file=f)
-        print("目的: no-CC synthetic dependency で、global prefix / local-only / dependency frontier / async cstamp-PWAL を比較する。", file=f)
+        print("目的: no-CC synthetic dependency で、同じ async pipeline 上の global prefix / local-only / dependency frontier / cstamp 統合を比較する。", file=f)
         print("", file=f)
         print("| item | value |", file=f)
         print("|---|---:|", file=f)
@@ -205,6 +207,7 @@ def write_report(csv_path, rows):
         print(f"| straggler_logger | {STRAGGLER_LOGGER} |", file=f)
         print(f"| straggler_sleep_us | {STRAGGLER_SLEEP_US} |", file=f)
         print(f"| straggler_extra_bytes | {STRAGGLER_EXTRA_BYTES} |", file=f)
+        print(f"| skip_fdatasync | {SKIP_FDATASYNC} |", file=f)
         print("", file=f)
         print("## Graphs", file=f)
         print("", file=f)
@@ -224,8 +227,8 @@ def write_report(csv_path, rows):
         print("", file=f)
         print(f"## {THREAD_NUM}-thread detail", file=f)
         print("", file=f)
-        print("| mode | dep_prob | ack tps | logical-acked | p50 us | p99 us | fdatasync/s | commits/fdatasync | dep_edges/tx | waiting_cond/tx | queue_wait_us/tx | event_us/tx | max_pending | max_waitlist |", file=f)
-        print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|", file=f)
+        print("| mode | dep_prob | ack tps | logical-acked | p50 us | p99 us | fdatasync/s | commits/fdatasync | dep_edges/tx | waiting_cond/tx | queue_wait_us/tx | event_us/tx | cstamp_ns/tx | lsn_ns/tx | atomic/tx | max_pending | max_waitlist |", file=f)
+        print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|", file=f)
         for p in DEP_PROBS:
             for mode in MODES:
                 rs = grouped[(mode, p)]
@@ -246,6 +249,9 @@ def write_report(csv_path, rows):
                             f"{mean(rs, 'waiting_conditions') / commits:.2f}",
                             f"{mean(rs, 'committer_queue_wait_ns') / commits / 1000:.1f}",
                             f"{mean(rs, 'committer_event_ns') / commits / 1000:.1f}",
+                            f"{mean(rs, 'cstamp_alloc_ns') / commits:.1f}",
+                            f"{mean(rs, 'lsn_alloc_ns') / commits:.1f}",
+                            f"{mean(rs, 'global_atomic_count') / commits:.2f}",
                             f"{mean(rs, 'max_pending_len'):.0f}",
                             f"{mean(rs, 'max_waitlist_len'):.0f}",
                         ]
@@ -256,10 +262,10 @@ def write_report(csv_path, rows):
         print("", file=f)
         print("## Reading", file=f)
         print("", file=f)
-        print("- `pwal_group_commit` is safe but conservative because it waits for a global durable prefix.", file=f)
-        print("- `pwal_group_commit_no_prefix` is a local-durable only unsafe upper bound.", file=f)
-        print("- `pwal_group_dep_frontier` waits for self durable plus synthetic dependency frontier, but workers still wait.", file=f)
-        print("- `cstamp_pwal_async_dep_frontier` uses cstamp as logical LSN and separates worker / flusher / committer; throughput is durable ack throughput.", file=f)
+        print("- `async_global_prefix_lsn` is safe but conservative because every ack waits for the full durable frontier snapshot.", file=f)
+        print("- `async_local_only_lsn` is a local-durable only unsafe upper bound under the same async pipeline.", file=f)
+        print("- `async_dep_frontier_lsn` uses the dependency frontier with separate cstamp and global LSN allocation.", file=f)
+        print("- `async_dep_frontier_cstamp` uses cstamp as logical LSN; throughput is durable ack throughput.", file=f)
         print("", file=f)
         print(f"Raw CSV: `{csv_path}`", file=f)
     return md
