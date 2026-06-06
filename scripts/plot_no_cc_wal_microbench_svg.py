@@ -12,6 +12,8 @@ SERIES_COLORS = {
     "pwal_per_txn_fdatasync": "#ff7f0e",
     "pwal_group_commit": "#1f77b4",
     "pwal_group_commit_no_prefix": "#2ca02c",
+    "pwal_group_dep_frontier": "#17becf",
+    "cstamp_pwal_async_dep_frontier": "#8c564b",
 }
 
 PLOTS = [
