@@ -14,6 +14,7 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <queue>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -78,12 +79,20 @@ struct Stats {
   std::atomic<uint64_t> self_durable_wait_ns{0};
   std::atomic<uint64_t> dependency_wait_ns{0};
   std::atomic<uint64_t> committer_scan_ns{0};
+  std::atomic<uint64_t> committer_event_ns{0};
   std::atomic<uint64_t> committer_queue_wait_ns{0};
   std::atomic<uint64_t> worker_stall_ns{0};
   std::atomic<uint64_t> logical_commits{0};
   std::atomic<uint64_t> acked_commits{0};
   std::atomic<uint64_t> dep_edges{0};
   std::atomic<uint64_t> dep_frontier_bytes{0};
+  std::atomic<uint64_t> waitlist_registrations{0};
+  std::atomic<uint64_t> waitlist_pops{0};
+  std::atomic<uint64_t> ready_queue_pushes{0};
+  std::atomic<uint64_t> max_ready_queue_len{0};
+  std::atomic<uint64_t> max_waitlist_len{0};
+  std::atomic<uint64_t> max_pending_len{0};
+  std::atomic<uint64_t> waiting_conditions{0};
   std::atomic<uint64_t> bytes{0};
   std::atomic<uint64_t> fsync_count{0};
 };
@@ -365,6 +374,12 @@ uint32_t percentile(std::vector<uint32_t>& values, double p) {
   return values[idx];
 }
 
+void updateMax(std::atomic<uint64_t>& target, uint64_t value) {
+  uint64_t current = target.load(std::memory_order_relaxed);
+  while (current < value &&
+         !target.compare_exchange_weak(current, value, std::memory_order_relaxed)) {}
+}
+
 void runNoDurabilityWorker(uint32_t thid, const Options& opt, WorkerState& worker,
                            Stats& stats, std::atomic<bool>& start,
                            std::atomic<bool>& stop, LatencySample& sample) {
@@ -449,6 +464,126 @@ void runPwalPerTxnWorker(uint32_t thid, const Options& opt, int fd, WorkerState&
   }
 }
 
+struct PendingTxn {
+  uint32_t thid = 0;
+  uint64_t worker_seq = 0;
+  uint64_t cstamp = 0;
+  uint32_t logger_id = 0;
+  uint64_t local_seq = 0;
+  uint64_t op_start_ns = 0;
+  uint64_t enqueue_ns = 0;
+  uint64_t bytes = 0;
+  uint32_t remaining = 0;
+  bool ready_enqueued = false;
+  std::vector<uint64_t> req;
+};
+
+struct WaitEntry {
+  uint64_t need = 0;
+  std::shared_ptr<PendingTxn> txn;
+};
+
+struct WaitEntryGreater {
+  bool operator()(const WaitEntry& a, const WaitEntry& b) const {
+    return a.need > b.need;
+  }
+};
+
+using WaitList = std::priority_queue<WaitEntry, std::vector<WaitEntry>, WaitEntryGreater>;
+
+struct CommitterState {
+  explicit CommitterState(uint32_t logger_num) : waitlists(logger_num) {}
+
+  std::mutex mutex;
+  std::condition_variable cv;
+  std::vector<WaitList> waitlists;
+  std::deque<std::shared_ptr<PendingTxn>> ready;
+  std::vector<uint32_t> ack_latency_samples;
+  uint64_t sample_counter = 0;
+  uint64_t pending_count = 0;
+  bool done = false;
+};
+
+void pushReadyLocked(CommitterState& state, const std::shared_ptr<PendingTxn>& txn,
+                     Stats& stats) {
+  if (txn->ready_enqueued) return;
+  txn->ready_enqueued = true;
+  state.ready.push_back(txn);
+  stats.ready_queue_pushes.fetch_add(1, std::memory_order_relaxed);
+  updateMax(stats.max_ready_queue_len, state.ready.size());
+}
+
+void drainWaitlistLocked(CommitterState& state, uint32_t logger_id, uint64_t durable,
+                         Stats& stats) {
+  auto& waitlist = state.waitlists[logger_id];
+  while (!waitlist.empty() && waitlist.top().need <= durable) {
+    std::shared_ptr<PendingTxn> txn = waitlist.top().txn;
+    waitlist.pop();
+    stats.waitlist_pops.fetch_add(1, std::memory_order_relaxed);
+    if (txn->remaining == 0) {
+      continue;
+    }
+    --txn->remaining;
+    if (txn->remaining == 0) {
+      pushReadyLocked(state, txn, stats);
+    }
+  }
+}
+
+void registerTxn(CommitterState& state, const std::shared_ptr<PendingTxn>& txn,
+                 const std::vector<WorkerState>& loggers, Stats& stats) {
+  const uint64_t event_start = nowNs();
+  bool ready = false;
+  {
+    std::lock_guard<std::mutex> guard(state.mutex);
+    const size_t ready_before = state.ready.size();
+    txn->remaining = 0;
+    state.pending_count++;
+    updateMax(stats.max_pending_len, state.pending_count);
+    for (uint32_t i = 0; i < txn->req.size(); ++i) {
+      const uint64_t need = txn->req[i];
+      if (need == 0) continue;
+      if (loggers[i].durable_seq.load(std::memory_order_acquire) >= need) {
+        continue;
+      }
+      txn->remaining++;
+      state.waitlists[i].push(WaitEntry{need, txn});
+      stats.waitlist_registrations.fetch_add(1, std::memory_order_relaxed);
+      stats.waiting_conditions.fetch_add(1, std::memory_order_relaxed);
+      updateMax(stats.max_waitlist_len, state.waitlists[i].size());
+    }
+    for (uint32_t i = 0; i < txn->req.size(); ++i) {
+      const uint64_t durable = loggers[i].durable_seq.load(std::memory_order_acquire);
+      drainWaitlistLocked(state, i, durable, stats);
+    }
+    if (txn->remaining == 0) {
+      pushReadyLocked(state, txn, stats);
+    }
+    ready = state.ready.size() != ready_before;
+  }
+  stats.committer_event_ns.fetch_add(nowNs() - event_start, std::memory_order_relaxed);
+  if (ready) {
+    state.cv.notify_one();
+  }
+}
+
+void onDurableAdvanced(CommitterState* state, uint32_t logger_id, uint64_t durable,
+                       Stats& stats) {
+  if (state == nullptr) return;
+  const uint64_t event_start = nowNs();
+  bool ready = false;
+  {
+    std::lock_guard<std::mutex> guard(state->mutex);
+    const size_t before = state->ready.size();
+    drainWaitlistLocked(*state, logger_id, durable, stats);
+    ready = state->ready.size() != before;
+  }
+  stats.committer_event_ns.fetch_add(nowNs() - event_start, std::memory_order_relaxed);
+  if (ready) {
+    state->cv.notify_one();
+  }
+}
+
 struct GroupQueue {
   std::mutex mutex;
   std::condition_variable cv;
@@ -458,7 +593,8 @@ struct GroupQueue {
 };
 
 void groupFlusher(uint32_t logger_id, const Options& opt, int fd, GroupQueue& q,
-                  WorkerState& logger_state, Stats& stats) {
+                  WorkerState& logger_state, Stats& stats,
+                  CommitterState* committer_state) {
   std::unique_lock<std::mutex> lock(q.mutex);
   while (!q.done || !q.buffer.empty()) {
     q.cv.wait_for(lock, std::chrono::microseconds(opt.flush_us), [&] {
@@ -484,6 +620,7 @@ void groupFlusher(uint32_t logger_id, const Options& opt, int fd, GroupQueue& q,
     if (::fdatasync(fd) != 0) die("fdatasync");
     stats.fdatasync_ns.fetch_add(nowNs() - fsync_start, std::memory_order_relaxed);
     logger_state.durable_seq.store(durable_to, std::memory_order_release);
+    onDurableAdvanced(committer_state, logger_id, durable_to, stats);
     stats.fsync_count.fetch_add(1, std::memory_order_relaxed);
     logger_state.fsync_count.fetch_add(1, std::memory_order_relaxed);
     logger_state.bytes.fetch_add(data.size(), std::memory_order_relaxed);
@@ -555,68 +692,36 @@ void runPwalGroupWorker(uint32_t thid, const Options& opt, GroupQueue& q,
   }
 }
 
-struct PendingTxn {
-  uint32_t thid = 0;
-  uint64_t worker_seq = 0;
-  uint64_t cstamp = 0;
-  uint32_t logger_id = 0;
-  uint64_t local_seq = 0;
-  uint64_t op_start_ns = 0;
-  uint64_t enqueue_ns = 0;
-  uint64_t bytes = 0;
-  std::vector<uint64_t> dep;
-};
-
-struct PendingQueue {
-  std::mutex mutex;
-  std::condition_variable cv;
-  std::deque<PendingTxn> txns;
-  std::vector<uint32_t> ack_latency_samples;
-  uint64_t sample_counter = 0;
-  bool done = false;
-};
-
-bool isDurableClosed(const PendingTxn& txn, const std::vector<WorkerState>& loggers) {
-  if (loggers[txn.logger_id].durable_seq.load(std::memory_order_acquire) < txn.local_seq) {
-    return false;
-  }
-  return isDependencyFrontierClosed(loggers, txn.dep);
-}
-
-void committerThread(const Options& opt, PendingQueue& pending,
-                     std::vector<WorkerState>& workers,
-                     std::vector<WorkerState>& loggers, Stats& stats) {
-  std::unique_lock<std::mutex> lock(pending.mutex);
+void eventDrivenCommitterThread(CommitterState& state,
+                                std::vector<WorkerState>& workers,
+                                Stats& stats) {
+  std::unique_lock<std::mutex> lock(state.mutex);
   for (;;) {
-    pending.cv.wait_for(lock, std::chrono::microseconds(opt.committer_poll_us), [&] {
-      return pending.done || !pending.txns.empty();
+    state.cv.wait(lock, [&] {
+      return !state.ready.empty() || (state.done && state.pending_count == 0);
     });
-    if (pending.done && pending.txns.empty()) return;
-    if (pending.txns.empty()) continue;
+    if (state.done && state.pending_count == 0) return;
+    if (state.ready.empty()) continue;
 
-    const uint64_t scan_start = nowNs();
-    bool acked_any = false;
-    for (auto it = pending.txns.begin(); it != pending.txns.end();) {
-      if (!isDurableClosed(*it, loggers)) {
-        ++it;
-        continue;
-      }
-      const uint64_t now = nowNs();
-      stats.committer_queue_wait_ns.fetch_add(now - it->enqueue_ns, std::memory_order_relaxed);
-      stats.acked_commits.fetch_add(1, std::memory_order_relaxed);
-      workers[it->thid].commits.fetch_add(1, std::memory_order_relaxed);
-      workers[it->thid].outstanding.fetch_sub(1, std::memory_order_acq_rel);
-      workers[it->thid].bytes.fetch_add(it->bytes, std::memory_order_relaxed);
-      if ((++pending.sample_counter & 0xff) == 0 && pending.ack_latency_samples.size() < 20000) {
-        pending.ack_latency_samples.push_back(static_cast<uint32_t>((now - it->op_start_ns) / 1000));
-      }
-      it = pending.txns.erase(it);
-      acked_any = true;
+    std::shared_ptr<PendingTxn> txn = state.ready.front();
+    state.ready.pop_front();
+    lock.unlock();
+
+    const uint64_t now = nowNs();
+    stats.committer_queue_wait_ns.fetch_add(now - txn->enqueue_ns, std::memory_order_relaxed);
+    stats.acked_commits.fetch_add(1, std::memory_order_relaxed);
+    workers[txn->thid].commits.fetch_add(1, std::memory_order_relaxed);
+    workers[txn->thid].outstanding.fetch_sub(1, std::memory_order_acq_rel);
+    workers[txn->thid].bytes.fetch_add(txn->bytes, std::memory_order_relaxed);
+
+    lock.lock();
+    if ((++state.sample_counter & 0xff) == 0 && state.ack_latency_samples.size() < 20000) {
+      state.ack_latency_samples.push_back(static_cast<uint32_t>((now - txn->op_start_ns) / 1000));
     }
-    stats.committer_scan_ns.fetch_add(nowNs() - scan_start, std::memory_order_relaxed);
-    if (acked_any) {
-      pending.cv.notify_all();
+    if (state.pending_count > 0) {
+      state.pending_count--;
     }
+    state.cv.notify_all();
   }
 }
 
@@ -624,7 +729,7 @@ void runAsyncDepFrontierWorker(
     uint32_t thid, const Options& opt, GroupQueue& q, WorkerState& app_worker,
     uint32_t logger_id, std::vector<WorkerState>& loggers, Stats& stats,
     std::vector<std::unique_ptr<FrontierState>>& frontier_states,
-    PendingQueue& pending, std::atomic<uint64_t>& cstamp_allocator,
+    CommitterState& committer_state, std::atomic<uint64_t>& cstamp_allocator,
     std::atomic<bool>& start, std::atomic<bool>& stop) {
   while (!start.load(std::memory_order_acquire)) {}
   uint64_t seq = 0;
@@ -663,26 +768,24 @@ void runAsyncDepFrontierWorker(
     q.cv.notify_one();
     publishFrontier(logger_id, local_seq, dep, frontier_states);
 
-    PendingTxn txn;
-    txn.thid = thid;
-    txn.worker_seq = seq;
-    txn.cstamp = cstamp;
-    txn.logger_id = logger_id;
-    txn.local_seq = local_seq;
-    txn.op_start_ns = op_start;
-    txn.enqueue_ns = nowNs();
-    txn.bytes = record.size();
-    txn.dep = std::move(dep);
+    std::vector<uint64_t> req = std::move(dep);
+    req[logger_id] = std::max(req[logger_id], local_seq);
+    auto txn = std::make_shared<PendingTxn>();
+    txn->thid = thid;
+    txn->worker_seq = seq;
+    txn->cstamp = cstamp;
+    txn->logger_id = logger_id;
+    txn->local_seq = local_seq;
+    txn->op_start_ns = op_start;
+    txn->enqueue_ns = nowNs();
+    txn->bytes = record.size();
+    txn->req = std::move(req);
     app_worker.outstanding.fetch_add(1, std::memory_order_acq_rel);
-    {
-      std::lock_guard<std::mutex> guard(pending.mutex);
-      pending.txns.emplace_back(std::move(txn));
-    }
-    pending.cv.notify_one();
-    stats.log_enqueue_ns.fetch_add(nowNs() - enqueue_start, std::memory_order_relaxed);
     stats.logical_commits.fetch_add(1, std::memory_order_relaxed);
     app_worker.local_seq.store(seq, std::memory_order_release);
     stats.bytes.fetch_add(record.size(), std::memory_order_relaxed);
+    registerTxn(committer_state, txn, loggers, stats);
+    stats.log_enqueue_ns.fetch_add(nowNs() - enqueue_start, std::memory_order_relaxed);
   }
 }
 
@@ -708,7 +811,7 @@ int main(int argc, char** argv) {
   std::vector<int> fds;
   std::vector<std::unique_ptr<GroupQueue>> queues;
   std::vector<std::thread> flushers;
-  PendingQueue pending;
+  CommitterState committer_state(opt.logger_num);
   std::thread committer;
   std::mutex shared_mutex;
   int shared_fd = -1;
@@ -744,13 +847,14 @@ int main(int argc, char** argv) {
     for (uint32_t i = 0; i < opt.logger_num; ++i) {
       queues.emplace_back(std::make_unique<GroupQueue>());
       flushers.emplace_back(groupFlusher, i, std::cref(opt), fds[i], std::ref(*queues.back()),
-                            std::ref(logger_states[i]), std::ref(stats));
+                            std::ref(logger_states[i]), std::ref(stats),
+                            opt.mode == Mode::CstampPwalAsyncDepFrontier ? &committer_state : nullptr);
     }
   }
 
   if (opt.mode == Mode::CstampPwalAsyncDepFrontier) {
-    committer = std::thread(committerThread, std::cref(opt), std::ref(pending),
-                            std::ref(workers), std::ref(logger_states), std::ref(stats));
+    committer = std::thread(eventDrivenCommitterThread, std::ref(committer_state),
+                            std::ref(workers), std::ref(stats));
   }
 
   for (uint32_t i = 0; i < opt.thread_num; ++i) {
@@ -786,7 +890,7 @@ int main(int argc, char** argv) {
         threads.emplace_back(runAsyncDepFrontierWorker, i, std::cref(opt),
                              std::ref(*queues[i % opt.logger_num]), std::ref(workers[i]),
                              i % opt.logger_num, std::ref(logger_states), std::ref(stats),
-                             std::ref(frontier_states), std::ref(pending),
+                             std::ref(frontier_states), std::ref(committer_state),
                              std::ref(cstamp_allocator), std::ref(start), std::ref(stop));
         break;
     }
@@ -808,11 +912,15 @@ int main(int argc, char** argv) {
   for (auto& t : flushers) t.join();
 
   if (opt.mode == Mode::CstampPwalAsyncDepFrontier) {
-    {
-      std::lock_guard<std::mutex> guard(pending.mutex);
-      pending.done = true;
+    for (uint32_t i = 0; i < opt.logger_num; ++i) {
+      const uint64_t durable = logger_states[i].durable_seq.load(std::memory_order_acquire);
+      onDurableAdvanced(&committer_state, i, durable, stats);
     }
-    pending.cv.notify_all();
+    {
+      std::lock_guard<std::mutex> guard(committer_state.mutex);
+      committer_state.done = true;
+    }
+    committer_state.cv.notify_all();
     if (committer.joinable()) committer.join();
   }
 
@@ -863,13 +971,16 @@ int main(int argc, char** argv) {
     all_lat.insert(all_lat.end(), s.micros.begin(), s.micros.end());
   }
   {
-    std::lock_guard<std::mutex> guard(pending.mutex);
-    all_lat.insert(all_lat.end(), pending.ack_latency_samples.begin(), pending.ack_latency_samples.end());
+    std::lock_guard<std::mutex> guard(committer_state.mutex);
+    all_lat.insert(all_lat.end(), committer_state.ack_latency_samples.begin(),
+                   committer_state.ack_latency_samples.end());
   }
   uint32_t p50 = percentile(all_lat, 0.50);
   uint32_t p99 = percentile(all_lat, 0.99);
   const uint64_t bytes = stats.bytes.load(std::memory_order_acquire);
   const uint64_t fsyncs = stats.fsync_count.load(std::memory_order_acquire);
+  const uint64_t logical_commits = stats.logical_commits.load(std::memory_order_acquire);
+  const uint64_t acked_commits = stats.acked_commits.load(std::memory_order_acquire);
   const double closed_loop_avg_latency_us =
       commits ? actual_sec * static_cast<double>(opt.thread_num) * 1e6 / static_cast<double>(commits) : 0.0;
 
@@ -891,8 +1002,11 @@ int main(int argc, char** argv) {
   std::cout << "max_inflight: " << opt.max_inflight << "\n";
   std::cout << "committer_poll_us: " << opt.committer_poll_us << "\n";
   std::cout << "commits: " << commits << "\n";
-  std::cout << "logical_commits: " << stats.logical_commits.load(std::memory_order_acquire) << "\n";
-  std::cout << "acked_commits: " << stats.acked_commits.load(std::memory_order_acquire) << "\n";
+  std::cout << "logical_commits: " << logical_commits << "\n";
+  std::cout << "acked_commits: " << acked_commits << "\n";
+  std::cout << "logical_minus_acked: " << (logical_commits >= acked_commits ? logical_commits - acked_commits : 0) << "\n";
+  std::cout << "logical_throughput_tps: " << static_cast<uint64_t>(logical_commits / actual_sec) << "\n";
+  std::cout << "acked_throughput_tps: " << static_cast<uint64_t>(acked_commits / actual_sec) << "\n";
   std::cout << "throughput_tps: " << static_cast<uint64_t>(commits / actual_sec) << "\n";
   std::cout << "closed_loop_avg_latency_us: " << closed_loop_avg_latency_us << "\n";
   std::cout << "latency_p50_us: " << p50 << "\n";
@@ -920,9 +1034,22 @@ int main(int argc, char** argv) {
   std::cout << "self_durable_wait_ns: " << stats.self_durable_wait_ns.load(std::memory_order_acquire) << "\n";
   std::cout << "dependency_wait_ns: " << stats.dependency_wait_ns.load(std::memory_order_acquire) << "\n";
   std::cout << "committer_scan_ns: " << stats.committer_scan_ns.load(std::memory_order_acquire) << "\n";
+  std::cout << "committer_event_ns: " << stats.committer_event_ns.load(std::memory_order_acquire) << "\n";
   std::cout << "committer_queue_wait_ns: " << stats.committer_queue_wait_ns.load(std::memory_order_acquire) << "\n";
+  std::cout << "avg_committer_queue_wait_us: "
+            << (acked_commits ? static_cast<double>(stats.committer_queue_wait_ns.load(std::memory_order_acquire)) /
+                                    static_cast<double>(acked_commits) / 1000.0
+                              : 0.0)
+            << "\n";
   std::cout << "worker_stall_ns: " << stats.worker_stall_ns.load(std::memory_order_acquire) << "\n";
   std::cout << "dep_edges: " << stats.dep_edges.load(std::memory_order_acquire) << "\n";
   std::cout << "dep_frontier_bytes: " << stats.dep_frontier_bytes.load(std::memory_order_acquire) << "\n";
+  std::cout << "waitlist_registrations: " << stats.waitlist_registrations.load(std::memory_order_acquire) << "\n";
+  std::cout << "waitlist_pops: " << stats.waitlist_pops.load(std::memory_order_acquire) << "\n";
+  std::cout << "ready_queue_pushes: " << stats.ready_queue_pushes.load(std::memory_order_acquire) << "\n";
+  std::cout << "max_ready_queue_len: " << stats.max_ready_queue_len.load(std::memory_order_acquire) << "\n";
+  std::cout << "max_waitlist_len: " << stats.max_waitlist_len.load(std::memory_order_acquire) << "\n";
+  std::cout << "max_pending_len: " << stats.max_pending_len.load(std::memory_order_acquire) << "\n";
+  std::cout << "waiting_conditions: " << stats.waiting_conditions.load(std::memory_order_acquire) << "\n";
   return 0;
 }

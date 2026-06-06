@@ -47,16 +47,25 @@ worker は log record を作り、synthetic dependency frontier を作り、WAL 
 flusher は shard ごとの queue を batch 化して `write + fdatasync` し、
 `durable_seq` を更新する。
 
-committer は pending transaction を走査し、次の条件を満たした transaction だけを durable ack 済みにする。
+committer は pending transaction 全体を周期 scan しない。
+各 transaction の ack 条件を per-shard waitlist に登録し、
+flusher が `durable_seq` を進めた event で該当 shard の waitlist だけを起こす。
+
+transaction T の必要条件は次の `req` vector として登録する。
 
 ```text
-self log durable:
-  durable_seq[T.log_id] >= T.local_seq
+req[T.log_id] = max(req[T.log_id], T.local_seq)
+req[i]        = max(req[i], T.dep[i])
 
-dependency frontier durable:
+ack condition:
   for all shard i:
-    durable_seq[i] >= T.dep[i]
+    durable_seq[i] >= req[i]
 ```
+
+実装上は、各 shard に `need local_seq` 順の min-heap waitlist を持つ。
+flusher が `durable_seq[i]` を進めると、`need <= durable_seq[i]` の transaction だけを pop し、
+その transaction の remaining condition を減らす。
+remaining が 0 になった transaction は ready queue に入り、committer が durable ack 済みにする。
 
 この mode の `throughput_tps` は worker enqueue throughput ではなく、
 client に返せる durable ack throughput として数えている。
@@ -80,6 +89,9 @@ no-CC では本物の read/write dependency がないため、dependency は syn
 |---|---|
 | `logical_commits` | worker が log enqueue まで進んだ transaction 数 |
 | `acked_commits` | durability 条件を満たして ack できた transaction 数 |
+| `logical_minus_acked` | enqueue 済みだが durable ack 未完了の transaction 数 |
+| `logical_throughput_tps` | worker enqueue throughput |
+| `acked_throughput_tps` | durable ack throughput。論文の main metric |
 | `payload_build_ns` | log payload 作成時間 |
 | `cstamp_alloc_ns` | cstamp atomic allocation 時間 |
 | `mutex_wait_ns` | WAL queue / single WAL mutex 待ち |
@@ -89,10 +101,18 @@ no-CC では本物の read/write dependency がないため、dependency は syn
 | `self_durable_wait_ns` | local shard durable 待ち |
 | `dependency_wait_ns` | dependency frontier durable 待ち |
 | `committer_queue_wait_ns` | async mode で enqueue から committer ack までの時間 |
-| `committer_scan_ns` | pending queue scan 時間 |
+| `committer_scan_ns` | 旧 scan 型 committer の scan 時間。event-driven では 0 になる |
+| `committer_event_ns` | waitlist 登録 / durable advance event 処理時間 |
 | `worker_stall_ns` | async mode で `max_inflight` に達して worker が止まった時間 |
 | `dep_edges` | synthetic dependency edge 数 |
 | `dep_frontier_bytes` | frontier metadata bytes |
+| `waitlist_registrations` | waitlist に登録された durable condition 数 |
+| `waitlist_pops` | durable advance で解決された condition 数 |
+| `ready_queue_pushes` | ready queue に入った transaction 数 |
+| `max_ready_queue_len` | ready queue 最大長 |
+| `max_waitlist_len` | shard waitlist 最大長 |
+| `max_pending_len` | pending transaction 最大数 |
+| `waiting_conditions` | waitlist に登録された condition 数 |
 
 ## 実行方法
 
@@ -116,6 +136,32 @@ CSTAMP_PWAL_PREALLOC_MB=64 \
 python3 scripts/run_cstamp_pwal_dep_sweep.py
 ```
 
+straggler + dependency probability sweep を取る。
+
+```bash
+CSTAMP_PWAL_SECONDS=1 \
+CSTAMP_PWAL_REPEATS=1 \
+CSTAMP_PWAL_THREAD_NUM=32 \
+CSTAMP_PWAL_LOGGER_NUM=4 \
+CSTAMP_PWAL_PREALLOC_MB=64 \
+CSTAMP_PWAL_STRAGGLER_LOGGER=3 \
+CSTAMP_PWAL_STRAGGLER_SLEEP_US=1000 \
+python3 scripts/run_cstamp_pwal_dep_sweep.py
+```
+
+async pipeline の `max_inflight` sweep を取る。
+
+```bash
+CSTAMP_PWAL_SECONDS=1 \
+CSTAMP_PWAL_REPEATS=1 \
+CSTAMP_PWAL_THREAD_NUM=32 \
+CSTAMP_PWAL_LOGGER_NUM=4 \
+CSTAMP_PWAL_DEP_PROB_PPM=100000 \
+CSTAMP_PWAL_STRAGGLER_LOGGER=3 \
+CSTAMP_PWAL_STRAGGLER_SLEEP_US=1000 \
+python3 scripts/run_cstamp_pwal_inflight_sweep.py
+```
+
 dependency sweep は次を出力する。
 
 - CSV
@@ -123,27 +169,51 @@ dependency sweep は次を出力する。
 - throughput SVG
 - p99 latency SVG
 
-## Smoke result
+## Smoke result: event-driven committer
 
-2026-06-06 12:36 JST に、8 threads / 2 loggers / 1 second の軽量 sweep を実行した。
+2026-06-06 12:56 JST に、8 threads / 4 loggers / 1 second /
+`straggler_logger=3` / `straggler_sleep_us=1000` の軽量 sweep を実行した。
 これは論文用の最終値ではなく、実装と出力形式の確認である。
 
 | mode | dep=0 tps | dep=0.10 tps | dep=1.00 tps |
 |---|---:|---:|---:|
-| `pwal_group_commit` | 33382 | 32800 | 33318 |
-| `pwal_group_commit_no_prefix` | 33056 | 33297 | 33148 |
-| `pwal_group_dep_frontier` | 33298 | 33104 | 33106 |
-| `cstamp_pwal_async_dep_frontier` | 21957 | 20619 | 20104 |
+| `pwal_group_commit` | 6320 | 6304 | 6336 |
+| `pwal_group_commit_no_prefix` | 29809 | 30665 | 30643 |
+| `pwal_group_dep_frontier` | 30212 | 28689 | 13764 |
+| `cstamp_pwal_async_dep_frontier` | 568365 | 373959 | 321158 |
 
-この軽量条件では、async 版はまだ committer queue / scan overhead が大きく、
-既存 group-commit worker-wait 版より遅い。
-これは提案方式の完成性能ではなく、cstamp logical LSN、dependency frontier、
-durable ack throughput 計測を同じ枠組みで走らせるための skeleton である。
+この条件では、global prefix は slow logger に全体が引っ張られて約 6.3K tx/s に落ちる。
+local-only は約 30K tx/s だが一般には unsafe upper bound である。
+dependency frontier は dep_prob が低いと local-only に近く、
+dep_prob が 1.0 に近づくほど slow logger への依存が増えて落ちる。
+
+`cstamp_pwal_async_dep_frontier` は event-driven waitlist committer により、
+旧 scan 型 smoke の約 20K tx/s から大きく改善した。
+ただし max_inflight が大きい条件では p99 durable ack latency が ms 単位まで増えるため、
+throughput と latency の trade-off として扱う。
 
 生成物:
 
 ```text
-results/cstamp_pwal_dep_sweep_20260606_123655/
+results/cstamp_pwal_dep_sweep_20260606_125548/
+```
+
+同条件で `max_inflight` sweep も実行した。
+
+| max_inflight | ack tps | p99 us | queue_wait_us/tx | max_pending |
+|---:|---:|---:|---:|---:|
+| 1 | 28180 | 1239 | 276.6 | 9 |
+| 2 | 49776 | 1343 | 311.0 | 17 |
+| 4 | 103759 | 1243 | 293.0 | 33 |
+| 8 | 136962 | 2386 | 451.2 | 65 |
+| 16 | 196830 | 2579 | 630.8 | 129 |
+| 32 | 298291 | 2638 | 820.9 | 257 |
+| 64 | 391852 | 2856 | 1240.9 | 513 |
+
+生成物:
+
+```text
+results/cstamp_pwal_inflight_sweep_20260606_125632/
 ```
 
 ## 現在の範囲
@@ -157,4 +227,3 @@ recovery theorem の end-to-end 検証ではない。
 
 `pwal_group_commit` の global prefix は、logger shard の `min(durable_seq)` を待つ実装である。
 これは保守的 baseline として使う。
-

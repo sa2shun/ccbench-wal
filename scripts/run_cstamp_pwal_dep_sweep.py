@@ -33,7 +33,7 @@ COLORS = {
     "cstamp_pwal_async_dep_frontier": "#8c564b",
 }
 
-DEP_PROBS = [0, 10_000, 50_000, 100_000, 500_000, 1_000_000]
+DEP_PROBS = [0, 1_000, 10_000, 50_000, 100_000, 500_000, 1_000_000]
 SECONDS = int(os.environ.get("CSTAMP_PWAL_SECONDS", "1"))
 REPEATS = int(os.environ.get("CSTAMP_PWAL_REPEATS", "1"))
 THREAD_NUM = int(os.environ.get("CSTAMP_PWAL_THREAD_NUM", "32"))
@@ -45,6 +45,9 @@ FLUSH_US = int(os.environ.get("CSTAMP_PWAL_FLUSH_US", "100"))
 DEP_FANOUT = int(os.environ.get("CSTAMP_PWAL_DEP_FANOUT", "1"))
 MAX_INFLIGHT = int(os.environ.get("CSTAMP_PWAL_MAX_INFLIGHT", "1024"))
 PREALLOC_MB = int(os.environ.get("CSTAMP_PWAL_PREALLOC_MB", "64"))
+STRAGGLER_LOGGER = int(os.environ.get("CSTAMP_PWAL_STRAGGLER_LOGGER", "-1"))
+STRAGGLER_SLEEP_US = int(os.environ.get("CSTAMP_PWAL_STRAGGLER_SLEEP_US", "0"))
+STRAGGLER_EXTRA_BYTES = int(os.environ.get("CSTAMP_PWAL_STRAGGLER_EXTRA_BYTES", "0"))
 
 
 def build():
@@ -84,6 +87,9 @@ def run_case(stamp, mode, dep_prob, repeat):
         f"--dep_prob_ppm={dep_prob}",
         f"--dep_fanout={DEP_FANOUT}",
         f"--max_inflight={MAX_INFLIGHT}",
+        f"--straggler_logger={STRAGGLER_LOGGER}",
+        f"--straggler_sleep_us={STRAGGLER_SLEEP_US}",
+        f"--straggler_extra_bytes={STRAGGLER_EXTRA_BYTES}",
         f"--wal_dir={wal_dir}",
     ]
     stdout_path = logs / f"{mode}_dep{dep_prob}_r{repeat}.out"
@@ -150,7 +156,7 @@ def write_svg(path, grouped, metric, title, y_label):
         for x in xs:
             px = x_pos(x)
             print(f'<line x1="{px:.1f}" y1="{top + plot_h}" x2="{px:.1f}" y2="{top + plot_h + 5}" stroke="#333"/>', file=f)
-            print(f'<text x="{px:.1f}" y="{top + plot_h + 24}" text-anchor="middle" font-family="sans-serif" font-size="12">{x:.2f}</text>', file=f)
+            print(f'<text x="{px:.1f}" y="{top + plot_h + 24}" text-anchor="middle" font-family="sans-serif" font-size="12">{x:.3f}</text>', file=f)
         print(f'<text x="{left + plot_w / 2:.1f}" y="{height - 22}" text-anchor="middle" font-family="sans-serif" font-size="14">synthetic dependency probability</text>', file=f)
         print(f'<text x="18" y="{top + plot_h / 2:.1f}" text-anchor="middle" font-family="sans-serif" font-size="14" transform="rotate(-90 18 {top + plot_h / 2:.1f})">{y_label}</text>', file=f)
         for mode, vals in series:
@@ -196,6 +202,9 @@ def write_report(csv_path, rows):
         print(f"| flush_us | {FLUSH_US} |", file=f)
         print(f"| dep_fanout | {DEP_FANOUT} |", file=f)
         print(f"| max_inflight | {MAX_INFLIGHT} |", file=f)
+        print(f"| straggler_logger | {STRAGGLER_LOGGER} |", file=f)
+        print(f"| straggler_sleep_us | {STRAGGLER_SLEEP_US} |", file=f)
+        print(f"| straggler_extra_bytes | {STRAGGLER_EXTRA_BYTES} |", file=f)
         print("", file=f)
         print("## Graphs", file=f)
         print("", file=f)
@@ -205,8 +214,8 @@ def write_report(csv_path, rows):
         print("", file=f)
         print("## Throughput by dependency probability", file=f)
         print("", file=f)
-        print("| mode | dep=0 | dep=0.01 | dep=0.05 | dep=0.10 | dep=0.50 | dep=1.00 |", file=f)
-        print("|---|---:|---:|---:|---:|---:|---:|", file=f)
+        print("| mode | dep=0 | dep=0.001 | dep=0.01 | dep=0.05 | dep=0.10 | dep=0.50 | dep=1.00 |", file=f)
+        print("|---|---:|---:|---:|---:|---:|---:|---:|", file=f)
         for mode in MODES:
             vals = []
             for p in DEP_PROBS:
@@ -215,8 +224,8 @@ def write_report(csv_path, rows):
         print("", file=f)
         print(f"## {THREAD_NUM}-thread detail", file=f)
         print("", file=f)
-        print("| mode | dep_prob | tps | ack latency p50 | ack latency p99 | fdatasync/s | commits/fdatasync | dep_edges/tx | queue_wait_us/tx | worker_stall_us/tx |", file=f)
-        print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|", file=f)
+        print("| mode | dep_prob | ack tps | logical-acked | p50 us | p99 us | fdatasync/s | commits/fdatasync | dep_edges/tx | waiting_cond/tx | queue_wait_us/tx | event_us/tx | max_pending | max_waitlist |", file=f)
+        print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|", file=f)
         for p in DEP_PROBS:
             for mode in MODES:
                 rs = grouped[(mode, p)]
@@ -226,15 +235,19 @@ def write_report(csv_path, rows):
                     + " | ".join(
                         [
                             mode,
-                            f"{p / 1_000_000:.2f}",
+                            f"{p / 1_000_000:.3f}",
                             f"{mean(rs, 'throughput_tps'):.0f}",
+                            f"{mean(rs, 'logical_minus_acked'):.0f}",
                             f"{mean(rs, 'latency_p50_us'):.0f}",
                             f"{mean(rs, 'latency_p99_us'):.0f}",
                             f"{mean(rs, 'fdatasync_per_sec'):.0f}",
                             f"{mean(rs, 'commits_per_fdatasync'):.2f}",
                             f"{mean(rs, 'dep_edges') / commits:.3f}",
+                            f"{mean(rs, 'waiting_conditions') / commits:.2f}",
                             f"{mean(rs, 'committer_queue_wait_ns') / commits / 1000:.1f}",
-                            f"{mean(rs, 'worker_stall_ns') / commits / 1000:.1f}",
+                            f"{mean(rs, 'committer_event_ns') / commits / 1000:.1f}",
+                            f"{mean(rs, 'max_pending_len'):.0f}",
+                            f"{mean(rs, 'max_waitlist_len'):.0f}",
                         ]
                     )
                     + " |",
