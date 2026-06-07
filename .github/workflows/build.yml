@@ -7,14 +7,18 @@ on:
     paths-ignore:
       - 'README.md'
       - 'docs/**'
+      - 'paper/**'
       - '.devcontainer/**'
       - '.github/workflows/devcontainer-image.yml'
+      - '.github/workflows/paper.yml'
   pull_request:
     paths-ignore:
       - 'README.md'
       - 'docs/**'
+      - 'paper/**'
       - '.devcontainer/**'
       - '.github/workflows/devcontainer-image.yml'
+      - '.github/workflows/paper.yml'
 
 jobs:
   build:

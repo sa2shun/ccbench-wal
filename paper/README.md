@@ -23,7 +23,7 @@ latexmk main.tex
 
 Overleaf should use `main.tex` as the main document. The `.latexmkrc` file in this directory configures the pLaTeX toolchain.
 
-GitHub Actions also builds `main.tex` when `paper/**` changes and uploads `main.pdf` as the `ccbench-wal-paper` artifact.
+GitHub Actions also builds `main.tex` when `paper/**` changes, uploads `main.pdf` as the `ccbench-wal-paper` artifact, and commits the latest generated PDF to `paper/main.pdf` on push builds.
 
 ## GitHub and Overleaf
 
