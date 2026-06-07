@@ -163,12 +163,12 @@ the evaluation.
 \end{figure}
 
 We also evaluate timestamp integration directly.  Reusing commit timestamps as
-logical LSNs eliminates WAL-side separate global LSN allocation: global atomic
-operations drop from 1.5 per transaction to 0, and LSN allocation cost drops
-from about 220 ns per transaction to 0.  In the current measurements this does
-not translate into higher throughput, so we treat timestamp integration
-primarily as a design simplification that removes duplicated logical ordering
-rather than as a direct throughput optimization.
+logical LSNs eliminates WAL-side separate global LSN allocation: WAL-side global
+atomic allocations drop from 1.5 per transaction to 0, and the measured LSN
+allocation cost drops from about 220 ns per transaction to 0.  In the current
+measurements this does not translate into higher throughput, so we treat
+timestamp integration primarily as a design simplification that removes
+duplicated logical ordering rather than as a direct throughput optimization.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\linewidth]{figures/fig_ycsbabc_fair_total_latency.pdf}
