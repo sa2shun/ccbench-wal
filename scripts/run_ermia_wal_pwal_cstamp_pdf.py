@@ -10,6 +10,8 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
 from matplotlib.ticker import FuncFormatter
 
 from run_ermia_cstamp_pwal_experiments import (
@@ -75,6 +77,36 @@ def fmt_y(v):
     return f"{v:.0f}"
 
 
+def read_csv_rows(path):
+    with Path(path).open(newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def prepare_dataframe(rows):
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    for col in [
+        "thread_num",
+        "durable_ack_tps",
+        "ack_latency_p99_us",
+        "pending_commits",
+    ]:
+        df[col] = pd.to_numeric(df.get(col, 0), errors="coerce").fillna(0.0)
+    df["label"] = df["mode"].map(LABELS)
+    df["closed_loop_avg_latency_us"] = (
+        df["thread_num"] * 1_000_000.0 / df["durable_ack_tps"].clip(lower=1.0)
+    )
+    df["plot_latency_us"] = df["ack_latency_p99_us"].astype(float)
+    missing_p99 = df["plot_latency_us"] <= 0
+    df.loc[missing_p99, "plot_latency_us"] = df.loc[
+        missing_p99, "closed_loop_avg_latency_us"
+    ]
+    df["latency_source"] = "ack p99"
+    df.loc[missing_p99, "latency_source"] = "closed-loop avg fallback"
+    return df
+
+
 def run_case(out_dir, mode, repeat, thread_num, args):
     logs = out_dir / "logs"
     logs.mkdir(parents=True, exist_ok=True)
@@ -137,41 +169,81 @@ def run_case(out_dir, mode, repeat, thread_num, args):
     return row
 
 
-def plot_throughput(path, rows, threads):
-    grouped = {}
-    for row in rows:
-        grouped.setdefault((row["mode"], int(row["thread_num"])), []).append(row)
-
+def setup_plot():
+    sns.set_theme(
+        context="paper",
+        style="whitegrid",
+        font_scale=1.15,
+        rc={
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+            "grid.color": "#e4e4e7",
+            "grid.linewidth": 0.8,
+            "pdf.fonttype": 42,
+            "ps.fonttype": 42,
+        },
+    )
     plt.rcParams.update({
-        "font.size": 10,
-        "axes.labelsize": 11,
-        "axes.titlesize": 14,
-        "legend.fontsize": 9,
-        "xtick.labelsize": 9,
-        "ytick.labelsize": 9,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
     })
-    fig, ax = plt.subplots(figsize=(7.0, 4.35), constrained_layout=True)
-    x = list(range(len(threads)))
+
+
+def plot_metric(path, rows, threads, metric, title, ylabel, yscale="linear", note=""):
+    df = prepare_dataframe(rows)
+    palette = {LABELS[mode]: COLORS[mode] for mode in MODES}
+    markers = {LABELS[mode]: MARKERS[mode] for mode in MODES}
+
+    setup_plot()
+    fig, ax = plt.subplots(figsize=(7.2, 4.55), constrained_layout=True)
+    sns.lineplot(
+        data=df,
+        x="thread_num",
+        y=metric,
+        hue="label",
+        style="label",
+        hue_order=[LABELS[mode] for mode in MODES],
+        style_order=[LABELS[mode] for mode in MODES],
+        palette=palette,
+        markers=markers,
+        dashes=False,
+        linewidth=2.8,
+        markersize=7.5,
+        errorbar="sd",
+        err_style="band",
+        ax=ax,
+    )
+    ax.set_title(title, pad=14, weight="bold")
+    ax.set_xlabel("Worker threads")
+    ax.set_ylabel(ylabel)
+    ax.set_xscale("log", base=2)
+    ax.set_xticks(threads)
+    ax.set_xticklabels([str(th) for th in threads])
+    ax.set_yscale(yscale)
+    if metric in ("durable_ack_tps", "pending_commits"):
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: fmt_y(v)))
+    elif metric == "plot_latency_us":
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: fmt_y(v)))
+    if metric == "pending_commits":
+        ax.set_yscale("symlog", linthresh=1, base=10)
+    ax.grid(True, axis="y", which="major", color="#d4d4d8", linewidth=0.8)
+    ax.grid(True, axis="x", which="major", color="#eeeeee", linewidth=0.7)
+    ax.legend(title="", loc="best", frameon=True, framealpha=0.92, edgecolor="#e4e4e7")
+    ax.margins(x=0.08, y=0.12)
+
+    grouped = df.groupby(["label", "thread_num"], as_index=False)[metric].mean()
     for mode in MODES:
-        ys = [mean(grouped.get((mode, th), []), "durable_ack_tps") for th in threads]
-        errs = [stdev(grouped.get((mode, th), []), "durable_ack_tps") for th in threads]
-        ax.plot(
-            x,
-            ys,
-            label=LABELS[mode],
-            color=COLORS[mode],
-            marker=MARKERS[mode],
-            linewidth=2.8,
-            markersize=6.5,
-        )
-        lower = [max(0.0, y - e) for y, e in zip(ys, errs)]
-        upper = [y + e for y, e in zip(ys, errs)]
-        ax.fill_between(x, lower, upper, color=COLORS[mode], alpha=0.12, linewidth=0)
+        label = LABELS[mode]
+        tail = grouped[(grouped["label"] == label) & (grouped["thread_num"] == max(threads))]
+        if tail.empty:
+            continue
+        y = float(tail[metric].iloc[0])
+        text = fmt_y(y)
+        if metric == "plot_latency_us" and y < 1000:
+            text = f"{y:.0f}"
         ax.annotate(
-            fmt_y(ys[-1]),
-            xy=(x[-1], ys[-1]),
+            text,
+            xy=(max(threads), y),
             xytext=(8, 0),
             textcoords="offset points",
             va="center",
@@ -179,31 +251,13 @@ def plot_throughput(path, rows, threads):
             color=COLORS[mode],
             fontweight="bold",
         )
-
-    ax.set_title("YCSB-B throughput: Single WAL vs P-WAL vs Cstamp-PWAL")
-    ax.set_xlabel("Worker threads")
-    ax.set_ylabel("Ack throughput [tx/s]")
-    ax.set_xticks(x)
-    ax.set_xticklabels([str(th) for th in threads])
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: fmt_y(v)))
-    ax.grid(True, axis="y", color="#d4d4d8", linewidth=0.8)
-    ax.grid(True, axis="x", color="#eeeeee", linewidth=0.5)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.legend(loc="upper left", frameon=False)
-    ax.text(
-        0.0,
-        1.01,
-        "YCSB-B, 95% read / 5% update, 10 ops/tx; async mode uses logger=8, committer=1",
-        transform=ax.transAxes,
-        fontsize=8,
-        color="#52525b",
-    )
+    if note:
+        ax.text(0.0, -0.19, note, transform=ax.transAxes, fontsize=8.5, color="#52525b")
     fig.savefig(path)
     plt.close(fig)
 
 
-def write_summary(path, rows, threads, pdf_path, args):
+def write_summary(path, rows, threads, pdfs, args):
     grouped = {}
     for row in rows:
         grouped.setdefault((row["mode"], int(row["thread_num"])), []).append(row)
@@ -226,19 +280,31 @@ def write_summary(path, rows, threads, pdf_path, args):
         print(f"| async flush_us | {args.flush_us} |", file=f)
         print(f"| async max_pending | {args.max_pending} |", file=f)
         print("", file=f)
-        print(f"PDF: `{pdf_path.relative_to(ROOT)}`", file=f)
+        print("PDF outputs:", file=f)
+        for label, pdf in pdfs:
+            print(f"- {label}: `{pdf.relative_to(ROOT)}`", file=f)
+        print("", file=f)
+        print("Latency graph uses measured `ack_latency_p99_us` when the mode exports it. Legacy Single WAL does not export ack latency buckets, so that line falls back to closed-loop average latency computed as `worker_threads / ack_tps`.", file=f)
         print("", file=f)
         print("## Summary", file=f)
         print("", file=f)
-        print("| thread | mode | ack tps mean | ack tps stdev | pending |", file=f)
-        print("|---:|---|---:|---:|---:|", file=f)
+        print("| thread | mode | ack tps mean | ack tps stdev | latency us | pending |", file=f)
+        print("|---:|---|---:|---:|---:|---:|", file=f)
         for th in threads:
             for mode in MODES:
                 rs = grouped.get((mode, th), [])
+                latency_vals = []
+                for row in rs:
+                    p99 = fnum(row, "ack_latency_p99_us")
+                    if p99 <= 0:
+                        tps = max(fnum(row, "durable_ack_tps"), 1.0)
+                        p99 = th * 1_000_000.0 / tps
+                    latency_vals.append(p99)
                 print(
                     f"| {th} | {LABELS[mode]} | "
                     f"{mean(rs, 'durable_ack_tps'):.0f} | "
                     f"{stdev(rs, 'durable_ack_tps'):.1f} | "
+                    f"{(sum(latency_vals) / len(latency_vals)) if latency_vals else 0:.0f} | "
                     f"{mean(rs, 'pending_commits'):.0f} |",
                     file=f,
                 )
@@ -254,6 +320,7 @@ def main():
     parser.add_argument("--group-size", type=int, default=8)
     parser.add_argument("--flush-us", type=int, default=100)
     parser.add_argument("--max-pending", type=int, default=65536)
+    parser.add_argument("--input-csv", default="")
     parser.add_argument("--skip-run", action="store_true")
     args = parser.parse_args()
 
@@ -263,7 +330,11 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = []
 
-    if not args.skip_run:
+    if args.input_csv:
+        rows = read_csv_rows(ROOT / args.input_csv if not Path(args.input_csv).is_absolute() else args.input_csv)
+    elif args.skip_run:
+        rows = read_csv_rows(TABLE_DIR / "ycsbb_wal_pwal_cstamp_scaling.csv")
+    else:
         for repeat in range(args.repeats):
             for th in threads:
                 for mode in MODES:
@@ -282,14 +353,47 @@ def main():
     write_csv(tracked_csv, rows)
 
     FIG_DIR.mkdir(parents=True, exist_ok=True)
-    pdf_path = FIG_DIR / "fig_ycsbb_wal_pwal_cstamp_ack_tps.pdf"
-    plot_throughput(pdf_path, rows, threads)
+    pdfs = [
+        ("ack tps", FIG_DIR / "fig_ycsbb_wal_pwal_cstamp_ack_tps.pdf"),
+        ("latency", FIG_DIR / "fig_ycsbb_wal_pwal_cstamp_latency.pdf"),
+        ("pending", FIG_DIR / "fig_ycsbb_wal_pwal_cstamp_pending.pdf"),
+    ]
+    note = "YCSB-B, 95% read / 5% update, 10 ops/tx; async mode uses logger=8, committer=1."
+    plot_metric(
+        pdfs[0][1],
+        rows,
+        threads,
+        "durable_ack_tps",
+        "YCSB-B throughput: Single WAL vs P-WAL vs Cstamp-PWAL",
+        "Ack throughput [tx/s]",
+        note=note,
+    )
+    plot_metric(
+        pdfs[1][1],
+        rows,
+        threads,
+        "plot_latency_us",
+        "YCSB-B latency: Single WAL vs P-WAL vs Cstamp-PWAL",
+        "Latency [us]",
+        yscale="log",
+        note="Single WAL uses closed-loop average fallback; P-WAL/Cstamp use measured p99 durable-ack latency.",
+    )
+    plot_metric(
+        pdfs[2][1],
+        rows,
+        threads,
+        "pending_commits",
+        "YCSB-B pending durable commits",
+        "Pending durable commits",
+        note=note,
+    )
     summary = ROOT / "docs" / "ycsbb_wal_pwal_cstamp_scaling_20260607.md"
-    write_summary(summary, rows, threads, pdf_path, args)
+    write_summary(summary, rows, threads, pdfs, args)
 
     print(out_dir)
     print(summary)
-    print(pdf_path)
+    for _, pdf in pdfs:
+        print(pdf)
 
 
 if __name__ == "__main__":
