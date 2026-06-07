@@ -80,6 +80,7 @@ class WalLogger {
                            logger_num_));
     if (committer_num_ == 0) committer_num_ = 1;
     skip_fdatasync_ = envBool("CCBENCH_WAL_SKIP_FDATASYNC", false);
+    skip_read_only_ = envBool("CCBENCH_WAL_SKIP_READ_ONLY", false);
     straggler_logger_ = envInt("CCBENCH_WAL_STRAGGLER_LOGGER", -1);
     straggler_sleep_us_ = envUint64("CCBENCH_WAL_STRAGGLER_SLEEP_US", 0);
     base_dir_ = makeBaseDir(protocol_name_);
@@ -112,6 +113,12 @@ class WalLogger {
                                         const WriteSet& write_set,
                                         const WalFrontier* dep_frontier) {
     ensureConfigured(thid + 1);
+    if (skip_read_only_ && write_set.empty() && isWorkerWaitMode(durable_mode_)) {
+      stats_.commits.fetch_add(1, std::memory_order_relaxed);
+      stats_.read_only_commits.fetch_add(1, std::memory_order_relaxed);
+      recordAckLatency(0);
+      return WalCommitResult{0, 0, 0};
+    }
     if (mode_ == WalMode::Shared) {
       return WalCommitResult{logShared(thid, cstamp, write_set), 0, 0};
     }
@@ -1391,6 +1398,7 @@ class WalLogger {
   uint64_t max_pending_async_ = 65536;
   uint32_t committer_num_ = 1;
   bool skip_fdatasync_ = false;
+  bool skip_read_only_ = false;
   int straggler_logger_ = -1;
   uint64_t straggler_sleep_us_ = 0;
 

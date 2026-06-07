@@ -442,8 +442,17 @@ def plot_workload_bars(rows, metric, ylabel, output, caption, yscale="linear"):
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_color("#d1d5db")
     ax.spines["bottom"].set_color("#d1d5db")
-    ax.legend(title="", frameon=False, ncols=3, loc="upper left", bbox_to_anchor=(0, 1.13))
-    ax.text(0.0, 1.04, caption, transform=ax.transAxes, ha="left", va="bottom", fontsize=10.5, color="#374151")
+    ax.legend(title="", frameon=False, ncols=3, loc="upper right", bbox_to_anchor=(1.0, 1.18))
+    ax.text(
+        0.0,
+        1.08,
+        caption,
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=10.5,
+        color="#374151",
+    )
     fig.savefig(output, bbox_inches="tight")
     plt.close(fig)
 
@@ -494,7 +503,7 @@ def plot_speedup(rows, output):
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_color("#d1d5db")
     ax.spines["bottom"].set_color("#d1d5db")
-    ax.legend(["YCSB-A", "YCSB-B", "YCSB-C"], frameon=False, loc="upper left")
+    ax.legend(["YCSB-A", "YCSB-B", "YCSB-C"], frameon=False, loc="upper right")
     ax.text(
         0.0,
         1.04,
@@ -552,10 +561,10 @@ def plot_tidewal_overhead(rows, output):
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_color("#d1d5db")
     ax.spines["bottom"].set_color("#d1d5db")
-    ax.legend(title="", frameon=False, ncols=3, loc="upper left", bbox_to_anchor=(0, 1.13))
+    ax.legend(title="", frameon=False, ncols=3, loc="upper right", bbox_to_anchor=(1.0, 1.18))
     ax.text(
         0.0,
-        1.04,
+        1.08,
         "TideWAL cost breakdown at 32 workers",
         transform=ax.transAxes,
         ha="left",
