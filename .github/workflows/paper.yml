@@ -4,10 +4,12 @@ on:
   push:
     paths:
       - 'paper/**'
+      - 'latexmkrc'
       - '.github/workflows/paper.yml'
   pull_request:
     paths:
       - 'paper/**'
+      - 'latexmkrc'
       - '.github/workflows/paper.yml'
   workflow_dispatch:
 
