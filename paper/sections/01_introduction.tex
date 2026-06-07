@@ -6,74 +6,122 @@
 
 Modern main-memory transaction processing systems exploit many-core machines by
 removing centralized bottlenecks from concurrency control.  Timestamp-based
-engines, including ERMIA-style protocols, already maintain a commit timestamp
-that determines the serialization order of committed transactions.  As a result,
-the critical path of transaction execution is no longer determined only by
-validation or conflict management.  When crash durability is required, the
-write-ahead logging (WAL) protocol can become the dominant scalability limit.
+engines, such as ERMIA-style protocols, assign commit timestamps to transactions
+that have passed validation and serializability checks; these timestamps
+determine the serialization order among committed transactions.  As a result, the
+scalability of transaction execution is no longer determined only by validation,
+conflict detection, or version management.  Once crash durability is required,
+the write-ahead logging (WAL) protocol can become the next serialization point
+on the commit path.
 
-A conventional centralized WAL provides a simple and safe durability order, but
-it serializes log insertion and durable acknowledgment through a shared log
-stream.  Parallel WAL (P-WAL) removes this obvious serialization point by
-partitioning log records across multiple WAL shards.  However, once the shared
-WAL mutex is removed, the system exposes the next durability bottlenecks:
-storage synchronization, durable-point notification, and waiting for a global
-durable prefix.  These costs are particularly important for IPSJ Transactions on
-Databases (TOD)-style database systems research, where the durability protocol
-must be evaluated as part of the end-to-end transaction processing design rather
-than as an isolated I/O optimization.
+A conventional centralized WAL is simple and safe: all transactions append their
+log records to a single log stream, and durability can be acknowledged according
+to a single prefix of that stream.  However, this design serializes log insertion
+and durable acknowledgment, limiting scalability on many-core machines.
+Parallel WAL (P-WAL) addresses this problem by partitioning log records across
+multiple WAL shards.  By allowing different workers to append to different log
+streams, P-WAL removes the most obvious shared-log bottleneck.
+
+However, parallelizing log insertion does not eliminate the need to reason about
+durability order.  After the shared WAL mutex is removed, other costs become
+visible: storage synchronization, durable-point notification, and waiting for a
+durable prefix that is conservative enough to guarantee safe recovery.  In an
+asynchronous commit pipeline, these costs do not appear only as lower
+throughput.  They also appear as accumulated durable-acknowledgment backlog and
+increased tail latency.  Therefore, a scalable durability protocol must be
+evaluated not only by how many transactions it can enqueue, but also by how
+quickly and safely it can acknowledge committed transactions as durable.
 
 \subsection{Problem}
 \label{sec:introduction-problem}
 
-The key problem is that existing P-WAL designs often reintroduce a conservative
-global ordering mechanism at the durability layer.  A transaction may have an
-ERMIA commit timestamp that already defines its serialization position, but the
-WAL layer separately allocates a global log sequence number (LSN) and acknowledges
-durability only when a global durable prefix reaches that LSN.  This design is
-safe, but it couples the acknowledgment of unrelated transactions.  A slow WAL
-shard can delay transactions on other shards even when they do not depend on any
-log record written by the slow shard.
+The central problem is that existing P-WAL designs often reintroduce a global
+ordering mechanism at the durability layer.  Even when the concurrency-control
+layer already assigns a commit timestamp that represents the serialization
+order, the WAL layer may allocate a separate global log sequence number (LSN)
+and acknowledge a transaction only when a global durable prefix reaches that
+LSN.  This rule is safe, but it is overly conservative: it couples the durable
+acknowledgment of transactions that may be independent in the serialization
+order.
 
-The opposite design point is local-only acknowledgment: acknowledge a transaction
-as soon as its own WAL shard is durable.  This removes the global-prefix wait and
-can improve throughput and latency, but it is unsafe in general.  If transaction
-\(T\) reads data produced by transaction \(U\), then acknowledging \(T\) before
-\(U\)'s log record is durable can make recovery replay \(T\) without the state on
-which \(T\) depended.  Therefore, the durability protocol must avoid both
-unnecessary global-prefix waiting and unsafe local-only acknowledgment.
+This coupling is particularly harmful when WAL shards progress at different
+speeds.  If one shard is slow to flush its log records, a global-prefix rule can
+delay transactions on other shards, even when those transactions do not depend
+on any transaction logged by the slow shard.  With bounded asynchronous commit,
+the system may still report high durable-acknowledgment throughput for a short
+period, but only by accumulating a large number of pending commits.  Such
+backlog increases durable-acknowledgment latency and makes the system unstable
+under latency-sensitive workloads.
+
+The opposite design point is local-only acknowledgment: a transaction is
+acknowledged as soon as its own WAL shard becomes durable.  This avoids waiting
+for unrelated shards, but it is unsafe in general.  Suppose transaction \(T\)
+reads data produced by transaction \(U\).  If \(T\)'s log record becomes durable
+before \(U\)'s log record, local-only acknowledgment could acknowledge \(T\)
+before \(U\) is recoverable.  A crash at that point may allow recovery to replay
+\(T\) without the state on which \(T\) depended.  Thus, a durability protocol
+must avoid both extremes: it should not wait for an unrelated global prefix, but
+it must not acknowledge a transaction before its dependencies are durable.
 
 \subsection{Approach}
 \label{sec:introduction-approach}
 
-This paper proposes CStamp-PWAL, a dependency-closed parallel WAL protocol for
-timestamp-based transaction processing.  The first idea is to reuse the commit
-timestamp as a logical LSN.  The WAL layer still maintains physical positions
-within each shard, but it does not need to allocate a separate global LSN for the
-recovery order.  This removes a duplicated ordering mechanism between
-concurrency control and durability.
+This paper proposes \emph{Cstamp-PWAL}, a dependency-closed parallel WAL
+protocol for timestamp-based transaction processing.  Cstamp-PWAL is based on
+three design principles.
 
-The second idea is dependency-closed durable acknowledgment.  Instead of waiting
-for a global durable prefix, CStamp-PWAL acknowledges a transaction only after
-its own log record and the durable frontier of the transactions on which it
-depends have become durable.  This condition preserves the dependency closure
-required for safe recovery while allowing independent WAL shards to progress
-without waiting for unrelated slow shards.
+First, Cstamp-PWAL reuses the commit timestamp as the logical LSN.  In
+timestamp-based engines, the commit timestamp already defines the serialization
+order of committed transactions.  Therefore, the WAL layer does not need to
+allocate an additional global LSN solely to define the logical recovery order.
+Cstamp-PWAL still maintains physical positions inside each WAL shard, but it
+removes the duplicated global ordering mechanism between concurrency control and
+logging.
 
-The third idea is to separate transaction execution from durable acknowledgment.
-Workers execute transactions, validate them, assign commit timestamps, and enqueue
-log records.  Flushers batch and persist shard-local log records.  Committers
-observe durable-frontier advances and acknowledge transactions whose dependency
-conditions are satisfied.  This pipeline keeps worker threads from blocking
+Second, Cstamp-PWAL uses dependency-closed durable acknowledgment.  Instead of
+waiting for a global durable prefix, a transaction $T$ is acknowledged as durable
+only after $T$'s own log record and the durable frontier of all transactions on
+which $T$ depends have become durable.  The dependency frontier is computed from
+read/write dependencies detected by the transaction processing engine, providing
+a sound over-approximation of true recovery dependencies.  This condition ensures
+that every acknowledged transaction can be recovered safely with its entire
+dependency set: if $T$ depends on $U$, both $T$ and $U$ must be durable
+before $T$ is acknowledged.  At the same time, Cstamp-PWAL avoids waiting for
+the log records of transactions that are independent of $T$, allowing different
+WAL shards to progress at different speeds.
+
+Third, Cstamp-PWAL separates transaction execution from durable
+acknowledgment.  Worker threads execute transactions, validate them, assign
+commit timestamps, and enqueue log records to WAL shards.  Flusher threads batch
+and persist shard-local log records.  Committer threads observe durable-frontier
+advances and acknowledge transactions whose dependency conditions are satisfied.
+This worker/flusher/committer pipeline prevents worker threads from blocking
 directly on \texttt{fdatasync} or on conservative durable-prefix waits.
+
+We implement Cstamp-PWAL in an ERMIA-style transaction processing engine and
+evaluate it using both synthetic and YCSB workloads.  Our results show that
+worker-wait durability substantially limits ERMIA's concurrency.  An
+asynchronous global-prefix design improves durable-acknowledgment throughput,
+but it can create a large pending-commit backlog and high tail latency.  In
+contrast, dependency-frontier acknowledgment substantially reduces backlog and
+tail latency on sparse-dependency workloads, while naturally approaching
+global-prefix behavior when dependencies are dense.  The results also show that
+using the ERMIA commit timestamp as the logical LSN eliminates the WAL-side
+separate global LSN allocation, and improves performance when the storage
+synchronization bottleneck is weakened.
 
 \subsection{Organization}
 \label{sec:introduction-organization}
 
-The rest of this paper is organized as follows.  Section~2 reviews WAL,
-parallel WAL, and dependency requirements for crash recovery.  Section~3
-describes the design of CStamp-PWAL, including commit timestamps as logical LSNs,
-dependency-frontier construction, and the worker/flusher/committer pipeline.
-Section~4 presents the experimental methodology and evaluates the throughput,
-backlog, and tail-latency effects of CStamp-PWAL.  Section~5 discusses related
-work, and Section~6 concludes the paper.
+The rest of this paper is organized as follows.
+Section~\ref{sec:background} reviews WAL, parallel WAL, and dependency
+requirements for crash recovery.
+Section~\ref{sec:design} describes the design of Cstamp-PWAL, including commit
+timestamps as logical LSNs, dependency-frontier construction, and the
+worker/flusher/committer pipeline.
+Section~\ref{sec:correctness} discusses the correctness of dependency-closed
+durable acknowledgment.
+Section~\ref{sec:evaluation} presents the experimental methodology and evaluates
+durable-acknowledgment throughput, backlog, and tail latency.
+Section~\ref{sec:related} discusses related work.
+Section~\ref{sec:conclusion} concludes the paper.

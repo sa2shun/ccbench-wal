@@ -1,0 +1,104 @@
+\section{Related Work}
+\label{sec:related}
+
+This section positions Cstamp-PWAL within the landscape of crash recovery and
+durability optimization techniques.  We discuss parallel WAL designs, dependency
+tracking, timestamp-based recovery, and latency-aware durability protocols.
+
+\subsection{Parallel Write-Ahead Logging}
+
+Conventional centralized WAL (e.g., ARIES) serializes all log insertion and
+durable acknowledgment through a single log stream.  Parallel WAL (P-WAL) designs
+address this bottleneck by partitioning log records across multiple shards,
+allowing concurrent appends from different workers.
+
+However, P-WAL designs still differ significantly in how they handle durable
+acknowledgment.  Worker-wait designs, where application threads block until their
+log record is persisted, ensure tight coupling between commit and durability but
+eliminate pipeline parallelism.  Asynchronous designs decouple worker threads
+from flushing, but still face the question: when can a transaction be
+acknowledged as durable?
+
+\subsection{Global-Prefix Durability}
+
+The simplest asynchronous durability protocol allocates a monotonically
+increasing log sequence number (LSN) to each transaction and acknowledges a
+transaction only when a global durable prefix reaches its LSN.  This rule is
+safe but conservative: it forces transactions on fast shards to wait for slow
+shards, even when there are no actual dependencies.  Such conservative waiting
+accumulates durable-acknowledgment backlog and increases tail latency.
+
+\subsection{Dependency-Based Logging and Recovery}
+
+Several systems track dependencies to avoid conservative durable-prefix waiting.
+Taurus~\cite{Taurus} proposes dependency-based logging, where recovery order is
+determined by actual read-write dependencies rather than global LSN order.  This
+approach reduces unnecessary ordering constraints.
+
+However, Taurus targets distributed systems where log records may be on different
+machines, and its design involves explicit dependency tracking at the logging
+layer.  RFA (Remote Flush Avoidance)~\cite{RFA} applies similar ideas in
+multi-node settings.  CPR (Checkpoint-based Parallel Recovery)~\cite{CPR}
+optimizes recovery by grouping transactions into dependency-closed checkpoints,
+reducing the state that must be replayed.
+
+\subsection{Cstamp-PWAL: Integration with Timestamp-Based Engines}
+
+Cstamp-PWAL builds on dependency-based recovery ideas, but targets single-node
+main-memory transaction processing engines that already assign commit timestamps
+(e.g., ERMIA).  Our key contributions beyond existing dependency-based logging
+are:
+
+\begin{enumerate}
+
+\item \emph{Reuse of commit timestamp as logical LSN}: Existing WAL systems
+separate commit timestamps (used for concurrency control) from recovery order
+(defined by WAL LSN).  Cstamp-PWAL eliminates this duplication by using the
+commit timestamp itself as the logical recovery order.  This simplification
+avoids allocating a separate global WAL LSN on the hot path.
+
+\item \emph{Dependency frontier derived from engine-level dependencies}:
+Cstamp-PWAL computes the dependency frontier directly from read-write
+dependencies already tracked by the transaction engine (e.g., ERMIA's own
+validation mechanism).  This allows tight integration with the concurrency
+control layer without adding a separate dependency-tracking abstraction.
+
+\item \emph{Evaluation of durable-ack backlog and tail latency}: Most prior work
+on dependency-based recovery focuses on correctness or throughput.  Cstamp-PWAL
+explicitly measures and optimizes for durable-acknowledgment backlog and tail
+latency, which are critical for latency-sensitive workloads.  The key insight
+is that on sparse-dependency workloads, reducing backlog and tail latency is as
+important as improving peak throughput.
+
+\item \emph{Worker/flusher/committer pipeline}: Rather than having workers block
+on either flush or dependency waits, Cstamp-PWAL separates these concerns into
+three pipeline stages.  This design allows workers to continue executing while
+independent transactions' log records are being flushed, without blocking on
+conservative global-prefix waits.
+
+\end{enumerate}
+
+In summary, while dependency-based logging is not a new idea, Cstamp-PWAL
+combines dependency tracking with timestamp-based engines and evaluates the
+practical impact on durable-acknowledgment latency---a gap that existing
+dependency-based logging papers do not thoroughly address.
+
+\subsection{Epoch-Based and Timestamp-Based Durability}
+
+SiloR~\cite{SiloR} extends the Silo transaction engine with crash recovery by
+using epoch-based checkpoints and log truncation.  Silo's fixed-epoch design
+simplifies recovery but limits flexibility in batching.
+
+Cstamp-PWAL, by contrast, uses fine-grained commit timestamps (often assigned at
+transaction commit time) rather than coarse-grained epochs, allowing finer-
+grained control over durable-acknowledgment boundaries.
+
+\subsection{Latency-Aware Durability}
+
+Recent systems have begun to address the tail-latency impact of durability
+protocols.  Cstamp-PWAL is motivated by similar concerns: conservative global-
+prefix waiting not only hurts peak throughput but also causes committed
+transactions to accumulate in memory, waiting for acknowledgment.  By replacing
+global-prefix coupling with dependency-closed acknowledgment, Cstamp-PWAL
+reduces both backlog and tail latency on sparse-dependency workloads.
+

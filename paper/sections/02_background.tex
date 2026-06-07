@@ -1,4 +1,73 @@
-\section{背景}
+\section{Background}
+\label{sec:background}
 
-本節では，対象とするトランザクション処理基盤，WALの役割，
-および既存方式で生じる性能上の課題を整理する．
+This section reviews the concepts underlying Cstamp-PWAL: write-ahead logging,
+parallel WAL, and the concurrency control model of timestamp-based engines.
+
+\subsection{Write-Ahead Logging and Crash Recovery}
+
+Write-ahead logging (WAL) is a standard durability mechanism: before a
+transaction is acknowledged as committed, all its modifications must be written
+to persistent storage (the log).  Upon recovery from a crash, the system replays
+the log to restore all durable transactions and their effects.
+
+In a centralized WAL, all log records are appended to a single log stream in
+order, and durability is acknowledged according to the log's durable prefix.
+This ensures a total order of transactions but introduces a bottleneck when
+many worker threads contend to append records.
+
+\subsection{Parallel Write-Ahead Logging (P-WAL)}
+
+Parallel WAL removes the centralized log by partitioning records across multiple
+log shards.  Each worker thread can append to its assigned shard without
+contending with other workers.  However, P-WAL must still determine a safe
+durable-acknowledgment condition: which transactions can be reported as durable
+given the states of multiple log shards?
+
+A conservative approach is the global-durable-prefix rule: a transaction is
+acknowledged only when a prefix of all shards up to its log position is durable.
+This is safe but expensive when shards have different flush rates.
+
+\subsection{Timestamp-Based Concurrency Control}
+
+Timestamp-based engines (e.g., ERMIA, TiKV) assign each transaction a commit
+timestamp that determines its serialization order.  Timestamps are used for:
+
+\begin{enumerate}
+  \item Determining serializability: transactions are serializable if validated
+        and committed in timestamp order.
+  \item Conflict detection: transactions with overlapping read/write sets but
+        conflicting serialization orders are aborted.
+  \item Version management: different versions of data items are indexed by
+        timestamp to enable multi-version concurrency control.
+\end{enumerate}
+
+In such engines, the commit timestamp is the logical source of truth for
+serialization order.  A naive design might also use a separate WAL LSN for
+durability order, duplicating the ordering mechanism.
+
+\subsection{Crash Recovery in Timestamp-Based Engines}
+
+When a crash occurs, the system must replay log records in an order that
+respects serialization dependencies.  In ERMIA and similar engines, this means:
+
+\begin{enumerate}
+  \item Replay committed transactions in timestamp order, or
+  \item Replay transactions in any order that respects read-write dependencies.
+\end{enumerate}
+
+The second option is key: if transaction $U$ writes data and transaction $T$
+reads that data, $T$ must be replayed after $U$ (or not at all if $U$ is not
+durable).  This dependency order is necessary and sufficient for correctness,
+even if it differs from strict timestamp order on other transactions.
+
+\subsection{Motivation for Cstamp-PWAL}
+
+A parallel WAL that acknowledges transactions too conservatively (waiting for
+global prefixes) accumulates backlog and increases latency.  A parallel WAL that
+acknowledges too aggressively (local shards only) may recover inconsistent
+states.  Cstamp-PWAL targets the middle ground: use actual read-write
+dependencies to determine which transactions can be safely acknowledged without
+waiting for global synchronization, and integrate with the timestamp-based
+concurrency control layer to avoid duplicate ordering mechanisms.
+

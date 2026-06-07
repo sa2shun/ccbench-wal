@@ -1,5 +1,121 @@
-\section{設計}
+\section{Design of Cstamp-PWAL}
+\label{sec:design}
 
-CStamp-PWALは，コミット時の依存関係とWAL永続化の待ち合わせを分離し，
-高並列実行時の待機時間を削減することを狙う．
-本節では，ログレコードの扱い，依存関係の管理，およびコミット判定の流れを述べる．
+This section describes the design of Cstamp-PWAL, focusing on three key ideas:
+reusing the commit timestamp as the logical recovery order, computing dependency
+frontiers for safe acknowledgment, and separating the worker, flusher, and
+committer into a pipeline.
+
+\subsection{Reusing Commit Timestamp as Logical LSN}
+
+In timestamp-based engines like ERMIA, the commit timestamp already defines the
+serialization order of all committed transactions.  Therefore, we can eliminate a
+separate global WAL LSN and instead use the commit timestamp as the logical
+recovery order.
+
+\begin{definition}[Logical LSN]
+The logical LSN of a transaction is its commit timestamp assigned by the
+concurrency control layer at validation time.
+\end{definition}
+
+This simplification has two benefits:
+
+\begin{enumerate}
+  \item \textbf{Eliminates a hot-path allocation}: No need to allocate a separate
+        monotonic counter for WAL LSNs.
+  \item \textbf{Tightens CC/logging coupling}: The same timestamp determines both
+        serializability and recovery order, reducing the state space and potential
+        for errors.
+\end{enumerate}
+
+\subsection{Dependency Frontier and Safe Acknowledgment}
+
+Instead of waiting for a global durable prefix, Cstamp-PWAL uses the read-write
+dependency frontier to determine when a transaction can be acknowledged.
+
+\begin{definition}[Dependency Frontier]
+The dependency frontier of a transaction $T$ is the set of all transactions that
+$T$ transitively depends on via read-write relationships, plus $T$ itself.
+\end{definition}
+
+The system maintains this frontier by:
+
+\begin{enumerate}
+
+\item \textbf{Detecting dependencies at validation}: During transaction
+validation, the system records which other committed transactions wrote to data
+items that this transaction read.
+
+\item \textbf{Computing transitive closure}: The frontier includes direct
+dependencies and all transitive ancestors.
+
+\item \textbf{Acknowledging only when frontier is durable}: A transaction is
+acknowledged as durable only when all transactions in its frontier have durable
+log records.
+
+\end{enumerate}
+
+This condition is safe because:
+- If $T$ depends on $U$, then $U$ is in $T$'s frontier.
+- If $U$ is in the frontier and becomes durable, the effects $T$ depended on are
+  recoverable.
+- Therefore, acknowledging $T$ after its frontier is durable ensures recovery
+  consistency.
+
+On sparse-dependency workloads, the frontier is small, so Cstamp-PWAL can
+acknowledge transactions quickly without waiting for unrelated shards.  On dense-
+dependency workloads, the frontier grows and asymptotically approaches a global
+durable prefix, which is correct though conservative.
+
+\subsection{Worker / Flusher / Committer Pipeline}
+
+Cstamp-PWAL separates durability concerns across three types of threads to
+avoid blocking worker threads on slow operations:
+
+\begin{enumerate}
+
+\item \textbf{Worker threads}: Execute transactions, validate them, assign commit
+timestamps, and enqueue log records to shards.  They never block on
+\texttt{fdatasync} or on durable-prefix waits.
+
+\item \textbf{Flusher threads}: Read log records from shard queues, batch them,
+and persist them to stable storage via \texttt{fdatasync}.  Each shard has its
+own flusher, allowing parallel flushing.
+
+\item \textbf{Committer thread}: Observes updates to each shard's durable frontier
+and determines which transactions' dependency conditions are satisfied.
+Transactions whose entire frontier is durable are acknowledged and removed from
+pending.
+
+\end{enumerate}
+
+This pipelining allows:
+- Workers to continue executing while flushers are persisting, without blocking.
+- Committers to work on a potentially stale view of durable frontiers, as long as
+  they eventually become correct.
+- The system to batch flushes for efficiency without workers paying the latency
+  cost directly.
+
+\subsection{Integration with ERMIA}
+
+Cstamp-PWAL integrates with ERMIA as follows:
+
+\begin{itemize}
+
+\item \textbf{Dependency detection}: We leverage ERMIA's validation logic.  When a
+transaction validates, it already records which earlier committed versions it read
+from.  We extract this information to build the read-write dependency relation.
+
+\item \textbf{Commit timestamp}: ERMIA's commit timestamp, already assigned at
+validation, becomes the logical recovery order.  No separate allocation is needed.
+
+\item \textbf{Version management}: ERMIA's multi-version storage and timestamp-
+based version selection remain unchanged.  Cstamp-PWAL operates only on the
+durability layer.
+
+\end{itemize}
+
+The coupling is minimal and non-invasive: Cstamp-PWAL sits as a layer between
+transaction validation and the traditional WAL system, observing dependencies
+and managing durable acknowledgment.
+

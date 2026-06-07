@@ -1,0 +1,74 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+This paper presented Cstamp-PWAL, a dependency-closed parallel write-ahead
+logging protocol for timestamp-based transaction processing engines.
+
+The core contribution is replacing global durable-prefix acknowledgment with
+dependency-closed durable acknowledgment, while reusing the existing commit
+timestamp as the logical recovery order.  This design achieves three goals:
+
+\begin{enumerate}
+
+\item \textbf{Preserves recovery safety}: By maintaining a sound over-
+approximation of transitive dependencies and ensuring all dependencies are
+durable before acknowledging a transaction, Cstamp-PWAL guarantees that crashes
+can be recovered correctly without data loss or inconsistency.
+
+\item \textbf{Avoids unnecessary global-prefix coupling}: Transactions are no
+longer forced to wait for unrelated WAL shards to flush, eliminating the
+conservative durable-acknowledgment backlog that global-prefix systems impose.
+
+\item \textbf{Reduces durable-ack latency on sparse-dependency workloads}: On
+YCSB-B with 32 threads, Cstamp-PWAL reduces p99 durable-acknowledgment latency
+from 131 milliseconds to 512 microseconds, and reduces pending-commit backlog
+from 65K to 55 transactions.  These improvements are critical for latency-
+sensitive applications.
+
+\end{enumerate}
+
+The tradeoff is a modest reduction in peak acknowledgment throughput on
+unbounded workloads.  However, this is acceptable for systems where latency and
+commit backlog are important, and the throughput reduction occurs only in
+regimes where global-prefix waiting is not the bottleneck.
+
+\subsection{Future Work}
+
+\subsubsection{Full Crash Recovery Implementation}
+
+The current validation relies on deterministic correctness tests.  A complete
+crash recovery implementation would strengthen the paper, especially for top-
+tier conference submission.  The design is amenable to full crash recovery
+without architectural changes.
+
+\subsubsection{Broader Workload Evaluation}
+
+We evaluated primarily on YCSB-B.  Future work should include TPC-C and other
+workloads with varying dependency densities to understand Cstamp-PWAL's
+performance across a wider range of transaction patterns.
+
+\subsubsection{Dependency Frontier Optimization}
+
+The current frontier computation incurs approximately 145 microseconds per
+transaction in metadata operations.  Opportunities exist to reduce this cost
+through better data structures, lock-free algorithms, or compiler optimizations.
+
+\subsubsection{Integration with Other Engines}
+
+While Cstamp-PWAL is demonstrated on ERMIA, the core ideas (dependency-closed
+acknowledgment, timestamp reuse as logical LSN) should apply to other timestamp-
+based engines like TiKV, CockroachDB, or PostgreSQL with minor modifications.
+
+\subsection{Final Remarks}
+
+Cstamp-PWAL demonstrates that dependency-based durability, when carefully
+integrated with timestamp-based transaction engines and evaluated for practical
+latency impact, can provide significant improvements over global-prefix designs.
+The key insight is that on modern high-concurrency systems, what matters is not
+just peak throughput, but also the ability to acknowledge transactions quickly
+without accumulating large backlogs.
+
+We hope this work encourages the community to move beyond throughput-only
+evaluation and consider latency and backlog as first-class metrics in durability
+protocol design.
+
