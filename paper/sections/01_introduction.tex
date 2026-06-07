@@ -162,14 +162,13 @@ the evaluation.
   \label{fig:ycsbabc-fair-throughput}
 \end{figure}
 
-We also evaluate timestamp integration directly.  Under real I/O, storage
-synchronization can dominate the commit path, so the throughput difference
-between separate-LSN logging and TideWAL may be small.  Under an I/O-light
-configuration, however, reusing commit timestamps as logical LSNs improves
-throughput by 7.4\% by eliminating WAL-side global LSN allocation.  This result
-shows that TideWAL removes duplicated ordering between concurrency control and
-durability, and that the benefit becomes visible once the storage bottleneck is
-weakened.
+We also evaluate timestamp integration directly.  Reusing commit timestamps as
+logical LSNs eliminates WAL-side separate global LSN allocation: global atomic
+operations drop from 1.5 per transaction to 0, and LSN allocation cost drops
+from about 220 ns per transaction to 0.  In the current measurements this does
+not translate into higher throughput, so we treat timestamp integration
+primarily as a design simplification that removes duplicated logical ordering
+rather than as a direct throughput optimization.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\linewidth]{figures/fig_ycsbabc_fair_total_latency.pdf}

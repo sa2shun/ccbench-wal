@@ -18,7 +18,6 @@ Read-only WAL skip is enabled for every WAL system with `CCBENCH_WAL_SKIP_READ_O
 | TideWAL flush_us | 50 |
 | TideWAL max_pending | 65536 |
 
-raw csv: `results/ycsbabc_tidewal_fair_total_20260607_230454/ycsbabc_tidewal_fair_total_raw_20260607_230454.csv`
 summary csv: `paper/tables/ycsbabc_tidewal_fair_total_20260607.csv`
 
 ## Figures

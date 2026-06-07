@@ -12,29 +12,17 @@ FIG_DIR = ROOT / "paper" / "figures"
 
 MAX_PENDING_CSV = (
     ROOT
-    / "results"
-    / "ermia_cstamp_pwal_20260607_100737_898961"
-    / "max_pending"
-    / "ermia_cstamp_pwal_max_pending_20260607_100737_898961.csv"
+    / "paper"
+    / "tables"
+    / "tidewal_extra_max_pending_20260607.csv"
 )
 CSTAMP_CSV = (
     ROOT
-    / "results"
-    / "ermia_cstamp_pwal_20260607_101135_857816"
-    / "cstamp"
-    / "ermia_cstamp_pwal_cstamp_20260607_101135_857816.csv"
+    / "paper"
+    / "tables"
+    / "tidewal_extra_cstamp_lsn_ablation_20260607.csv"
 )
 FAIR_CSV = ROOT / "paper" / "tables" / "ycsbabc_tidewal_fair_total_20260607.csv"
-
-
-MODE_LABELS = {
-    "ermia_async_global_lsn_prefix": "Async global prefix",
-    "ermia_async_dep_frontier_cstamp": "TideWAL",
-    "ermia_async_dep_frontier_lsn": "Dep frontier LSN",
-    "async_global_lsn_prefix": "Async global prefix",
-    "async_dep_frontier_cstamp": "TideWAL",
-    "async_dep_frontier_lsn": "Dep frontier LSN",
-}
 
 
 def set_style():
@@ -65,17 +53,8 @@ def save(fig, path):
 
 def plot_max_pending_pareto(out):
     df = pd.read_csv(MAX_PENDING_CSV)
-    df = df[df["mode"].isin(["ermia_async_global_lsn_prefix", "ermia_async_dep_frontier_cstamp"])]
-    agg = (
-        df.groupby(["mode", "max_pending"], as_index=False)
-        .agg(
-            ack_tps=("durable_ack_tps", "mean"),
-            p99_us=("ack_latency_p99_us", "median"),
-            pending=("pending_commits", "median"),
-        )
-        .sort_values(["mode", "max_pending"])
-    )
-    agg["mode_label"] = agg["mode"].map(MODE_LABELS)
+    agg = df.sort_values(["mode", "max_pending"]).copy()
+    agg["mode_label"] = agg["mode"]
     agg["ack_ktps"] = agg["ack_tps"] / 1000.0
 
     palette = {
@@ -115,19 +94,11 @@ def plot_max_pending_pareto(out):
 
 def plot_cstamp_lsn_ablation(out):
     df = pd.read_csv(CSTAMP_CSV)
-    df = df[df["mode_base"].isin(["ermia_async_dep_frontier_lsn", "ermia_async_dep_frontier_cstamp"])]
-    agg = (
-        df.groupby(["io_condition", "mode_base"], as_index=False)
-        .agg(
-            ack_tps=("durable_ack_tps", "mean"),
-            atomic_per_tx=("global_atomic_per_tx", "mean"),
-            lsn_alloc_ns=("lsn_alloc_ns_per_tx", "mean"),
-        )
-    )
-    agg["mode_label"] = agg["mode_base"].map(MODE_LABELS)
+    agg = df.copy()
+    agg["mode_label"] = agg["mode"]
     cond_order = ["real_io", "io_light"]
-    agg["condition"] = pd.Categorical(agg["io_condition"], cond_order, ordered=True)
-    agg["condition_label"] = agg["io_condition"].map({"real_io": "Real I/O", "io_light": "I/O-light"})
+    agg["condition"] = pd.Categorical(agg["condition"], cond_order, ordered=True)
+    agg["condition_label"] = agg["condition"].map({"real_io": "Real I/O", "io_light": "I/O-light"})
     agg["ack_ktps"] = agg["ack_tps"] / 1000.0
 
     palette = {"Dep frontier LSN": "#7c3aed", "TideWAL": "#059669"}
@@ -135,7 +106,7 @@ def plot_cstamp_lsn_ablation(out):
     specs = [
         ("ack_ktps", "Ack [K tx/s]", "Throughput"),
         ("atomic_per_tx", "Atomic ops / tx", "Global atomics"),
-        ("lsn_alloc_ns", "ns / tx", "LSN allocation"),
+        ("lsn_alloc_ns_per_tx", "ns / tx", "LSN allocation"),
     ]
     for ax, (metric, ylabel, title) in zip(axes, specs):
         sns.barplot(
