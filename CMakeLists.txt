@@ -65,6 +65,10 @@ add_executable(wal_framework_microbench.exe tools/wal_framework_microbench.cc)
 target_compile_features(wal_framework_microbench.exe PRIVATE cxx_std_20)
 target_link_libraries(wal_framework_microbench.exe PRIVATE Threads::Threads)
 
+add_executable(ermia_cstamp_pwal_correctness_test.exe
+  tools/ermia_cstamp_pwal_correctness_test.cc)
+target_compile_features(ermia_cstamp_pwal_correctness_test.exe PRIVATE cxx_std_20)
+
 # All concurrency-control protocols live under cc/. Each one's
 # CMakeLists.txt is just a single ccbench_add_protocol(...) call.
 include(ProtocolHelpers)

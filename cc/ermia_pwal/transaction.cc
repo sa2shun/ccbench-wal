@@ -86,6 +86,7 @@ void TxExecutor::begin() {
   pstamp_ = 0;
   sstamp_ = UINT32_MAX;
   status_ = TransactionStatus::inflight;
+  dep_frontier_.reset(ccbench::WalLogger::instance().shardCount());
 }
 
 /**
@@ -172,6 +173,7 @@ Version* TxExecutor::read_internal(Storage s, std::string_view key, Tuple* tuple
     this->sstamp_ =
             min(this->sstamp_, (v_sstamp >> TIDFLAG));
   }
+  mergeVersionFrontier(ver);
   upReadersBits(ver);
 
   verify_exclusion_or_abort();
@@ -183,6 +185,12 @@ Version* TxExecutor::read_internal(Storage s, std::string_view key, Tuple* tuple
 }
 
 Status TxExecutor::install_version(Tuple* tuple, Version* desired) {
+  const uint64_t install_start = ccbench::TxBreakdownProfiler::nowNs();
+  auto finish_install = [&](Status status) {
+    ccbench::WalLogger::instance().recordVersionInstall(
+        ccbench::TxBreakdownProfiler::nowNs() - install_start);
+    return status;
+  };
   Version* vertmp;
   Version* expected = tuple->latest_.load(memory_order_acquire);
   for (;;) {
@@ -195,7 +203,7 @@ Status TxExecutor::install_version(Tuple* tuple, Version* desired) {
         TMT[thid_]->status_.store(TransactionStatus::aborted,
                                   memory_order_release);
         gcobject_.reuse_version_from_gc_.emplace_back(desired);
-        return Status::ERROR_CONCURRENT_WRITE_OR_DELETE;
+        return finish_install(Status::ERROR_CONCURRENT_WRITE_OR_DELETE);
       }
 
       expected = tuple->latest_.load(memory_order_acquire);
@@ -217,7 +225,7 @@ Status TxExecutor::install_version(Tuple* tuple, Version* desired) {
       TMT[thid_]->status_.store(TransactionStatus::aborted,
                                 memory_order_release);
       gcobject_.reuse_version_from_gc_.emplace_back(desired);
-      return Status::ERROR_CONCURRENT_WRITE_OR_DELETE;
+      return finish_install(Status::ERROR_CONCURRENT_WRITE_OR_DELETE);
     }
 
     desired->prev_ = expected;
@@ -226,7 +234,7 @@ Status TxExecutor::install_version(Tuple* tuple, Version* desired) {
       break;
   }
 
-  return Status::OK;
+  return finish_install(Status::OK);
 }
 
 
@@ -305,6 +313,16 @@ Status TxExecutor::update(Storage s, std::string_view key, TupleBody&& body) {
   stat = install_version(tuple, desired);
   if (stat != Status::OK) {
     goto FINISH_WRITE;
+  }
+  {
+    Version *dep_ver = desired->prev_;
+    while (dep_ver &&
+           dep_ver->status_.load(memory_order_acquire) != VersionStatus::committed &&
+           dep_ver->status_.load(memory_order_acquire) != VersionStatus::deleted) {
+      dep_ver = dep_ver->prev_;
+    }
+    mergeVersionFrontier(dep_ver);
+    mergeVersionReadFrontier(dep_ver);
   }
 
   /**
@@ -443,6 +461,16 @@ Status TxExecutor::delete_record(Storage s, std::string_view key) {
   stat = install_version(tuple, desired);
   if (stat != Status::OK) {
     goto FINISH_DELETE;
+  }
+  {
+    Version *dep_ver = desired->prev_;
+    while (dep_ver &&
+           dep_ver->status_.load(memory_order_acquire) != VersionStatus::committed &&
+           dep_ver->status_.load(memory_order_acquire) != VersionStatus::deleted) {
+      dep_ver = dep_ver->prev_;
+    }
+    mergeVersionFrontier(dep_ver);
+    mergeVersionReadFrontier(dep_ver);
   }
 
   /**
@@ -627,6 +655,8 @@ void TxExecutor::ssn_parallel_commit() {
         ccbench::TxBreakdownProfiler::Phase::phase, now - breakdown_phase_start); \
     breakdown_phase_start = now; \
   } while (0)
+  ccbench::WalCommitResult wal_result;
+  ccbench::WalFrontier closed_frontier;
   this->status_ = TransactionStatus::committing;
   TransactionTable *tmt = TMT[thid_];
   tmt->status_.store(TransactionStatus::committing);
@@ -756,7 +786,11 @@ void TxExecutor::ssn_parallel_commit() {
   }
   RECORD_TX_BREAKDOWN_PHASE(NodeValidation);
 
-  ccbench::WalLogger::instance().logCommit(thid_, cstamp_, write_set_);
+  wal_result = ccbench::WalLogger::instance().logCommitWithFrontier(
+      thid_, cstamp_, write_set_, &dep_frontier_);
+  closed_frontier = dep_frontier_;
+  closed_frontier.setMax(wal_result.log_id, wal_result.local_seq);
+  publishFrontiers(closed_frontier);
   RECORD_TX_BREAKDOWN_PHASE(WalLog);
 
   status_ = TransactionStatus::committed;
@@ -896,6 +930,78 @@ void TxExecutor::verify_exclusion_or_abort() {
     TransactionTable *tmt = loadAcquire(TMT[thid_]);
     tmt->status_.store(TransactionStatus::aborted, memory_order_release);
   }
+}
+
+void TxExecutor::mergeVersionFrontier(Version *ver) {
+  if (!ver || !ccbench::WalLogger::dependencyFrontierRequested()) return;
+  const uint64_t collect_start = ccbench::TxBreakdownProfiler::nowNs();
+  auto frontier = std::atomic_load_explicit(&ver->write_frontier_,
+                                            std::memory_order_acquire);
+  ccbench::WalLogger::instance().recordFrontierCollect(
+      ccbench::TxBreakdownProfiler::nowNs() - collect_start);
+  if (frontier) {
+    const uint64_t merge_start = ccbench::TxBreakdownProfiler::nowNs();
+    dep_frontier_.merge(*frontier,
+                        ccbench::WalLogger::instance().shardCount());
+    ccbench::WalLogger::instance().recordFrontierMerge(
+        ccbench::TxBreakdownProfiler::nowNs() - merge_start);
+  }
+}
+
+void TxExecutor::mergeVersionReadFrontier(Version *ver) {
+  if (!ver || !ccbench::WalLogger::dependencyFrontierRequested()) return;
+  const uint64_t collect_start = ccbench::TxBreakdownProfiler::nowNs();
+  auto frontier = std::atomic_load_explicit(&ver->read_frontier_,
+                                            std::memory_order_acquire);
+  ccbench::WalLogger::instance().recordFrontierCollect(
+      ccbench::TxBreakdownProfiler::nowNs() - collect_start);
+  if (frontier) {
+    const uint64_t merge_start = ccbench::TxBreakdownProfiler::nowNs();
+    dep_frontier_.merge(*frontier,
+                        ccbench::WalLogger::instance().shardCount());
+    ccbench::WalLogger::instance().recordFrontierMerge(
+        ccbench::TxBreakdownProfiler::nowNs() - merge_start);
+  }
+}
+
+void TxExecutor::publishReadFrontier(Version *ver,
+                                     const ccbench::WalFrontier& closed) {
+  if (!ver || !ccbench::WalLogger::frontierPublishRequested()) return;
+  auto old_frontier = std::atomic_load_explicit(&ver->read_frontier_,
+                                                std::memory_order_acquire);
+  for (;;) {
+    ccbench::WalFrontier merged;
+    if (old_frontier) merged = *old_frontier;
+    merged.merge(closed, ccbench::WalLogger::instance().shardCount());
+    auto new_frontier = std::make_shared<const ccbench::WalFrontier>(merged);
+    ccbench::WalLogger::instance().recordFrontierPublishMetadata(0, 0, 1, 1);
+    if (std::atomic_compare_exchange_weak_explicit(
+            &ver->read_frontier_, &old_frontier, new_frontier,
+            std::memory_order_acq_rel, std::memory_order_acquire)) {
+      return;
+    }
+  }
+}
+
+void TxExecutor::publishFrontiers(const ccbench::WalFrontier& closed) {
+  if (!ccbench::WalLogger::frontierPublishRequested()) return;
+  const uint64_t publish_start = ccbench::TxBreakdownProfiler::nowNs();
+  auto closed_ptr = std::make_shared<const ccbench::WalFrontier>(closed);
+  ccbench::WalLogger::instance().recordFrontierPublishMetadata(
+      0, write_set_.size(), 1, 1);
+  for (auto itr = write_set_.begin(); itr != write_set_.end(); ++itr) {
+    std::atomic_store_explicit(&(*itr).ver_->write_frontier_, closed_ptr,
+                               std::memory_order_release);
+  }
+  uint64_t read_updates = 0;
+  for (auto itr = read_set_.begin(); itr != read_set_.end(); ++itr) {
+    ++read_updates;
+    publishReadFrontier((*itr).ver_, closed);
+  }
+  ccbench::WalLogger::instance().recordFrontierPublishMetadata(
+      read_updates, 0, 0, 0);
+  ccbench::WalLogger::instance().recordFrontierPublish(
+      ccbench::TxBreakdownProfiler::nowNs() - publish_start);
 }
 
 void TxExecutor::mainte() {

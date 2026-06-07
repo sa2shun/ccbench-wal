@@ -28,16 +28,16 @@
 #include "../../include/result.hh"
 #include "../../include/tsc.hh"
 #include "../../include/util.hh"
-#include "../../include/wal_logger.hh"
 #include "../../include/zipf.hh"
 #include "../../include/ycsb.hh"
+#include "../../include/ycsb_partitioned.hh"
 
 using namespace std;
 
 void worker(size_t thid, char &ready, const bool &start, const bool &quit) {
-  Backoff backoff(FLAGS_clocks_per_us); // Cicada's backoff opt.
+  Backoff backoff(FLAGS_clocks_per_us);
   TxExecutor trans(thid, backoff, (Result *) &ErmiaResult[thid], quit);
-  YcsbWorkload workload;
+  PartitionedYcsbWorkload workload;
 
 #if MASSTREE_USE
   MasstreeWrapper<Tuple>::thread_init(int(thid));
@@ -45,11 +45,7 @@ void worker(size_t thid, char &ready, const bool &start, const bool &quit) {
 
 #ifdef Linux
   setThreadAffinity(thid);
-  // printf("Thread #%zu: on CPU %d\n", thid, sched_getcpu());
-  // printf("sysconf(_SC_NPROCESSORS_CONF) %ld\n",
-  // sysconf(_SC_NPROCESSORS_CONF));
-#endif  // Linux
-  // printf("Thread #%d: on CPU %d\n", *myid, sched_getcpu());
+#endif
 
   if (trans.isLeader()) trans.gcob.decideFirstRange();
 
@@ -59,24 +55,24 @@ void worker(size_t thid, char &ready, const bool &start, const bool &quit) {
   while (!loadAcquire(quit)) {
     workload.run<TxExecutor,TransactionStatus>(trans);
   }
-  return;
 }
 
 int main(int argc, char *argv[]) try {
-  gflags::SetUsageMessage("ERMIA benchmark.");
+  gflags::SetUsageMessage("ERMIA abort0 benchmark.");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   chkArg();
-  YcsbWorkload::displayWorkloadParameter();
-  YcsbWorkload::makeDB<Tuple,void>(nullptr);
+  PartitionedYcsbWorkload::displayWorkloadParameter();
+  PartitionedYcsbWorkload::makeDB<Tuple,void>(nullptr);
 
   alignas(CACHE_LINE_SIZE) bool start = false;
   alignas(CACHE_LINE_SIZE) bool quit = false;
   initResult();
   std::vector<char> readys(TotalThreadNum);
   std::vector<std::thread> thv;
-  for (size_t i = 0; i < TotalThreadNum; ++i)
+  for (size_t i = 0; i < TotalThreadNum; ++i) {
     thv.emplace_back(worker, i, std::ref(readys[i]), std::ref(start),
                      std::ref(quit));
+  }
   waitForReady(readys);
   uint64_t start_tsc = rdtscp();
   storeRelease(start, true);
@@ -84,7 +80,6 @@ int main(int argc, char *argv[]) try {
     sleepMs(1000);
   }
   storeRelease(quit, true);
-  ccbench::WalLogger::instance().markMeasurementStop();
   for (auto &th : thv) th.join();
   uint64_t end_tsc = rdtscp();
   long double actual_extime = round(

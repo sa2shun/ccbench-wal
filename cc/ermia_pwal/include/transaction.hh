@@ -12,6 +12,7 @@
 #include "../../../include/status.hh"
 #include "../../../include/string.hh"
 #include "../../../include/util.hh"
+#include "../../../include/wal_frontier.hh"
 #include "common.hh"
 #include "ermia_op_element.hh"
 #include "garbage_collection.hh"
@@ -39,6 +40,7 @@ public:
   vector <SetElement<Tuple>> write_set_;
   std::unordered_map<void*, uint64_t> node_map_;
   vector <Procedure> pro_set_;
+  ccbench::WalFrontier dep_frontier_;
 
   bool reconnoitering_ = false;
   bool is_ronly_ = false;
@@ -115,6 +117,14 @@ public:
   void dispWS();
 
   void dispRS();
+
+  void mergeVersionFrontier(Version *ver);
+
+  void mergeVersionReadFrontier(Version *ver);
+
+  void publishReadFrontier(Version *ver, const ccbench::WalFrontier& closed);
+
+  void publishFrontiers(const ccbench::WalFrontier& closed);
 
   void upReadersBits(Version *ver) {
     uint64_t expected, desired;

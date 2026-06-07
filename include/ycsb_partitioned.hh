@@ -2,6 +2,13 @@
 
 #include "ycsb.hh"
 
+#ifdef GLOBAL_VALUE_DEFINE
+DEFINE_uint64(ycsb_remote_read_prob_ppm, 0,
+              "Remote read probability in ppm for partitioned YCSB.");
+#else
+DECLARE_uint64(ycsb_remote_read_prob_ppm);
+#endif
+
 inline static void makePartitionedProcedure(std::vector<Procedure>& pro,
                                             Xoroshiro128Plus& rnd,
                                             FastZipf& zipf,
@@ -19,11 +26,26 @@ inline static void makePartitionedProcedure(std::vector<Procedure>& pro,
   const uint64_t span = std::max<uint64_t>(1, end - begin);
 
   for (size_t i = 0; i < FLAGS_ycsb_max_ope; ++i) {
-    const uint64_t tmpkey = begin + (zipf() % span);
     if ((rnd.next() % 100) < FLAGS_ycsb_rratio) {
+      uint64_t target_begin = begin;
+      uint64_t target_span = span;
+      if (workers > 1 &&
+          (rnd.next() % 1000000) < FLAGS_ycsb_remote_read_prob_ppm) {
+        uint64_t remote = rnd.next() % (workers - 1);
+        if (remote >= thid) ++remote;
+        const uint64_t remote_begin =
+            std::min<uint64_t>(FLAGS_ycsb_tuple_num, remote * partition_size);
+        const uint64_t remote_end = (remote + 1 == workers)
+            ? FLAGS_ycsb_tuple_num
+            : std::min<uint64_t>(FLAGS_ycsb_tuple_num, remote_begin + partition_size);
+        target_begin = remote_begin;
+        target_span = std::max<uint64_t>(1, remote_end - remote_begin);
+      }
+      const uint64_t tmpkey = target_begin + (zipf() % target_span);
       wonly_flag = false;
       pro.emplace_back(Ope::READ, tmpkey);
     } else {
+      const uint64_t tmpkey = begin + (zipf() % span);
       ronly_flag = false;
       if (FLAGS_ycsb_rmw) {
         pro.emplace_back(Ope::READ_MODIFY_WRITE, tmpkey);
@@ -124,5 +146,7 @@ RETRY:
   static void displayWorkloadParameter() {
     YcsbWorkload::displayWorkloadParameter();
     cout << "#FLAGS_ycsb_partitioned_abort0:\ttrue" << endl;
+    cout << "#FLAGS_ycsb_remote_read_prob_ppm:\t"
+         << FLAGS_ycsb_remote_read_prob_ppm << endl;
   }
 };

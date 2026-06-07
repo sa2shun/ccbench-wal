@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cpuid.h>
+#include <cstdlib>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <vector>
 
 #include "debug.hh"
 
@@ -27,12 +29,41 @@
   }
 
 #ifdef Linux
+static std::vector<int> parseCpuAffinityList() {
+  std::vector<int> cpus;
+  const char* env = std::getenv("CCBENCH_CPU_LIST");
+  if (!env || !*env) return cpus;
+  const char* p = env;
+  while (*p) {
+    char* end = nullptr;
+    long first = std::strtol(p, &end, 10);
+    if (end == p) break;
+    long last = first;
+    if (*end == '-') {
+      p = end + 1;
+      last = std::strtol(p, &end, 10);
+    }
+    if (first <= last) {
+      for (long cpu = first; cpu <= last; ++cpu) cpus.push_back(static_cast<int>(cpu));
+    } else {
+      for (long cpu = first; cpu >= last; --cpu) cpus.push_back(static_cast<int>(cpu));
+    }
+    p = end;
+    if (*p == ',') ++p;
+  }
+  return cpus;
+}
+
 static void setThreadAffinity(const int myid) {
   pid_t pid = syscall(SYS_gettid);
   cpu_set_t cpu_set;
+  static const std::vector<int> cpu_list = parseCpuAffinityList();
+  const int cpu = cpu_list.empty()
+      ? (myid % sysconf(_SC_NPROCESSORS_CONF))
+      : cpu_list[static_cast<size_t>(myid) % cpu_list.size()];
 
   CPU_ZERO(&cpu_set);
-  CPU_SET(myid % sysconf(_SC_NPROCESSORS_CONF), &cpu_set);
+  CPU_SET(cpu, &cpu_set);
 
   if (sched_setaffinity(pid, sizeof(cpu_set_t), &cpu_set) != 0) ERR;
 

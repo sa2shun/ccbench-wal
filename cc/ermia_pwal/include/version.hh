@@ -2,9 +2,11 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 
 #include "../../../include/cache_line_size.hh"
 #include "../../../include/tuple_body.hh"
+#include "../../../include/wal_frontier.hh"
 
 #define TIDFLAG 1
 
@@ -97,6 +99,8 @@ public:
   std::atomic <uint64_t> readers_;  // summarize all of V's readers.
   std::atomic <uint32_t> cstamp_;   // Version creation stamp, c(V)
   std::atomic <VersionStatus> status_;
+  std::shared_ptr<const ccbench::WalFrontier> write_frontier_;
+  std::shared_ptr<const ccbench::WalFrontier> read_frontier_;
 
   TupleBody body_;
 
@@ -106,5 +110,7 @@ public:
     psstamp_.init(0, UINT32_MAX & ~(TIDFLAG));
     status_.store(VersionStatus::inflight, std::memory_order_release);
     readers_.store(0, std::memory_order_release);
+    write_frontier_.reset();
+    read_frontier_.reset();
   }
 };

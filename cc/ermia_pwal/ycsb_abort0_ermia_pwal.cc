@@ -28,6 +28,7 @@
 #include "../../include/result.hh"
 #include "../../include/tsc.hh"
 #include "../../include/util.hh"
+#include "../../include/wal_logger.hh"
 #include "../../include/zipf.hh"
 #include "../../include/ycsb.hh"
 #include "../../include/ycsb_partitioned.hh"
@@ -84,6 +85,7 @@ int main(int argc, char *argv[]) try {
     sleepMs(1000);
   }
   storeRelease(quit, true);
+  ccbench::WalLogger::instance().markMeasurementStop();
   for (auto &th : thv) th.join();
   uint64_t end_tsc = rdtscp();
   long double actual_extime = round(
