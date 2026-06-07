@@ -4,120 +4,96 @@
 \subsection{Motivation}
 \label{sec:introduction-motivation}
 
-Transaction processing is a core component of database systems and is used in a
-wide range of applications that require correctness under concurrent access.
-When multiple transactions execute concurrently, the database system must preserve
-a correct database state.  Concurrency control provides this isolation guarantee,
-and serializability has long been used as a fundamental correctness criterion for
-concurrent transaction execution~\cite{bernstein1987ccr,papadimitriou1979serializability}.
+Transaction processing systems must provide isolation and durability under
+concurrent access.  Serializability has long served as a fundamental correctness
+criterion for concurrent transaction execution~\cite{bernstein1987ccr,papadimitriou1979serializability},
+while write-ahead logging (WAL) remains the standard mechanism for crash
+durability and recovery~\cite{haerder1983principles,mohan1992aries}.
 
-Recent main-memory transaction processing systems exploit many-core machines by
-removing centralized bottlenecks from concurrency control.  Systems and protocols
-such as Silo, ERMIA, TicToc, and other in-memory concurrency-control designs show
-that transaction execution can scale when validation, timestamp management, and
-version management are carefully engineered~\cite{tu2013silo,kim2016ermia,yu2016tictoc,tanabe2020ccbench}.
-In timestamp-based engines, including ERMIA-style systems, committed
-transactions are assigned commit timestamps that are used to order transactions
-after validation and serializability checks.  As a result, the scalability
-bottleneck of a transaction processing system is not always in concurrency
-control itself.
+Modern main-memory transaction processing systems, such as Silo, ERMIA, TicToc,
+and related designs, scale concurrency control by avoiding centralized
+bottlenecks in validation, timestamp management, and version
+management~\cite{tu2013silo,kim2016ermia,yu2016tictoc,tanabe2020ccbench}.
+In timestamp-based engines, committed transactions are already assigned commit
+timestamps that determine their logical serialization order.  Consequently, once
+concurrency control scales, the commit-path bottleneck often shifts from
+transaction execution to durable acknowledgment.
 
-When crash durability is required, write-ahead logging (WAL) becomes part of the
-commit path.  WAL is a standard technique for database recovery and is central
-to classical recovery protocols such as ARIES~\cite{haerder1983principles,mohan1992aries}.
-A conventional centralized WAL provides a simple and safe durability order: all
-log records are appended to a single log stream, and transactions are
-acknowledged according to a durable prefix of that stream.  However, this design
-introduces a centralized serialization point for log insertion and durable
-acknowledgment.
+A conventional centralized WAL provides a simple durability order: log records
+are appended to a single stream, and transactions are acknowledged according to a
+durable prefix of that stream.  This design is safe, but it introduces a
+serialization point for log insertion and acknowledgment.  Parallel WAL (P-WAL)
+removes this obvious bottleneck by partitioning log records across multiple WAL
+shards~\cite{xia2021taurus,haubenschild2020rethinking}.  However, parallel log
+insertion alone is insufficient.  The system must still decide when a transaction
+can be safely acknowledged as durable.  In asynchronous commit pipelines, an
+overly conservative rule may preserve throughput only by accumulating a large
+backlog of pending durable commits, thereby increasing tail latency.
 
-Parallel WAL (P-WAL) addresses this issue by partitioning log records across
-multiple WAL shards~\cite{xia2021taurus,haubenschild2020rethinking}.  By
-allowing different workers to append to different log streams, P-WAL removes the
-most obvious shared-log bottleneck.  However, parallelizing log insertion does
-not eliminate the need to reason about durability order.  Once the shared WAL
-mutex is removed, other durability costs become visible, including storage
-synchronization, durable-point notification, and waiting for a durable condition
-that is conservative enough to guarantee safe recovery.  In asynchronous commit
-pipelines, these costs appear not only as reduced throughput but also as pending
-durable commits and increased tail latency.
-
-Therefore, scalable durability for main-memory transaction processing should be
-evaluated not only by the number of transactions that workers can execute, but
-also by how quickly the system can safely return durable commit acknowledgments.
+Thus, scalable durability should be evaluated not only by transaction execution
+throughput, but also by how quickly and safely the system returns durable commit
+acknowledgments.
 
 \subsection{Problem}
 \label{sec:introduction-problem}
 
-The key problem is that existing P-WAL designs often reintroduce a conservative
-global ordering mechanism at the durability layer.  Even when the
-concurrency-control layer already assigns a commit timestamp that can serve as
-the logical order of committed transactions, the WAL layer may separately
-allocate a global log sequence number (LSN).  A transaction is then acknowledged
-only when a global durable prefix reaches its LSN.
+Existing P-WAL designs often reintroduce a conservative global order at the
+durability layer.  Even when the concurrency-control layer already assigns commit
+timestamps, the WAL layer may allocate a separate global log sequence number
+(LSN).  A transaction is then acknowledged only when a global durable prefix
+reaches its LSN.
 
-This rule is safe, but it is overly conservative.  It couples the durable
-acknowledgment of transactions that may be independent in the serialization
-order.  If one WAL shard becomes slow, transactions on other shards may be
-delayed even when they do not depend on any transaction logged by the slow shard.
-In a bounded asynchronous commit pipeline, this delay may be hidden by allowing
-many transactions to remain pending.  The system may still report high
-durable-acknowledgment throughput, but only by accumulating a large durable-ack
-backlog.  This backlog increases tail latency and makes the system undesirable
-for latency-sensitive workloads.
+This rule is safe but overly conservative.  It couples the acknowledgment of
+transactions that may be unrelated in the serialization order.  If one WAL shard
+is slow, transactions on other shards may be delayed even when they have no
+dependency on transactions logged by the slow shard.  With a bounded
+asynchronous pipeline, this delay may be hidden as high durable-acknowledgment
+throughput, but only by increasing the number of pending commits and tail
+latency.
 
-The opposite design point is local-only acknowledgment.  In this design, a
-transaction is acknowledged as soon as its own WAL shard becomes durable.  This
-avoids waiting for unrelated shards, but it is unsafe in general.  Suppose
-transaction $T$ reads a value written by transaction $U$.  If $T$'s log record
-becomes durable before $U$'s log record, local-only acknowledgment may
-acknowledge $T$ before $U$ is recoverable.  A crash at that point can make
-recovery replay $T$ without the state on which $T$ depended.
+The opposite design point is local-only acknowledgment: a transaction is
+acknowledged as soon as its own WAL shard becomes durable.  This avoids waiting
+for unrelated shards, but it is unsafe in general.  If transaction $T$ reads a
+value written by transaction $U$, acknowledging $T$ before $U$ is recoverable may
+allow a crash recovery state that contains $T$ without the state on which $T$
+depends.
 
-Figure~\ref{fig:ack-policies} illustrates these design points.  Global-prefix
-acknowledgment is safe but may wait for unrelated slow WAL shards.  Local-only
-acknowledgment avoids such waits but can acknowledge a transaction before the
-transactions it depends on are recoverable.  TideWAL instead acknowledges a
-transaction after its own log record and its dependency-closed durable frontier
-become durable.
+Figure~\ref{fig:ack-policies} summarizes these alternatives.  Global-prefix
+acknowledgment is safe but may wait for unrelated slow shards.  Local-only
+acknowledgment avoids such waits but can acknowledge a transaction before its
+dependencies are recoverable.  The desired point is dependency-closed
+acknowledgment: acknowledge a transaction after its own log record and the
+transactions it depends on are durable.
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\linewidth]{figures/fig1_tidewal_ack_policies.pdf}
   \caption{
-  Durable acknowledgment policies in parallel WAL.
-  Global-prefix acknowledgment is safe but conservatively waits for unrelated
-  WAL shards.  Local-only acknowledgment avoids unrelated waits but is unsafe
-  when a transaction depends on another non-durable transaction.  TideWAL
-  acknowledges a transaction after its own log record and its dependency frontier
-  become durable.
+  Durable acknowledgment policies in parallel WAL.  Global-prefix
+  acknowledgment is safe but conservatively waits for unrelated shards.
+  Local-only acknowledgment avoids unrelated waits but is unsafe under
+  dependencies.  TideWAL acknowledges a transaction only after its own log record
+  and its dependency frontier are durable.
   }
   \label{fig:ack-policies}
 \end{figure}
 
-Thus, a durability protocol for P-WAL must avoid both extremes.  It should not
-wait for an unrelated global durable prefix, but it must also avoid
-acknowledging a transaction before the transactions it depends on are durable.
-
-Figure~\ref{fig:ycsbb-ack-behavior} shows this problem in our ERMIA
-implementation using YCSB-B~\cite{cooper2010ycsb} at 32 threads.  An
-asynchronous global-LSN-prefix design achieves higher durable-acknowledgment
-throughput, but it accumulates 65,522 pending commits and increases p99
-durable-acknowledgment latency to 131 ms.  TideWAL reduces pending commits to 48
-and p99 latency to 512 $\mu$s by acknowledging transactions based on
-dependency-closed durable frontiers.  This result shows that high durable-ack
-throughput can hide substantial durable-acknowledgment backlog.
+This distinction is observable in our ERMIA implementation.  Figure~\ref{fig:ycsbb-ack-behavior}
+shows YCSB-B~\cite{cooper2010ycsb} at 32 threads.  An asynchronous
+global-LSN-prefix design achieves high durable-acknowledgment throughput, but
+accumulates 65,522 pending commits and increases p99 durable-acknowledgment
+latency to 131 ms.  In contrast, TideWAL reduces pending commits to 48 and p99
+latency to 512 $\mu$s by acknowledging transactions using dependency-closed
+durable frontiers.
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\linewidth]{figures/fig2_ermia_ycsbb_ack_behavior.pdf}
   \caption{
-  Durable acknowledgment behavior on ERMIA with YCSB-B at 32 threads.
-  The asynchronous global-LSN-prefix design achieves higher durable-acknowledgment
-  throughput, but it accumulates 65,522 pending commits and increases p99
-  durable-acknowledgment latency to 131 ms.  TideWAL reduces pending commits to
-  48 and p99 latency to 512 $\mu$s by using dependency-closed durable
-  acknowledgment.
+  Durable acknowledgment behavior on ERMIA with YCSB-B at 32 threads.  High
+  durable-acknowledgment throughput under an asynchronous global-prefix policy
+  can hide a large pending-commit backlog.  TideWAL reduces both backlog and
+  p99 durable-acknowledgment latency by using dependency-closed acknowledgment.
   }
   \label{fig:ycsbb-ack-behavior}
 \end{figure}
@@ -125,74 +101,66 @@ throughput can hide substantial durable-acknowledgment backlog.
 \subsection{Approach}
 \label{sec:introduction-approach}
 
-This paper proposes \emph{TideWAL}, a timestamp-integrated dependency-closed
-parallel WAL protocol for main-memory transaction processing.  TideWAL is
-designed for timestamp-based engines such as ERMIA, where the
-concurrency-control layer already assigns commit timestamps to committed
-transactions.  The goal of TideWAL is not simply to maximize raw throughput, but
-to return durable commit acknowledgments safely while avoiding the backlog and
-tail latency caused by overly conservative global-prefix waiting.
+This paper proposes \emph{TideWAL}, a timestamp-integrated,
+dependency-closed parallel WAL protocol for main-memory transaction processing.
+TideWAL targets timestamp-based engines such as ERMIA, where the transaction
+engine already computes a logical commit order.  Its goal is not merely to
+maximize raw throughput, but to return durable commit acknowledgments safely
+without the backlog and tail latency caused by global-prefix waiting.
 
-TideWAL is based on three ideas.  First, it replaces global-prefix durable
-acknowledgment with dependency-closed durable acknowledgment.  TideWAL
-acknowledges a transaction only after its own log record and the durable frontier
-of the transactions on which it depends have become durable.  The dependency
-frontier is derived from actual read/write dependencies observed by the
-transaction processing engine.  This condition preserves recovery safety because
-every acknowledged transaction is recovered together with the transactions it
-depends on.  At the same time, it avoids waiting for unrelated WAL shards.
+TideWAL is based on three ideas.
+
+First, TideWAL replaces global-prefix acknowledgment with dependency-closed
+durable acknowledgment.  For each transaction, TideWAL tracks a dependency
+frontier that summarizes the transactions whose effects must be recoverable
+before the transaction itself can be acknowledged.  A transaction is acknowledged
+only when its own log record and this dependency frontier are durable.  This
+condition preserves recovery safety while avoiding waits for unrelated WAL
+shards.
 
 Second, TideWAL reuses the commit timestamp as the logical LSN.  Existing P-WAL
-designs may allocate a separate global LSN at the WAL layer even when the
-transaction engine already has a commit timestamp that represents the logical
-transaction order.  TideWAL removes this duplicated ordering mechanism.  WAL
-shards still maintain physical positions within local log files, but the WAL
-layer does not allocate an additional global LSN solely for logical recovery
-ordering.
+designs may allocate a separate global LSN even when the transaction engine
+already assigns commit timestamps.  TideWAL removes this duplicated ordering
+mechanism.  WAL shards still maintain local physical offsets, but the WAL layer
+does not allocate an additional global logical order.
 
-Third, TideWAL decouples transaction execution from durable acknowledgment by
-using a worker/flusher/committer pipeline.  Worker threads execute transactions,
-validate them, assign commit timestamps, and enqueue log records.  Flusher
-threads batch and persist shard-local log records.  Committer threads observe
-durable-frontier advances and acknowledge transactions whose dependency
-conditions are satisfied.  This design prevents worker threads from directly
-blocking on \texttt{fdatasync} or on conservative durable-prefix waits.
+Third, TideWAL decouples execution from durable acknowledgment using a
+worker/flusher/committer pipeline.  Workers execute and validate transactions,
+assign commit timestamps, and enqueue log records.  Flushers persist shard-local
+log batches.  Committers observe durable-frontier advances and acknowledge
+transactions whose dependency conditions are satisfied.  Thus, workers do not
+directly block on \texttt{fdatasync} or on conservative durable-prefix waits.
 
-We implement TideWAL in an ERMIA-style transaction processing engine and evaluate
-it using YCSB workloads.  Our evaluation shows that worker-wait global-prefix
-WAL severely limits ERMIA's concurrency.  For example, on YCSB-B with 32
-threads, worker-wait global-prefix WAL achieves 106K durable acknowledgments per
-second, while an asynchronous global-prefix design reaches 365K durable
-acknowledgments per second.  However, the asynchronous global-prefix design
-accumulates 65,522 pending commits and increases p99 durable-acknowledgment
-latency to 131 ms.  TideWAL achieves 231K durable acknowledgments per second
-while reducing pending commits to 48 and p99 latency to 512 $\mu$s.  These
-results show that TideWAL controls durable-acknowledgment backlog and tail
-latency while preserving recovery safety on sparse-dependency workloads.
+We implement TideWAL in an ERMIA-style engine and evaluate it on YCSB workloads.
+On YCSB-B at 32 threads, worker-wait global-prefix WAL reaches only 106K durable
+acknowledgments per second.  An asynchronous global-prefix design improves
+throughput to 365K acknowledgments per second, but at the cost of 65,522 pending
+commits and 131 ms p99 durable-acknowledgment latency.  TideWAL sustains 231K
+durable acknowledgments per second while reducing pending commits to 48 and p99
+latency to 512 $\mu$s.  These results show that dependency-closed
+acknowledgment controls durable-acknowledgment backlog and tail latency while
+preserving recovery safety on sparse-dependency workloads.
 
-We also evaluate the effect of timestamp integration.  Under real I/O, the
-performance difference between a separate-LSN design and TideWAL is small
-because storage synchronization dominates.  Under an I/O-light configuration,
-however, reusing commit timestamps as logical LSNs improves throughput by 7.4\%
-by eliminating WAL-side global LSN allocation.  These results demonstrate that
-TideWAL removes duplicated ordering between concurrency control and durability,
-and that the benefit becomes visible when the storage-synchronization bottleneck
-is weakened.
+We also evaluate timestamp integration.  Under real I/O, storage synchronization
+dominates, so the difference between separate-LSN logging and TideWAL is small.
+Under an I/O-light configuration, however, reusing commit timestamps as logical
+LSNs improves throughput by 7.4\% by eliminating WAL-side global LSN allocation.
+This result shows that TideWAL removes duplicated ordering between concurrency
+control and durability, and that the benefit becomes visible once the storage
+bottleneck is weakened.
 
 \subsection{Organization}
 \label{sec:introduction-organization}
 
 The rest of this paper is organized as follows.
 Section~\ref{sec:background} reviews WAL, parallel WAL, timestamp-based
-concurrency control, and dependency requirements for crash recovery.
-Section~\ref{sec:design} describes the design of TideWAL, including
-timestamp-integrated logical ordering, dependency-frontier construction, and the
-worker/flusher/committer pipeline.
+concurrency control, and dependency requirements for recovery.
+Section~\ref{sec:design} presents TideWAL's timestamp-integrated logical
+ordering, dependency-frontier construction, and worker/flusher/committer
+pipeline.
 Section~\ref{sec:correctness} discusses the correctness of dependency-closed
 durable acknowledgment.
-Section~\ref{sec:evaluation} presents the experimental methodology and evaluates
-durable-acknowledgment throughput, pending commits, and tail latency.
-Section~\ref{sec:related} discusses related work, including ARIES-style
-recovery, parallel logging, dependency-based logging, and main-memory recovery
-systems.
-Section~\ref{sec:conclusion} concludes this paper.
+Section~\ref{sec:evaluation} evaluates durable-acknowledgment throughput,
+pending commits, and tail latency.
+Section~\ref{sec:related} discusses related work.
+Section~\ref{sec:conclusion} concludes the paper.
