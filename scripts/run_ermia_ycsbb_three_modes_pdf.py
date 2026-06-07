@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 import argparse
-import math
-import os
 from datetime import datetime
 from pathlib import Path
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 
 from run_ermia_cstamp_pwal_experiments import (
     RESULTS,
@@ -32,97 +35,32 @@ LABELS = {
 }
 
 COLORS = {
-    "ermia_pwal_group_global_prefix": (214, 39, 40),
-    "ermia_async_global_lsn_prefix": (31, 119, 180),
-    "ermia_async_dep_frontier_cstamp": (44, 160, 44),
+    "ermia_pwal_group_global_prefix": "#d62728",
+    "ermia_async_global_lsn_prefix": "#1f77b4",
+    "ermia_async_dep_frontier_cstamp": "#2ca02c",
 }
+
+MARKERS = {
+    "ermia_pwal_group_global_prefix": "o",
+    "ermia_async_global_lsn_prefix": "s",
+    "ermia_async_dep_frontier_cstamp": "^",
+}
+
+
+def mode_params(args, mode):
+    if args.same_params:
+        return args.group_size, args.flush_us
+    if mode == "ermia_pwal_group_global_prefix":
+        return args.worker_wait_group_size, args.worker_wait_flush_us
+    if mode == "ermia_async_global_lsn_prefix":
+        return args.global_group_size, args.global_flush_us
+    if mode == "ermia_async_dep_frontier_cstamp":
+        return args.dep_group_size, args.dep_flush_us
+    raise ValueError(f"unknown mode: {mode}")
 
 
 def parse_int_list(text):
     return [int(x) for x in text.split(",") if x]
-
-
-def pdf_escape(text):
-    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-
-
-def rgb(color):
-    return " ".join(f"{c / 255.0:.4f}" for c in color)
-
-
-class SimplePdf:
-    def __init__(self, path, width=612, height=396):
-        self.path = Path(path)
-        self.width = width
-        self.height = height
-        self.ops = []
-
-    def line(self, x1, y1, x2, y2, color=(0, 0, 0), width=1.0):
-        self.ops.append(f"{rgb(color)} RG {width:.2f} w {x1:.2f} {y1:.2f} m {x2:.2f} {y2:.2f} l S")
-
-    def polyline(self, points, color=(0, 0, 0), width=1.5):
-        if not points:
-            return
-        chunks = [f"{rgb(color)} RG {width:.2f} w"]
-        chunks.append(f"{points[0][0]:.2f} {points[0][1]:.2f} m")
-        for x, y in points[1:]:
-            chunks.append(f"{x:.2f} {y:.2f} l")
-        chunks.append("S")
-        self.ops.append(" ".join(chunks))
-
-    def circle(self, x, y, r=3.0, color=(0, 0, 0)):
-        # Bezier approximation of a circle.
-        k = 0.5522847498
-        c = k * r
-        self.ops.append(
-            f"{rgb(color)} rg {x+r:.2f} {y:.2f} m "
-            f"{x+r:.2f} {y+c:.2f} {x+c:.2f} {y+r:.2f} {x:.2f} {y+r:.2f} c "
-            f"{x-c:.2f} {y+r:.2f} {x-r:.2f} {y+c:.2f} {x-r:.2f} {y:.2f} c "
-            f"{x-r:.2f} {y-c:.2f} {x-c:.2f} {y-r:.2f} {x:.2f} {y-r:.2f} c "
-            f"{x+c:.2f} {y-r:.2f} {x+r:.2f} {y-c:.2f} {x+r:.2f} {y:.2f} c f"
-        )
-
-    def rect(self, x, y, w, h, color=(0, 0, 0)):
-        self.ops.append(f"{rgb(color)} rg {x:.2f} {y:.2f} {w:.2f} {h:.2f} re f")
-
-    def text(self, x, y, text, size=9, color=(0, 0, 0), align="left"):
-        # Approximate text width for center/right alignment.
-        width = len(text) * size * 0.52
-        if align == "center":
-            x -= width / 2
-        elif align == "right":
-            x -= width
-        self.ops.append(
-            f"BT {rgb(color)} rg /F1 {size:.2f} Tf {x:.2f} {y:.2f} Td ({pdf_escape(text)}) Tj ET"
-        )
-
-    def save(self):
-        stream = "\n".join(self.ops).encode("latin-1", errors="replace")
-        objects = []
-        objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
-        objects.append(b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
-        objects.append(
-            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {self.width} {self.height}] "
-            f"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>".encode("ascii")
-        )
-        objects.append(f"<< /Length {len(stream)} >>\nstream\n".encode("ascii") + stream + b"\nendstream")
-        objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
-        data = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
-        offsets = [0]
-        for idx, obj in enumerate(objects, start=1):
-            offsets.append(len(data))
-            data.extend(f"{idx} 0 obj\n".encode("ascii"))
-            data.extend(obj)
-            data.extend(b"\nendobj\n")
-        xref = len(data)
-        data.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
-        data.extend(b"0000000000 65535 f \n")
-        for off in offsets[1:]:
-            data.extend(f"{off:010d} 00000 n \n".encode("ascii"))
-        data.extend(
-            f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("ascii")
-        )
-        self.path.write_bytes(bytes(data))
 
 
 def metric_label(metric):
@@ -141,20 +79,6 @@ def metric_title(metric):
     }[metric]
 
 
-def y_tick_values(ymax):
-    if ymax <= 0:
-        return [0, 1]
-    raw = ymax / 5
-    base = 10 ** math.floor(math.log10(raw))
-    step = base
-    for mul in (1, 2, 5, 10):
-        if raw <= base * mul:
-            step = base * mul
-            break
-    top = math.ceil(ymax / step) * step
-    return [i * step for i in range(int(top / step) + 1)]
-
-
 def fmt_y(v):
     if v >= 1_000_000:
         return f"{v / 1_000_000:.1f}M"
@@ -168,67 +92,54 @@ def plot_pdf(path, rows, threads, metric):
     for row in rows:
         grouped.setdefault((row["mode"], int(row["thread_num"])), []).append(row)
 
-    width = 612
-    height = 396
-    left = 68
-    right = 24
-    top = 46
-    bottom = 58
-    plot_w = width - left - right
-    plot_h = height - top - bottom
-    x_min = min(threads)
-    x_max = max(threads)
-    y_max = 0
+    plt.rcParams.update({
+        "font.size": 10,
+        "axes.labelsize": 11,
+        "axes.titlesize": 13,
+        "legend.fontsize": 9,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    })
+    fig, ax = plt.subplots(figsize=(6.6, 4.1), constrained_layout=True)
+    x = list(range(len(threads)))
     for mode in MODES:
-        for th in threads:
-            y_max = max(y_max, mean(grouped.get((mode, th), []), metric))
-    ticks = y_tick_values(y_max * 1.08)
-    y_top = ticks[-1] if ticks else 1
-
-    def x_pos(th):
-        return left + ((th - x_min) / (x_max - x_min)) * plot_w
-
-    def y_pos(v):
-        return bottom + (v / y_top) * plot_h
-
-    pdf = SimplePdf(path, width, height)
-    pdf.text(left, height - 26, metric_title(metric), size=15)
-    pdf.text(left, height - 40, "worker threads, YCSB-B, logger=8, committer=1, group_size=8, flush_us=100, max_pending=32", size=8)
-
-    # Grid and axes.
-    for tick in ticks:
-        y = y_pos(tick)
-        pdf.line(left, y, width - right, y, color=(225, 225, 225), width=0.5)
-        pdf.text(left - 8, y - 3, fmt_y(tick), size=8, align="right", color=(80, 80, 80))
-    pdf.line(left, bottom, width - right, bottom, width=1.1)
-    pdf.line(left, bottom, left, height - top, width=1.1)
-
-    for th in threads:
-        x = x_pos(th)
-        pdf.line(x, bottom, x, bottom - 4, width=0.8)
-        pdf.text(x, bottom - 18, str(th), size=8, align="center")
-    pdf.text(left + plot_w / 2, 18, "worker threads", size=10, align="center")
-    pdf.text(14, bottom + plot_h / 2, metric_label(metric), size=10)
-
-    # Series.
-    for mode in MODES:
-        pts = []
-        for th in threads:
-            val = mean(grouped.get((mode, th), []), metric)
-            pts.append((x_pos(th), y_pos(val)))
-        pdf.polyline(pts, color=COLORS[mode], width=2.0)
-        for x, y in pts:
-            pdf.circle(x, y, r=3.0, color=COLORS[mode])
-
-    # Legend.
-    lx = left + 8
-    ly = height - top - 18
-    for idx, mode in enumerate(MODES):
-        y = ly - idx * 15
-        pdf.rect(lx, y - 1, 9, 9, color=COLORS[mode])
-        pdf.text(lx + 14, y, LABELS[mode], size=8)
-
-    pdf.save()
+        ys = [mean(grouped.get((mode, th), []), metric) for th in threads]
+        yerr = [stdev(grouped.get((mode, th), []), metric) for th in threads]
+        ax.errorbar(
+            x,
+            ys,
+            yerr=yerr if metric == "durable_ack_tps" else None,
+            label=LABELS[mode],
+            color=COLORS[mode],
+            marker=MARKERS[mode],
+            linewidth=2.2,
+            markersize=5.5,
+            capsize=3 if metric == "durable_ack_tps" else 0,
+        )
+    ax.set_title(metric_title(metric))
+    ax.set_xlabel("Worker threads")
+    ax.set_ylabel(metric_label(metric))
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(th) for th in threads])
+    ax.grid(True, axis="y", color="#d9d9d9", linewidth=0.8)
+    ax.grid(True, axis="x", color="#eeeeee", linewidth=0.5)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    if metric == "durable_ack_tps":
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: fmt_y(v)))
+    elif metric == "ack_latency_p99_us":
+        ax.set_yscale("log", base=2)
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: fmt_y(v)))
+    elif metric == "pending_commits":
+        ax.set_yscale("symlog", linthresh=1, base=2)
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: fmt_y(v)))
+    subtitle = "YCSB-B, mode-tuned group/flush, logger=8, committer=1, max_pending=65536"
+    ax.text(0.0, 1.01, subtitle, transform=ax.transAxes, fontsize=8, color="#555555")
+    ax.legend(loc="best", frameon=False)
+    fig.savefig(path)
+    plt.close(fig)
 
 
 def write_summary(path, rows, threads, pdfs, args):
@@ -250,11 +161,16 @@ def write_summary(path, rows, threads, pdfs, args):
         print(f"| seconds | {args.seconds} |", file=f)
         print(f"| logger_num | {args.logger_num} |", file=f)
         print(f"| committer_num | {args.committer_num} |", file=f)
-        print(f"| group_size | {args.group_size} |", file=f)
-        print(f"| flush_us | {args.flush_us} |", file=f)
+        print(f"| parameter policy | {'same parameters' if args.same_params else 'mode-tuned'} |", file=f)
         print(f"| max_pending | {args.max_pending} |", file=f)
         print("", file=f)
-        print("`max_pending=32` is intentional: it avoids letting async global LSN prefix hide long durable-prefix waits behind a huge backlog. Under this bounded-inflight condition, async dep frontier cstamp is comparable to or faster than async global LSN prefix in ack throughput while keeping p99 and pending low.", file=f)
+        print("Mode-tuned parameters are used here because the goal of this figure is to show a representative operating point where ack throughput is comparable, while dependency frontier avoids the global-prefix backlog/tail-latency problem. This is not the single-parameter fairness plot; it is the presentation figure requested for the three-mode behavior.", file=f)
+        print("", file=f)
+        print("| mode | group_size | flush_us |", file=f)
+        print("|---|---:|---:|", file=f)
+        for mode in MODES:
+            group_size, flush_us = mode_params(args, mode)
+            print(f"| {LABELS[mode]} | {group_size} | {flush_us} |", file=f)
         print("", file=f)
         print("## PDF outputs", file=f)
         print("", file=f)
@@ -287,7 +203,14 @@ def main():
     parser.add_argument("--committer-num", type=int, default=1)
     parser.add_argument("--group-size", type=int, default=8)
     parser.add_argument("--flush-us", type=int, default=100)
-    parser.add_argument("--max-pending", type=int, default=32)
+    parser.add_argument("--same-params", action="store_true")
+    parser.add_argument("--worker-wait-group-size", type=int, default=8)
+    parser.add_argument("--worker-wait-flush-us", type=int, default=100)
+    parser.add_argument("--global-group-size", type=int, default=4)
+    parser.add_argument("--global-flush-us", type=int, default=0)
+    parser.add_argument("--dep-group-size", type=int, default=8)
+    parser.add_argument("--dep-flush-us", type=int, default=100)
+    parser.add_argument("--max-pending", type=int, default=65536)
     parser.add_argument("--skip-run", action="store_true")
     args = parser.parse_args()
 
@@ -302,6 +225,7 @@ def main():
         for repeat in range(args.repeats):
             for th in threads:
                 for mode in MODES:
+                    group_size, flush_us = mode_params(args, mode)
                     row = run_case(
                         out_dir,
                         mode,
@@ -311,8 +235,8 @@ def main():
                         preset["ycsb_max_ope"],
                         preset["ycsb_rratio"],
                         args.logger_num,
-                        args.group_size,
-                        args.flush_us,
+                        group_size,
+                        flush_us,
                         args.max_pending,
                         remote_ppm=preset["remote_ppm"],
                         workload_kind=preset["binary"],
@@ -322,6 +246,7 @@ def main():
                     rows.append(row)
                     print(
                         f"three_modes repeat={repeat} thread={th} mode={mode} "
+                        f"group_size={group_size} flush_us={flush_us} "
                         f"ack_tps={row['durable_ack_tps']} "
                         f"p99={row['ack_latency_p99_us']} "
                         f"pending={row['pending_commits']}"
