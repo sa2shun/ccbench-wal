@@ -1,0 +1,40 @@
+name: paper
+
+on:
+  push:
+    paths:
+      - 'paper/**'
+      - '.github/workflows/paper.yml'
+  pull_request:
+    paths:
+      - 'paper/**'
+      - '.github/workflows/paper.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install TeX Live packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            latexmk \
+            texlive-lang-japanese \
+            texlive-latex-recommended \
+            texlive-fonts-recommended
+
+      - name: Build IPSJ paper
+        working-directory: paper
+        run: latexmk main.tex
+
+      - name: Upload PDF
+        uses: actions/upload-artifact@v5
+        with:
+          name: ccbench-wal-paper
+          path: paper/main.pdf
+          if-no-files-found: error
