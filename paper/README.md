@@ -9,8 +9,11 @@ This directory is the LaTeX project root for Overleaf and GitHub.
 - `figures/`: committed paper figures. EPS is allowed here for IPSJ/pLaTeX.
 - `tables/`: table sources or generated table snapshots.
 - `refs.bib`: bibliography for the paper.
-- `ipsj.cls`, `ipsjtech.sty`, `ipsjpref.sty`, `ipsjsort.bst`, `ipsjunsrt.bst`: IPSJ UTF-8 template files from `ipsj_v4-1.zip`.
-- `template/`: original IPSJ technical-report sample for reference only.
+- `ipsj.cls`, `ipsjtech.sty`, `ipsjpref.sty`, `ipsjsort*.bst`, `ipsjunsrt*.bst`, `bibsample.bib`, `ebibsample.bib`: IPSJ UTF-8 template files from `ipsj_v4-1.zip`.
+- `template/`: original IPSJ UTF-8 sample sources from `ipsj_v4-1.zip` for reference only.
+
+`main.tex` follows the UTF-8 `tech-jsample.tex` structure and uses
+`\documentclass[submit,techrep,noauthor]{ipsj}` for IPSJ SIG technical reports.
 
 ## Build
 
