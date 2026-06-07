@@ -24,7 +24,7 @@ are appended to a single stream, and transactions are acknowledged according to 
 durable prefix of that stream.  This design is safe, but it introduces a
 serialization point for log insertion and acknowledgment.  Parallel WAL (P-WAL)
 removes this obvious bottleneck by partitioning log records across multiple WAL
-shards~\cite{xia2021taurus,haubenschild2020rethinking}.  However, parallel log
+shards~\cite{kamiya2017pwal,xia2021taurus,haubenschild2020rethinking}.  However, parallel log
 insertion alone is insufficient.  The system must still decide when a transaction
 can be safely acknowledged as durable.  In asynchronous commit pipelines, an
 overly conservative rule may preserve throughput only by accumulating a large
