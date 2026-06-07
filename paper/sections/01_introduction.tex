@@ -69,31 +69,29 @@ transactions it depends on are durable.
   \centering
   \includegraphics[width=\linewidth]{figures/fig1_tidewal_ack_policies.pdf}
   \caption{
-  Durable acknowledgment policies in parallel WAL.  Global-prefix
-  acknowledgment is safe but conservatively waits for unrelated shards.
-  Local-only acknowledgment avoids unrelated waits but is unsafe under
-  dependencies.  TideWAL acknowledges a transaction only after its own log record
-  and its dependency frontier are durable.
+  Durable acknowledgment policies in parallel WAL.  Global-prefix acknowledgment
+  is safe but can delay transactions whose dependencies are already durable
+  because it waits for unrelated slow shards.  TideWAL uses dependency-closed
+  acknowledgment, acknowledging a transaction only after its own log record and
+  dependency frontier are durable.
   }
   \label{fig:ack-policies}
 \end{figure}
 
-This distinction is observable in our ERMIA implementation.  Figure~\ref{fig:ycsbb-ack-behavior}
-shows YCSB-B~\cite{cooper2010ycsb} at 32 threads.  An asynchronous
-global-LSN-prefix design achieves high durable-acknowledgment throughput, but
-accumulates 65,522 pending commits and increases p99 durable-acknowledgment
-latency to 131 ms.  In contrast, TideWAL reduces pending commits to 48 and p99
-latency to 512 $\mu$s by acknowledging transactions using dependency-closed
-durable frontiers.
+Figure~\ref{fig:ycsbb-ack-behavior} shows durable-acknowledgment throughput on
+ERMIA with YCSB-B~\cite{cooper2010ycsb} from 1 to 32 worker threads.
+Single WAL stays near 12--13K acknowledgments/s, while P-WAL scales to 109K
+acknowledgments/s by partitioning log streams.  TideWAL reaches 374K
+acknowledgments/s at 32 workers by combining parallel WAL logging with
+asynchronous dependency-closed durable acknowledgment.
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\linewidth]{figures/fig2_ermia_ycsbb_ack_behavior.pdf}
   \caption{
-  Durable acknowledgment behavior on ERMIA with YCSB-B at 32 threads.  High
-  durable-acknowledgment throughput under an asynchronous global-prefix policy
-  can hide a large pending-commit backlog.  TideWAL reduces both backlog and
-  p99 durable-acknowledgment latency by using dependency-closed acknowledgment.
+  YCSB-B durable-acknowledgment throughput on ERMIA.  TideWAL scales beyond
+  Single WAL and P-WAL by combining parallel WAL logging with asynchronous
+  dependency-closed durable acknowledgment.
   }
   \label{fig:ycsbb-ack-behavior}
 \end{figure}
