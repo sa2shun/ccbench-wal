@@ -98,4 +98,21 @@ tags
 __pycache__/
 *.pyc
 
+# IPSJ/Overleaf paper sources
+ipsj_v4-1.zip
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.dvi
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.log
+paper/*.out
+paper/*.pdf
+paper/*.synctex.gz
+paper/*.toc
+paper/template/*.pdf
+!paper/figures/**/*.eps
+!paper/figures/*.eps
+
 # End of https://www.gitignore.io/api/vim,c++,macos

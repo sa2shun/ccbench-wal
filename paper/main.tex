@@ -1,0 +1,47 @@
+\documentclass[submit,techrep,noauthor]{ipsj}
+
+\usepackage[dvipdfmx]{graphicx}
+\usepackage{latexsym}
+\usepackage{url}
+
+\begin{document}
+
+\title{CStamp-PWALによるWALボトルネックの緩和}
+\etitle{Mitigating WAL Bottlenecks with CStamp-PWAL}
+
+\affiliate{KEIO}{慶應義塾大学\\
+Keio University}
+
+\author{著者名}{Author Name}{KEIO}
+
+\begin{abstract}
+本稿では，トランザクション処理におけるwrite-ahead logging（WAL）のボトルネックを対象に，
+CStamp-PWALの設計と評価を述べる．
+既存のccbench-wal実験基盤上で，WAL処理，依存関係管理，およびコミット処理の内訳を測定し，
+スループット低下の要因を分析する．
+\end{abstract}
+
+\begin{eabstract}
+This paper studies write-ahead logging bottlenecks in transaction processing
+and evaluates the design of CStamp-PWAL on the ccbench-wal experimental framework.
+We break down WAL, dependency management, and commit processing costs to analyze
+the factors limiting throughput.
+\end{eabstract}
+
+\maketitle
+
+\input{sections/01_introduction}
+\input{sections/02_background}
+\input{sections/03_design}
+\input{sections/04_evaluation}
+\input{sections/05_related_work}
+\input{sections/06_conclusion}
+
+\begin{acknowledgment}
+本研究に関して有益な議論をいただいた関係者に感謝する．
+\end{acknowledgment}
+
+\bibliographystyle{ipsjunsrt}
+\bibliography{refs}
+
+\end{document}
