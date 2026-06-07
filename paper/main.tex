@@ -19,8 +19,7 @@
 
 \begin{document}
 
-\title{TideWAL: Timestamp-Integrated Dependency-Closed Parallel WAL for
-Main-Memory Transaction Processing}
+\title{TideWAL: Timestamp-Integrated Dependency-Closed Parallel WAL for Main-Memory Transaction Processing}
 
 \affiliate{KEIO}{Faculty of Environment and Information Studies, Keio University, Japan}
 
@@ -29,14 +28,7 @@ Main-Memory Transaction Processing}
 \author{Hideyuki Kawashima}{Hideyuki Kawashima}{KEIO}
 
 \begin{abstract}
-This paper proposes TideWAL, a dependency-closed parallel WAL protocol for
-main-memory transaction processing. TideWAL avoids conservative global-prefix
-durable acknowledgment while preserving recovery safety by acknowledging a
-transaction only after both its own log record and the durable frontier of its
-observed dependencies are persistent. In an ERMIA-style implementation, TideWAL
-reduces pending durable commits from 65,522 to 48 and p99
-durable-acknowledgment latency from 131 ms to 512 $\mu$s on YCSB-B at 32
-threads, while sustaining 231K durable acknowledgments per second.
+This paper proposes TideWAL, a dependency-closed parallel WAL protocol for main-memory transaction processing. TideWAL avoids conservative global-prefix durable acknowledgment while preserving recovery safety by acknowledging a transaction only after both its own log record and the durable frontier of its observed dependencies are persistent. In an ERMIA-style implementation, TideWAL reduces pending durable commits from 65,522 to 48 and p99 durable-acknowledgment latency from 131 ms to 512 $\mu$s on YCSB-B at 32 threads, while sustaining 231K durable acknowledgments per second.
 \end{abstract}
 
 \maketitle
