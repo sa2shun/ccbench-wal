@@ -98,6 +98,13 @@ WORKLOAD_PRESETS = {
         "remote_ppm": 0,
         "description": "normal YCSB-B style / 95% read, 5% update, 10 ops/tx",
     },
+    "ycsb_c": {
+        "binary": "ycsb",
+        "ycsb_max_ope": 10,
+        "ycsb_rratio": 100,
+        "remote_ppm": 0,
+        "description": "normal YCSB-C style / 100% read, 10 ops/tx",
+    },
 }
 
 
