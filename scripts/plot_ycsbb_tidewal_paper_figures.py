@@ -268,7 +268,7 @@ def main():
         df,
         "ack_tps",
         "Ack throughput [tx/s]",
-        FIG_DIR / "fig_ycsbb_tidewal_ack_tps.pdf",
+        FIG_DIR / "fig2_ermia_ycsbb_ack_behavior.pdf",
         ylim=(0, 415000),
         label_offsets={
             "Single WAL": 9,
@@ -306,7 +306,7 @@ def main():
         caption="YCSB-B, measured at the end of the steady-state window",
     )
     print(OUT_CSV)
-    print(FIG_DIR / "fig_ycsbb_tidewal_ack_tps.pdf")
+    print(FIG_DIR / "fig2_ermia_ycsbb_ack_behavior.pdf")
     print(FIG_DIR / "fig_ycsbb_tidewal_latency.pdf")
     print(FIG_DIR / "fig_ycsbb_tidewal_pending.pdf")
 
