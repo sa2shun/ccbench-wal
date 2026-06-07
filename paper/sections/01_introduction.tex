@@ -170,6 +170,59 @@ throughput by 7.4\% by eliminating WAL-side global LSN allocation.  This result
 shows that TideWAL removes duplicated ordering between concurrency control and
 durability, and that the benefit becomes visible once the storage bottleneck is
 weakened.
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_fair_total_latency.pdf}
+  \caption{
+  P99 durable-acknowledgment latency under a fair total active-thread budget.
+  }
+  \label{fig:ycsbabc-fair-latency}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_fair_total_pending.pdf}
+  \caption{
+  Pending durable commits under a fair total active-thread budget.
+  }
+  \label{fig:ycsbabc-fair-pending}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_fair_tidewal_speedup_vs_pwal.pdf}
+  \caption{
+  TideWAL throughput relative to P-WAL under a fair total active-thread budget.
+  }
+  \label{fig:ycsbabc-fair-speedup}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/fig_extra_max_pending_pareto.pdf}
+  \caption{
+  Max-pending Pareto frontier.
+  }
+  \label{fig:extra-max-pending-pareto}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/fig_extra_cstamp_lsn_ablation.pdf}
+  \caption{
+  Cstamp-as-logical-LSN ablation.
+  }
+  \label{fig:extra-cstamp-lsn-ablation}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/fig_extra_tidewal_overhead_breakdown.pdf}
+  \caption{
+  TideWAL overhead breakdown.
+  }
+  \label{fig:extra-tidewal-overhead-breakdown}
+\end{figure}
 
 \subsection{Organization}
 \label{sec:introduction-organization}
