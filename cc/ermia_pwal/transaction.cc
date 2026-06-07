@@ -786,11 +786,15 @@ void TxExecutor::ssn_parallel_commit() {
   }
   RECORD_TX_BREAKDOWN_PHASE(NodeValidation);
 
-  wal_result = ccbench::WalLogger::instance().logCommitWithFrontier(
-      thid_, cstamp_, write_set_, &dep_frontier_);
-  closed_frontier = dep_frontier_;
-  closed_frontier.setMax(wal_result.log_id, wal_result.local_seq);
-  publishFrontiers(closed_frontier);
+  if (write_set_.empty() && ccbench::WalLogger::dependencyFrontierRequested()) {
+    ccbench::WalLogger::instance().ackReadOnlyWithFrontier(thid_, &dep_frontier_);
+  } else {
+    wal_result = ccbench::WalLogger::instance().logCommitWithFrontier(
+        thid_, cstamp_, write_set_, &dep_frontier_);
+    closed_frontier = dep_frontier_;
+    closed_frontier.setMax(wal_result.log_id, wal_result.local_seq);
+    publishFrontiers(closed_frontier);
+  }
   RECORD_TX_BREAKDOWN_PHASE(WalLog);
 
   status_ = TransactionStatus::committed;

@@ -29,6 +29,8 @@ struct Row {
   bool independent_reversed_flush = false;
   bool dependent_reversed_flush = false;
   bool transitive_frontier = false;
+  bool readonly_waits_for_writer = false;
+  bool readonly_not_published = false;
   bool acked_recovered = false;
   bool dependency_violation = false;
 };
@@ -75,6 +77,10 @@ bool canAckDepFrontier(const Txn& t, const WalFrontier& durable_seq) {
   return durable(t, durable_seq) && depClosed(t, durable_seq);
 }
 
+bool canAckReadOnlyDepFrontier(const Txn& t, const WalFrontier& durable_seq) {
+  return depClosed(t, durable_seq);
+}
+
 bool recoveryContains(const Txn& t, const WalFrontier& durable_seq) {
   return durable(t, durable_seq) && depClosed(t, durable_seq);
 }
@@ -110,6 +116,25 @@ Row evaluateMode(const std::string& mode) {
   v.local_seq = 2;
   v.dep.merge(y.write_frontier);
   v.closed = closeFrontier(v.dep, v.log_id, v.local_seq);
+
+  Txn ro;
+  ro.name = "R";
+  ro.cstamp = 13;
+  ro.global_lsn = 0;
+  ro.log_id = 1;
+  ro.local_seq = 0;
+  ro.dep.merge(x.write_frontier);
+
+  Txn w_after_ro;
+  w_after_ro.name = "W";
+  w_after_ro.cstamp = 14;
+  w_after_ro.global_lsn = 4;
+  w_after_ro.log_id = 1;
+  w_after_ro.local_seq = 2;
+  w_after_ro.dep.merge(x.write_frontier);
+  w_after_ro.dep.merge(x.read_frontier);
+  w_after_ro.closed = closeFrontier(w_after_ro.dep, w_after_ro.log_id,
+                                    w_after_ro.local_seq);
 
   Txn i0;
   i0.name = "I0";
@@ -159,11 +184,22 @@ Row evaluateMode(const std::string& mode) {
   r.dependent_reversed_flush = !ack_t_before_u && ack_t_after_u;
 
   r.transitive_frontier = v.dep.get(0) >= 1 && v.dep.get(1) >= 1;
+  const bool ack_ro_before_u = mode == "local-only"
+      ? true
+      : canAckReadOnlyDepFrontier(ro, only_t_durable);
+  const bool ack_ro_after_u = mode == "local-only"
+      ? true
+      : canAckReadOnlyDepFrontier(ro, both_durable);
+  r.readonly_waits_for_writer = !ack_ro_before_u && ack_ro_after_u;
+  r.readonly_not_published =
+      x.read_frontier.nonzeroEntries(2) == 0 &&
+      w_after_ro.dep.get(0) >= 1 && w_after_ro.dep.get(1) == 0;
   r.acked_recovered = !ack_t_after_u || recoveryContains(t, both_durable);
   r.dependency_violation = ack_t_before_u && !recoveryContains(t, only_t_durable);
 
   if (mode == "local-only") {
     r.dependent_reversed_flush = !r.dependency_violation;
+    r.readonly_waits_for_writer = false;
     r.acked_recovered = false;
   }
   return r;
@@ -186,8 +222,9 @@ int main() {
   std::cout << "Scenario: U writes x, T reads x and writes y, so U -> T. "
                "T's log is durable before U's log.\n\n";
   std::cout << "| mode | independent reversed flush | dependent reversed flush | "
-               "transitive frontier | acked recovered | dependency violation |\n";
-  std::cout << "|---|---|---|---|---|---|\n";
+               "transitive frontier | readonly waits | readonly not published | "
+               "acked recovered | dependency violation |\n";
+  std::cout << "|---|---|---|---|---|---|---|---|\n";
 
   bool ok = true;
   for (const std::string& mode : modes) {
@@ -196,14 +233,20 @@ int main() {
               << passfail(r.independent_reversed_flush) << " | "
               << passfail(r.dependent_reversed_flush) << " | "
               << passfail(r.transitive_frontier) << " | "
+              << passfail(r.readonly_waits_for_writer) << " | "
+              << passfail(r.readonly_not_published) << " | "
               << yn(r.acked_recovered) << " | "
               << yn(r.dependency_violation) << " |\n";
     if (mode == "local-only") {
       ok = ok && r.independent_reversed_flush && !r.dependent_reversed_flush &&
-           r.transitive_frontier && !r.acked_recovered && r.dependency_violation;
+           r.transitive_frontier && !r.readonly_waits_for_writer &&
+           r.readonly_not_published && !r.acked_recovered &&
+           r.dependency_violation;
     } else {
       ok = ok && r.independent_reversed_flush && r.dependent_reversed_flush &&
-           r.transitive_frontier && r.acked_recovered && !r.dependency_violation;
+           r.transitive_frontier && r.readonly_waits_for_writer &&
+           r.readonly_not_published && r.acked_recovered &&
+           !r.dependency_violation;
     }
   }
 

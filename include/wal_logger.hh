@@ -125,6 +125,41 @@ class WalLogger {
     return WalCommitResult{logPerThread(thid, cstamp, write_set), thid, 0};
   }
 
+  void ackReadOnlyWithFrontier(uint32_t thid, const WalFrontier* dep_frontier) {
+    ensureConfigured(thid + 1);
+    const uint64_t enqueue_ns = nowNs();
+    stats_.commits.fetch_add(1, std::memory_order_relaxed);
+    stats_.read_only_commits.fetch_add(1, std::memory_order_relaxed);
+    if (!usesDepAck(durable_mode_) || !frontierCollectRequested(durable_mode_)) {
+      recordAckLatency(0);
+      stats_.async_acked_commits.fetch_add(1, std::memory_order_relaxed);
+      return;
+    }
+    throttleAsyncPending();
+
+    WalFrontier dep;
+    const WalFrontier* dep_for_ack = &dep;
+    if (dep_frontier) {
+      if (durable_mode_ == WalDurableMode::AsyncDepFrontierCstampPrealloc) {
+        thread_local WalFrontier tls_dep;
+        tls_dep.reset(shardCount());
+        tls_dep.merge(*dep_frontier, shardCount());
+        dep_for_ack = &tls_dep;
+      } else {
+        dep = *dep_frontier;
+        dep.ensureSize(shardCount());
+      }
+      stats_.dep_frontier_bytes.fetch_add(dep_for_ack->sizeBytes(shardCount()),
+                                          std::memory_order_relaxed);
+      stats_.dep_frontier_entries.fetch_add(dep_for_ack->entries(shardCount()),
+                                            std::memory_order_relaxed);
+      stats_.dep_frontier_nonzero_entries.fetch_add(
+          dep_for_ack->nonzeroEntries(shardCount()),
+          std::memory_order_relaxed);
+    }
+    registerDepAck(0, 0, *dep_for_ack, enqueue_ns, false);
+  }
+
   static bool dependencyFrontierRequested() {
     WalDurableMode mode = parseDurableMode();
     return frontierCollectRequested(mode);
@@ -300,6 +335,7 @@ class WalLogger {
   struct Stats {
     std::atomic<uint64_t> commits{0};
     std::atomic<uint64_t> async_acked_commits{0};
+    std::atomic<uint64_t> read_only_commits{0};
     std::atomic<uint64_t> payload_build_ns{0};
     std::atomic<uint64_t> lsn_alloc_ns{0};
     std::atomic<uint64_t> mutex_wait_ns{0};
@@ -353,6 +389,8 @@ class WalLogger {
     const uint64_t commits = stats_.commits.load(std::memory_order_acquire);
     if (commits == 0) return;
     const uint64_t acked = stats_.async_acked_commits.load(std::memory_order_acquire);
+    const uint64_t read_only_commits =
+        stats_.read_only_commits.load(std::memory_order_acquire);
     const uint64_t total_acked =
         isWorkerWaitMode(durable_mode_) ? commits : acked;
     const uint64_t payload = stats_.payload_build_ns.load(std::memory_order_acquire);
@@ -432,6 +470,7 @@ class WalLogger {
     std::cout << "wal_stats_logical_commits:	" << commits << std::endl;
     std::cout << "wal_stats_acked_commits:	" << total_acked << std::endl;
     std::cout << "wal_stats_async_acked_commits:	" << acked << std::endl;
+    std::cout << "wal_stats_read_only_commits:	" << read_only_commits << std::endl;
     std::cout << "wal_stats_logical_minus_acked:	"
               << (commits >= total_acked ? commits - total_acked : 0) << std::endl;
     std::cout << "wal_stats_measurement_stop_recorded:	" << (has_measurement_stop ? 1 : 0) << std::endl;
@@ -1049,7 +1088,8 @@ class WalLogger {
   }
 
   void registerDepAck(uint32_t log_id, uint64_t local_seq,
-                      const WalFrontier& dep, uint64_t enqueue_ns) {
+                      const WalFrontier& dep, uint64_t enqueue_ns,
+                      bool include_self = true) {
     const uint64_t start = nowNs();
     std::lock_guard<std::mutex> guard(async_commit_mutex_);
     auto request = std::make_shared<DepAckRequest>();
@@ -1057,7 +1097,7 @@ class WalLogger {
     const uint32_t n = shardCount();
     for (uint32_t i = 0; i < n; ++i) {
       uint64_t need = dep.get(i);
-      if (i == log_id) need = std::max<uint64_t>(need, local_seq);
+      if (include_self && i == log_id) need = std::max<uint64_t>(need, local_seq);
       if (need == 0) continue;
       if (durable_local_seq_[i].load(std::memory_order_acquire) >= need) continue;
       ++request->remaining;
