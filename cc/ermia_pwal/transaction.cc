@@ -970,6 +970,10 @@ void TxExecutor::publishReadFrontier(Version *ver,
   auto old_frontier = std::atomic_load_explicit(&ver->read_frontier_,
                                                 std::memory_order_acquire);
   for (;;) {
+    if (old_frontier &&
+        old_frontier->covers(closed, ccbench::WalLogger::instance().shardCount())) {
+      return;
+    }
     ccbench::WalFrontier merged;
     if (old_frontier) merged = *old_frontier;
     merged.merge(closed, ccbench::WalLogger::instance().shardCount());

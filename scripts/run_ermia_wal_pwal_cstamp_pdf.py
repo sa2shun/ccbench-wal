@@ -189,7 +189,8 @@ def setup_plot():
     })
 
 
-def plot_metric(path, rows, threads, metric, title, ylabel, yscale="linear", note=""):
+def plot_metric(path, rows, threads, metric, title, ylabel, yscale="linear",
+                note="", estimator="mean", errorbar="sd"):
     df = prepare_dataframe(rows)
     palette = {LABELS[mode]: COLORS[mode] for mode in MODES}
     markers = {LABELS[mode]: MARKERS[mode] for mode in MODES}
@@ -209,7 +210,8 @@ def plot_metric(path, rows, threads, metric, title, ylabel, yscale="linear", not
         dashes=False,
         linewidth=2.8,
         markersize=7.5,
-        errorbar="sd",
+        estimator=estimator,
+        errorbar=errorbar,
         err_style="band",
         ax=ax,
     )
@@ -231,7 +233,10 @@ def plot_metric(path, rows, threads, metric, title, ylabel, yscale="linear", not
     ax.legend(title="", loc="best", frameon=True, framealpha=0.92, edgecolor="#e4e4e7")
     ax.margins(x=0.08, y=0.12)
 
-    grouped = df.groupby(["label", "thread_num"], as_index=False)[metric].mean()
+    if estimator == "median":
+        grouped = df.groupby(["label", "thread_num"], as_index=False)[metric].median()
+    else:
+        grouped = df.groupby(["label", "thread_num"], as_index=False)[metric].mean()
     for mode in MODES:
         label = LABELS[mode]
         tail = grouped[(grouped["label"] == label) & (grouped["thread_num"] == max(threads))]
@@ -284,11 +289,11 @@ def write_summary(path, rows, threads, pdfs, args):
         for label, pdf in pdfs:
             print(f"- {label}: `{pdf.relative_to(ROOT)}`", file=f)
         print("", file=f)
-        print("Latency graph uses measured `ack_latency_p99_us` when the mode exports it. Legacy Single WAL does not export ack latency buckets, so that line falls back to closed-loop average latency computed as `worker_threads / ack_tps`.", file=f)
+        print("Latency graph uses median across repeats. It uses measured `ack_latency_p99_us` when the mode exports it. Legacy Single WAL does not export ack latency buckets, so that line falls back to closed-loop average latency computed as `worker_threads / ack_tps`.", file=f)
         print("", file=f)
         print("## Summary", file=f)
         print("", file=f)
-        print("| thread | mode | ack tps mean | ack tps stdev | latency us | pending |", file=f)
+        print("| thread | mode | ack tps mean | ack tps stdev | latency us median | pending |", file=f)
         print("|---:|---|---:|---:|---:|---:|", file=f)
         for th in threads:
             for mode in MODES:
@@ -304,7 +309,7 @@ def write_summary(path, rows, threads, pdfs, args):
                     f"| {th} | {LABELS[mode]} | "
                     f"{mean(rs, 'durable_ack_tps'):.0f} | "
                     f"{stdev(rs, 'durable_ack_tps'):.1f} | "
-                    f"{(sum(latency_vals) / len(latency_vals)) if latency_vals else 0:.0f} | "
+                    f"{sorted(latency_vals)[len(latency_vals) // 2] if latency_vals else 0:.0f} | "
                     f"{mean(rs, 'pending_commits'):.0f} |",
                     file=f,
                 )
@@ -376,7 +381,9 @@ def main():
         "YCSB-B latency: Single WAL vs P-WAL vs Cstamp-PWAL",
         "Latency [us]",
         yscale="log",
-        note="Single WAL uses closed-loop average fallback; P-WAL/Cstamp use measured p99 durable-ack latency.",
+        note="Line shows median across repeats. Single WAL uses closed-loop average fallback; P-WAL/Cstamp use measured p99 durable-ack latency.",
+        estimator="median",
+        errorbar=None,
     )
     plot_metric(
         pdfs[2][1],

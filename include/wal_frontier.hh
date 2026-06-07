@@ -50,6 +50,18 @@ struct WalFrontier {
     return count;
   }
 
+  bool covers(const WalFrontier& other, uint32_t shard_count = 0) const {
+    uint32_t n = shard_count;
+    if (n == 0) {
+      n = static_cast<uint32_t>(std::max(seq.size(), other.seq.size()));
+    }
+    n = std::min<uint32_t>(n, kWalFrontierMaxShards);
+    for (uint32_t i = 0; i < n; ++i) {
+      if (get(i) < other.get(i)) return false;
+    }
+    return true;
+  }
+
   void merge(const WalFrontier& other, uint32_t shard_count = 0) {
     uint32_t n = shard_count;
     if (n == 0) {
