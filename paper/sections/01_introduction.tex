@@ -137,12 +137,12 @@ the same ERMIA-PWAL binary for all WAL systems; Single WAL and P-WAL are selecte
 by runtime WAL-mode flags, while TideWAL additionally runs background
 flusher/logger and committer threads.  At 32 worker threads on YCSB-A, Single
 WAL achieves 10K durable acknowledgments per second and P-WAL achieves 69K,
-whereas TideWAL achieves 308K durable acknowledgments per second.  On YCSB-B,
-Single WAL achieves 29K and P-WAL achieves 244K, whereas TideWAL achieves 456K
-durable acknowledgments per second.  These results correspond to 4.5$\times$
-and 1.9$\times$ improvements over P-WAL on YCSB-A and YCSB-B, respectively.
+whereas TideWAL achieves 303K durable acknowledgments per second.  On YCSB-B,
+Single WAL achieves 28K and P-WAL achieves 252K, whereas TideWAL achieves 460K
+durable acknowledgments per second.  These results correspond to 4.3$\times$
+and 1.8$\times$ improvements over P-WAL on YCSB-A and YCSB-B, respectively.
 TideWAL also keeps the number of pending durable commits small at 32 worker
-threads: 120 pending commits on YCSB-A and 41 pending commits on YCSB-B.
+threads: 221 pending commits on YCSB-A and 59 pending commits on YCSB-B.
 
 Figure~\ref{fig:ycsbabc-worker-throughput} shows the worker-thread comparison.
 The results show that TideWAL improves update and mixed read-write workloads

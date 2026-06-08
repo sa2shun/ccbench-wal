@@ -2,6 +2,11 @@
 
 date: 2026-06-08
 
+> Superseded note: この文書は YCSB-C の条件不一致を直した時点の補助メモです。
+> 最新の 5-repeat 本測定と論文評価用の数値は
+> `docs/ycsbabc_tidewal_worker_threads_20260608.md` と
+> `docs/tidewal_evaluation_report_20260608.md` を参照してください。
+
 ## 結論
 
 以前の YCSB-C 図で Single WAL / P-WAL / TideWAL に大きな差が出ていた主因は、

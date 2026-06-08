@@ -2,6 +2,11 @@
 
 date: 2026-06-08
 
+> Superseded note: この文書は YCSB-B/YCSB-C の原因調査用の古い補助メモです。
+> 論文評価に使う perf/counter 結果は `docs/tidewal_perf_eval_20260608.md` と
+> `docs/tidewal_evaluation_report_20260608.md` を参照してください。
+> この文書には component diagnostic mode が含まれるため、main evaluation には使いません。
+
 ## 対象
 
 直近の疑問に合わせて、次の 2 workload を `perf stat` / `perf record` で見た。
