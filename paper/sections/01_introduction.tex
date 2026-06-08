@@ -42,24 +42,25 @@ consider: it certifies serializability using dependency metadata, while the
 underlying engine still uses timestamped multiversion execution.  As the
 baseline recovery protocol, we start from P-WAL, which is also used as a
 foundation of Shirakami, the transaction processing mechanism of
-Tsurugi~\cite{kamiya2017pwal,kawashima2025tsurugi}.  P-WAL is attractive because
+Tsurugi~\cite{kamiya2017pwal,kawashima2025tsurugi}. 
+%
+P-WAL is attractive because
 it removes the single-WAL insertion bottleneck by assigning transactions to
 multiple log streams.  However, combining P-WAL with SSN exposes three
 problems.
 
-First, P-WAL can introduce frequent global-counter accesses.  Even if the CC
+\textbf{P1. Multiple Global Counter Accesses:~} First, P-WAL can introduce frequent global-counter accesses.  Even if the CC
 layer already assigns a commit timestamp for SSN validation and serialization,
 the recovery layer may allocate a separate global LSN or maintain a global
-durable prefix.  This duplicates ordering work already performed by the CC layer
+durable prefix.  This duplicates the ordering work already performed by the CC layer
 and adds shared-memory synchronization to the commit path.
 
-Second, workers can spend a long time waiting around \texttt{fdatasync}.  P-WAL
-parallelizes log streams, but a transaction cannot be acknowledged until the
-corresponding durable condition is satisfied.  If worker threads wait directly
+\textbf{P2. Waiting for Data Transfer:~} Second, workers can spend a long time waiting around \texttt{fdatasync}.  P-WAL
+parallelizes log streams, but a transaction cannot be acknowledged until the corresponding durable condition is satisfied.  If worker threads wait directly
 for log flushes or durable-prefix updates, storage synchronization and
 notification latency reduce the effective scalability of the CC protocol.
 
-Third, global-prefix acknowledgment waits for log records that are unrelated to
+\textbf{P3. Total History:~} Third, global-prefix acknowledgment waits for log records that are unrelated to
 the transaction being acknowledged.  This rule is safe, but overly conservative:
 if one WAL shard is slow, transactions on other shards may be delayed even when
 they have no dependency on transactions logged by the slow shard.  The opposite
@@ -253,8 +254,7 @@ concurrency control, and dependency requirements for recovery.
 Section~\ref{sec:design} presents TideWAL's timestamp-integrated logical
 ordering, dependency-frontier construction, and worker/flusher/committer
 pipeline.
-Section~\ref{sec:correctness} discusses the correctness of dependency-closed
-durable acknowledgment.
+%Section~\ref{sec:correctness} discusses the correctness of dependency-closed durable acknowledgment.
 Section~\ref{sec:evaluation} evaluates durable-acknowledgment throughput,
 pending durable commits, and tail latency.
 Section~\ref{sec:related} discusses related work.
