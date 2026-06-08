@@ -23,6 +23,7 @@
 
 #include <fcntl.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "cpu.hh"
@@ -191,8 +192,17 @@ class WalLogger {
     return parseDurableMode() == WalDurableMode::AsyncDepFrontierCstampZeroDep;
   }
 
+  static bool readOnlyFrontierCollectSkippedForDebug() {
+    return envBool("CCBENCH_WAL_READ_ONLY_SKIP_FRONTIER_COLLECT", false);
+  }
+
   void recordVersionInstall(uint64_t ns) {
     stats_.version_install_ns.fetch_add(ns, std::memory_order_relaxed);
+  }
+
+  void recordReadOnlyFrontierCollectSkipped() {
+    stats_.read_only_frontier_collect_skipped.fetch_add(1,
+                                                        std::memory_order_relaxed);
   }
 
   void recordFrontierCollect(uint64_t ns) {
@@ -384,6 +394,7 @@ class WalLogger {
     std::atomic<uint64_t> frontier_alloc_count{0};
     std::atomic<uint64_t> frontier_shared_ptr_count{0};
     std::atomic<uint64_t> read_only_fast_path_acks{0};
+    std::atomic<uint64_t> read_only_frontier_collect_skipped{0};
     std::atomic<uint64_t> waitlist_registrations{0};
     std::atomic<uint64_t> waitlist_pops{0};
     std::atomic<uint64_t> max_waitlist_len{0};
@@ -396,8 +407,10 @@ class WalLogger {
     std::atomic<uint64_t> flushed_commits{0};
     std::atomic<uint64_t> flusher_idle_wait_ns{0};
     std::atomic<uint64_t> flusher_idle_waits{0};
+    std::atomic<uint64_t> flusher_cpu_ns{0};
     std::atomic<uint64_t> committer_idle_wait_ns{0};
     std::atomic<uint64_t> committer_idle_waits{0};
+    std::atomic<uint64_t> committer_cpu_ns{0};
   };
 
   WalLogger() = default;
@@ -406,6 +419,17 @@ class WalLogger {
     return static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count());
+  }
+
+  static uint64_t threadCpuNs() {
+#if defined(CLOCK_THREAD_CPUTIME_ID)
+    struct timespec ts;
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0) {
+      return static_cast<uint64_t>(ts.tv_sec) * 1000000000ull +
+             static_cast<uint64_t>(ts.tv_nsec);
+    }
+#endif
+    return 0;
   }
 
   void printStats() const {
@@ -453,6 +477,8 @@ class WalLogger {
         stats_.frontier_shared_ptr_count.load(std::memory_order_acquire);
     const uint64_t read_only_fast_path_acks =
         stats_.read_only_fast_path_acks.load(std::memory_order_acquire);
+    const uint64_t read_only_frontier_collect_skipped =
+        stats_.read_only_frontier_collect_skipped.load(std::memory_order_acquire);
     const uint64_t waitlist_registrations =
         stats_.waitlist_registrations.load(std::memory_order_acquire);
     const uint64_t waitlist_pops = stats_.waitlist_pops.load(std::memory_order_acquire);
@@ -472,10 +498,14 @@ class WalLogger {
         stats_.flusher_idle_wait_ns.load(std::memory_order_acquire);
     const uint64_t flusher_idle_waits =
         stats_.flusher_idle_waits.load(std::memory_order_acquire);
+    const uint64_t flusher_cpu_ns =
+        stats_.flusher_cpu_ns.load(std::memory_order_acquire);
     const uint64_t committer_idle_wait_ns =
         stats_.committer_idle_wait_ns.load(std::memory_order_acquire);
     const uint64_t committer_idle_waits =
         stats_.committer_idle_waits.load(std::memory_order_acquire);
+    const uint64_t committer_cpu_ns =
+        stats_.committer_cpu_ns.load(std::memory_order_acquire);
     const uint64_t ack_latency_samples =
         ack_latency_samples_.load(std::memory_order_acquire);
     const uint64_t total = payload + lsn_alloc + mutex + write + fsync + notify +
@@ -549,6 +579,8 @@ class WalLogger {
               << frontier_shared_ptr_count << std::endl;
     std::cout << "wal_stats_read_only_fast_path_acks:	"
               << read_only_fast_path_acks << std::endl;
+    std::cout << "wal_stats_read_only_frontier_collect_skipped:	"
+              << read_only_frontier_collect_skipped << std::endl;
     std::cout << "wal_stats_waitlist_registrations:	" << waitlist_registrations << std::endl;
     std::cout << "wal_stats_waitlist_pops:	" << waitlist_pops << std::endl;
     std::cout << "wal_stats_max_waitlist_len:	" << max_waitlist_len << std::endl;
@@ -566,8 +598,10 @@ class WalLogger {
               << std::endl;
     std::cout << "wal_stats_flusher_idle_wait_ns:	" << flusher_idle_wait_ns << std::endl;
     std::cout << "wal_stats_flusher_idle_waits:	" << flusher_idle_waits << std::endl;
+    std::cout << "wal_stats_flusher_cpu_ns:	" << flusher_cpu_ns << std::endl;
     std::cout << "wal_stats_committer_idle_wait_ns:	" << committer_idle_wait_ns << std::endl;
     std::cout << "wal_stats_committer_idle_waits:	" << committer_idle_waits << std::endl;
+    std::cout << "wal_stats_committer_cpu_ns:	" << committer_cpu_ns << std::endl;
     std::cout << "wal_stats_ack_latency_samples:	" << ack_latency_samples << std::endl;
     std::cout << "wal_stats_ack_latency_p50_us:	" << ackLatencyPercentile(50) << std::endl;
     std::cout << "wal_stats_ack_latency_p90_us:	" << ackLatencyPercentile(90) << std::endl;
@@ -1279,6 +1313,7 @@ class WalLogger {
 #ifdef Linux
     setThreadAffinity(static_cast<int>(thread_num_ + logger_num_ + committer_id));
 #endif
+    const uint64_t cpu_start = threadCpuNs();
     for (;;) {
       bool did_work = false;
       DurableEvent event;
@@ -1304,6 +1339,11 @@ class WalLogger {
                                               std::memory_order_relaxed);
       stats_.committer_idle_waits.fetch_add(1, std::memory_order_relaxed);
     }
+    const uint64_t cpu_end = threadCpuNs();
+    if (cpu_end >= cpu_start) {
+      stats_.committer_cpu_ns.fetch_add(cpu_end - cpu_start,
+                                        std::memory_order_relaxed);
+    }
   }
 
   void startCommittersLocked() {
@@ -1320,6 +1360,7 @@ class WalLogger {
 #ifdef Linux
     setThreadAffinity(static_cast<int>(thread_num_ + thid));
 #endif
+    const uint64_t cpu_start = threadCpuNs();
     for (;;) {
       std::vector<AsyncLogEntry> batch;
       {
@@ -1370,6 +1411,11 @@ class WalLogger {
         stats_.fdatasync_count.fetch_add(1, std::memory_order_relaxed);
       }
       enqueueDurableEvent(thid, durable_local_seq, std::move(durable_lsns));
+    }
+    const uint64_t cpu_end = threadCpuNs();
+    if (cpu_end >= cpu_start) {
+      stats_.flusher_cpu_ns.fetch_add(cpu_end - cpu_start,
+                                      std::memory_order_relaxed);
     }
   }
 

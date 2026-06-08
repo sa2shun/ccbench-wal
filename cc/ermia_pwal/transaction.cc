@@ -938,6 +938,11 @@ void TxExecutor::verify_exclusion_or_abort() {
 
 void TxExecutor::mergeVersionFrontier(Version *ver) {
   if (!ver || !ccbench::WalLogger::dependencyFrontierRequested()) return;
+  if (is_ronly_ &&
+      ccbench::WalLogger::readOnlyFrontierCollectSkippedForDebug()) {
+    ccbench::WalLogger::instance().recordReadOnlyFrontierCollectSkipped();
+    return;
+  }
   const uint64_t collect_start = ccbench::TxBreakdownProfiler::nowNs();
   auto frontier = std::atomic_load_explicit(&ver->write_frontier_,
                                             std::memory_order_acquire);
@@ -954,6 +959,11 @@ void TxExecutor::mergeVersionFrontier(Version *ver) {
 
 void TxExecutor::mergeVersionReadFrontier(Version *ver) {
   if (!ver || !ccbench::WalLogger::dependencyFrontierRequested()) return;
+  if (is_ronly_ &&
+      ccbench::WalLogger::readOnlyFrontierCollectSkippedForDebug()) {
+    ccbench::WalLogger::instance().recordReadOnlyFrontierCollectSkipped();
+    return;
+  }
   const uint64_t collect_start = ccbench::TxBreakdownProfiler::nowNs();
   auto frontier = std::atomic_load_explicit(&ver->read_frontier_,
                                             std::memory_order_acquire);

@@ -272,8 +272,13 @@ def aggregate(rows):
                 "fdatasync_ns_per_tx": mean(safe_float(r.get("fdatasync_ns_per_tx")) for r in rs),
                 "flusher_idle_wait_ns": mean(safe_float(r.get("wal_stats_flusher_idle_wait_ns")) for r in rs),
                 "flusher_idle_waits": mean(safe_float(r.get("wal_stats_flusher_idle_waits")) for r in rs),
+                "flusher_cpu_ns": mean(safe_float(r.get("wal_stats_flusher_cpu_ns")) for r in rs),
                 "committer_idle_wait_ns": mean(safe_float(r.get("wal_stats_committer_idle_wait_ns")) for r in rs),
                 "committer_idle_waits": mean(safe_float(r.get("wal_stats_committer_idle_waits")) for r in rs),
+                "committer_cpu_ns": mean(safe_float(r.get("wal_stats_committer_cpu_ns")) for r in rs),
+                "read_only_frontier_collect_skipped_per_tx": mean(
+                    safe_float(r.get("read_only_frontier_collect_skipped_per_tx")) for r in rs
+                ),
             }
         )
     return out
@@ -301,8 +306,11 @@ def write_summary_csv(rows):
         "fdatasync_ns_per_tx",
         "flusher_idle_wait_ns",
         "flusher_idle_waits",
+        "flusher_cpu_ns",
         "committer_idle_wait_ns",
         "committer_idle_waits",
+        "committer_cpu_ns",
+        "read_only_frontier_collect_skipped_per_tx",
     ]
     with OUT_CSV.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
