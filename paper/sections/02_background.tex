@@ -1,3 +1,20 @@
-\section{Background}
+\section{Preliminaries}
 \label{sec:background}
+\subsection{Write Ahead Logging}
 
+
+\subsection{P-WAL}
+
+
+% Problem of P-WAL
+P-WAL is attractive because it removes the single-WAL insertion bottleneck by assigning transactions to multiple log streams.  However, combining P-WAL with SSN exposes three
+problems.
+
+\textbf{P1. Multiple Global Counter Accesses:~} First, P-WAL can introduce frequent global-counter accesses.  Even if the CC
+layer already assigns a commit timestamp for SSN validation and serialization, the recovery layer may allocate a separate global LSN or maintain a global durable prefix.  This duplicates the ordering work already performed by the CC layer and adds shared-memory synchronization to the commit path.
+
+\textbf{P2. Waiting for Data Transfer:~} Second, workers can spend a long time waiting around \texttt{fdatasync}.  P-WAL parallelizes log streams, but a transaction cannot be acknowledged until the corresponding durable condition is satisfied.  If worker threads wait directly
+for log flushes or durable-prefix updates, storage synchronization and notification latency reduce the effective scalability of the CC protocol.
+
+\textbf{P3. Total History:~} Third, global-prefix acknowledgment waits for log records that are unrelated to the transaction being acknowledged.  This rule is safe, but overly conservative:
+if one WAL shard is slow, transactions on other shards may be delayed even when they have no dependency on transactions logged by the slow shard.  The opposite design point, local-only acknowledgment, avoids this delay but is unsafe.  If transaction $T$ reads a value written by transaction $U$, acknowledging $T$ before $U$ is recoverable may allow a crash recovery state that contains $T$ without the state on which $T$ depends.
