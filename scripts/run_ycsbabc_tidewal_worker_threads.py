@@ -21,15 +21,14 @@ from run_ermia_cstamp_pwal_experiments import (
     ROOT,
     WORKLOAD_PRESETS,
     derived,
-    fnum,
     write_csv,
 )
 
 
 FIG_DIR = ROOT / "paper" / "figures"
 TABLE_DIR = ROOT / "paper" / "tables"
-WAL_YCSB_EXE = ROOT / "build" / "cc" / "ermia_wal" / "ycsb_ermia_wal.exe"
-OUT_CSV = TABLE_DIR / "ycsbabc_tidewal_fair_total_20260607.csv"
+OUT_CSV = TABLE_DIR / "ycsbabc_tidewal_worker_threads_20260608.csv"
+OUT_DOC = ROOT / "docs" / "ycsbabc_tidewal_worker_threads_20260608.md"
 
 MODES = ["single_wal", "pwal", "tidewal"]
 SYSTEM_LABELS = {
@@ -57,14 +56,15 @@ MARKERS = {
     "TideWAL": "^",
 }
 
-TOTAL_ALLOC = {
-    4: (2, 1, 1),
-    8: (5, 2, 1),
-    16: (12, 3, 1),
-    24: (18, 5, 1),
-    32: (24, 7, 1),
-    48: (38, 9, 1),
-    96: (76, 19, 1),
+TIDEWAL_LOGGERS = {
+    1: 1,
+    2: 1,
+    4: 1,
+    8: 2,
+    16: 4,
+    32: 7,
+    48: 9,
+    96: 19,
 }
 
 
@@ -126,34 +126,24 @@ def compact_number(v):
     return f"{v:.0f}"
 
 
-def tidewal_alloc(total):
-    if total in TOTAL_ALLOC:
-        return TOTAL_ALLOC[total]
-    if total < 4:
-        return None
-    committer = 1
-    logger = max(1, round((total - committer) / 5))
-    worker = total - logger - committer
-    if worker < 1:
-        return None
-    return worker, logger, committer
+def tidewal_logger_num(worker):
+    if worker in TIDEWAL_LOGGERS:
+        return TIDEWAL_LOGGERS[worker]
+    return max(1, round(worker * 7 / 32))
 
 
-def mode_allocation(mode, total):
+def mode_allocation(mode, worker):
     if mode == "single_wal":
-        return total, 0, 0
+        return worker, 0, 0
     if mode == "pwal":
-        return total, total, 0
+        return worker, worker, 0
     if mode == "tidewal":
-        return tidewal_alloc(total)
+        return worker, tidewal_logger_num(worker), 1
     raise ValueError(f"unknown mode: {mode}")
 
 
-def run_case(out_dir, workload, mode, repeat, total, args):
-    alloc = mode_allocation(mode, total)
-    if alloc is None:
-        return None
-    worker, logger, committer = alloc
+def run_case(out_dir, workload, mode, repeat, worker, args):
+    worker, logger, committer = mode_allocation(mode, worker)
     logs = out_dir / "logs"
     logs.mkdir(parents=True, exist_ok=True)
     wal_dir = out_dir / "wal"
@@ -162,29 +152,34 @@ def run_case(out_dir, workload, mode, repeat, total, args):
     env = os.environ.copy()
     env["CCBENCH_WAL_DIR"] = str(wal_dir)
     env["CCBENCH_WAL_SKIP_READ_ONLY"] = "1"
+    env["CCBENCH_WAL_DURABLE_MODE"] = "sync"
+    env["CCBENCH_WAL_GROUP_SIZE"] = str(args.group_size)
+    env["CCBENCH_WAL_FLUSH_US"] = str(args.flush_us)
+    env["CCBENCH_WAL_MAX_PENDING"] = str(args.max_pending)
+
     if mode == "single_wal":
-        exe = WAL_YCSB_EXE
-    else:
-        exe = PWAL_YCSB_EXE
+        env["CCBENCH_WAL_MODE"] = "shared"
+        env["CCBENCH_WAL_LOGGER_NUM"] = str(worker)
+        env["CCBENCH_WAL_COMMITTER_NUM"] = "1"
+    elif mode == "pwal":
+        env["CCBENCH_WAL_MODE"] = "per_thread"
         env["CCBENCH_WAL_LOGGER_NUM"] = str(logger)
-        env["CCBENCH_WAL_COMMITTER_NUM"] = str(committer if committer else 1)
-        env["CCBENCH_WAL_GROUP_SIZE"] = str(args.group_size)
-        env["CCBENCH_WAL_FLUSH_US"] = str(args.flush_us)
-        env["CCBENCH_WAL_MAX_PENDING"] = str(args.max_pending)
-        if mode == "pwal":
-            env["CCBENCH_WAL_DURABLE_MODE"] = "sync"
-        elif mode == "tidewal":
-            env["CCBENCH_WAL_DURABLE_MODE"] = "async_dep_frontier_cstamp"
+        env["CCBENCH_WAL_COMMITTER_NUM"] = "1"
+    else:
+        env["CCBENCH_WAL_MODE"] = "per_thread"
+        env["CCBENCH_WAL_DURABLE_MODE"] = "async_dep_frontier_cstamp"
+        env["CCBENCH_WAL_LOGGER_NUM"] = str(logger)
+        env["CCBENCH_WAL_COMMITTER_NUM"] = str(committer)
 
     cmd = [
-        str(exe),
+        str(PWAL_YCSB_EXE),
         f"--thread_num={worker}",
         f"--extime={args.seconds}",
         "--ycsb_tuple_num=100000",
         f"--ycsb_max_ope={preset['ycsb_max_ope']}",
         f"--ycsb_rratio={preset['ycsb_rratio']}",
     ]
-    label = f"{workload}_{mode}_total{total}_w{worker}_l{logger}_c{committer}_r{repeat}"
+    label = f"{workload}_{mode}_worker{worker}_l{logger}_c{committer}_r{repeat}"
     out_path = logs / f"{label}.out"
     err_path = logs / f"{label}.err"
     with out_path.open("w") as out, err_path.open("w") as err:
@@ -203,7 +198,7 @@ def run_case(out_dir, workload, mode, repeat, total, args):
             "logger_num": str(logger),
             "committer_num": str(committer),
             "background_threads": str(logger + committer if mode == "tidewal" else 0),
-            "total_threads": str(total),
+            "total_active_threads": str(worker + logger + committer if mode == "tidewal" else worker),
             "seconds": str(args.seconds),
             "ycsb_max_ope": str(preset["ycsb_max_ope"]),
             "ycsb_rratio": str(preset["ycsb_rratio"]),
@@ -211,6 +206,7 @@ def run_case(out_dir, workload, mode, repeat, total, args):
             "flush_us": str(args.flush_us if mode == "tidewal" else 0),
             "max_pending": str(args.max_pending if mode == "tidewal" else 0),
             "skip_read_only": "1",
+            "binary": str(PWAL_YCSB_EXE.relative_to(ROOT)),
             "exit_code": str(proc.returncode),
             "stdout_log": str(out_path),
             "stderr_log": str(err_path),
@@ -229,11 +225,11 @@ def aggregate(rows):
             row["workload_mode"],
             row["workload"],
             row["system"],
-            int(row["total_threads"]),
+            int(row["worker_threads"]),
         )
         grouped.setdefault(key, []).append(row)
     out = []
-    for (workload_mode, workload, system, total), rs in sorted(grouped.items()):
+    for (workload_mode, workload, system, worker), rs in sorted(grouped.items()):
         p99_values = []
         for r in rs:
             p99 = safe_float(r.get("ack_latency_p99_us"))
@@ -241,22 +237,43 @@ def aggregate(rows):
                 workers = max(safe_float(r.get("worker_threads")), 1.0)
                 p99 = workers * 1_000_000.0 / max(safe_float(r.get("durable_ack_tps")), 1.0)
             p99_values.append(p99)
+        logical = [safe_float(r.get("derived_logical_commits")) for r in rs]
+        fast = [safe_float(r.get("wal_stats_read_only_fast_path_acks")) for r in rs]
         out.append(
             {
                 "workload_mode": workload_mode,
                 "workload": workload,
                 "system": system,
-                "total_threads": total,
-                "worker_threads": median(safe_float(r.get("worker_threads")) for r in rs),
+                "worker_threads": worker,
                 "logger_num": median(safe_float(r.get("logger_num")) for r in rs),
                 "committer_num": median(safe_float(r.get("committer_num")) for r in rs),
+                "background_threads": median(safe_float(r.get("background_threads")) for r in rs),
+                "total_active_threads": median(safe_float(r.get("total_active_threads")) for r in rs),
                 "ack_tps": mean(safe_float(r.get("durable_ack_tps")) for r in rs),
                 "p99_us": median(p99_values),
                 "pending": mean(safe_float(r.get("pending_commits")) for r in rs),
-                "read_only_commits_per_tx": mean(safe_float(r.get("wal_stats_read_only_commits")) / max(safe_float(r.get("wal_stats_commits")), 1.0) for r in rs),
-                "frontier_collect_ns_per_tx": mean(safe_float(r.get("frontier_collect_ns_per_tx")) for r in rs),
-                "frontier_publish_ns_per_tx": mean(safe_float(r.get("frontier_publish_ns_per_tx")) for r in rs),
+                "read_only_commits_per_tx": mean(
+                    safe_float(r.get("wal_stats_read_only_commits")) /
+                    max(safe_float(r.get("wal_stats_commits")), 1.0) for r in rs
+                ),
+                "read_only_fast_path_per_tx": mean(
+                    safe_float(r.get("wal_stats_read_only_fast_path_acks")) /
+                    max(safe_float(r.get("wal_stats_commits")), 1.0) for r in rs
+                ),
+                "frontier_collect_ns_per_tx": mean(
+                    safe_float(r.get("frontier_collect_ns_per_tx")) for r in rs
+                ),
+                "frontier_publish_ns_per_tx": mean(
+                    safe_float(r.get("frontier_publish_ns_per_tx")) for r in rs
+                ),
+                "waitlist_registration_ns_per_tx": mean(
+                    safe_float(r.get("waitlist_registration_ns_per_tx")) for r in rs
+                ),
                 "fdatasync_ns_per_tx": mean(safe_float(r.get("fdatasync_ns_per_tx")) for r in rs),
+                "flusher_idle_wait_ns": mean(safe_float(r.get("wal_stats_flusher_idle_wait_ns")) for r in rs),
+                "flusher_idle_waits": mean(safe_float(r.get("wal_stats_flusher_idle_waits")) for r in rs),
+                "committer_idle_wait_ns": mean(safe_float(r.get("wal_stats_committer_idle_wait_ns")) for r in rs),
+                "committer_idle_waits": mean(safe_float(r.get("wal_stats_committer_idle_waits")) for r in rs),
             }
         )
     return out
@@ -268,17 +285,24 @@ def write_summary_csv(rows):
         "workload_mode",
         "workload",
         "system",
-        "total_threads",
         "worker_threads",
         "logger_num",
         "committer_num",
+        "background_threads",
+        "total_active_threads",
         "ack_tps",
         "p99_us",
         "pending",
         "read_only_commits_per_tx",
+        "read_only_fast_path_per_tx",
         "frontier_collect_ns_per_tx",
         "frontier_publish_ns_per_tx",
+        "waitlist_registration_ns_per_tx",
         "fdatasync_ns_per_tx",
+        "flusher_idle_wait_ns",
+        "flusher_idle_waits",
+        "committer_idle_wait_ns",
+        "committer_idle_waits",
     ]
     with OUT_CSV.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
@@ -317,15 +341,16 @@ def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear"):
     df = pd.DataFrame(rows)
     df["workload"] = pd.Categorical(df["workload"], WORKLOAD_ORDER)
     df["system"] = pd.Categorical(df["system"], SYSTEM_ORDER)
+    workers = sorted(df["worker_threads"].unique())
     fig, axes = plt.subplots(1, 3, figsize=(10.6, 3.7), sharey=False, constrained_layout=True)
     for ax, workload in zip(axes, WORKLOAD_ORDER):
         sub_w = df[df["workload"] == workload]
         for system in SYSTEM_ORDER:
-            sub = sub_w[sub_w["system"] == system].sort_values("total_threads")
+            sub = sub_w[sub_w["system"] == system].sort_values("worker_threads")
             if sub.empty:
                 continue
             ax.plot(
-                sub["total_threads"],
+                sub["worker_threads"],
                 sub[metric],
                 color=COLORS[system],
                 marker=MARKERS[system],
@@ -336,9 +361,9 @@ def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear"):
                 solid_capstyle="round",
             )
         ax.set_title(workload, fontsize=11.5, fontweight="bold", pad=8)
-        ax.set_xlabel("Total active threads")
-        ax.set_xticks(sorted(df["total_threads"].unique()))
-        ax.set_xticklabels([str(int(x)) for x in sorted(df["total_threads"].unique())], rotation=0)
+        ax.set_xlabel("Worker threads")
+        ax.set_xticks(workers)
+        ax.set_xticklabels([str(int(x)) for x in workers], rotation=0)
         if yscale != "linear":
             ax.set_yscale(yscale)
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: compact_number(v)))
@@ -369,14 +394,16 @@ def draw_speedup(rows, output):
     df = pd.DataFrame(rows)
     points = []
     for workload in WORKLOAD_ORDER:
-        for total in sorted(df["total_threads"].unique()):
-            pwal = df[(df["workload"] == workload) & (df["system"] == "P-WAL") & (df["total_threads"] == total)]
-            tide = df[(df["workload"] == workload) & (df["system"] == "TideWAL") & (df["total_threads"] == total)]
+        for worker in sorted(df["worker_threads"].unique()):
+            pwal = df[(df["workload"] == workload) & (df["system"] == "P-WAL") &
+                      (df["worker_threads"] == worker)]
+            tide = df[(df["workload"] == workload) & (df["system"] == "TideWAL") &
+                      (df["worker_threads"] == worker)]
             if pwal.empty or tide.empty:
                 continue
             points.append({
                 "workload": workload,
-                "total_threads": total,
+                "worker_threads": worker,
                 "speedup": float(tide["ack_tps"].iloc[0]) / max(float(pwal["ack_tps"].iloc[0]), 1.0),
             })
     pdf = pd.DataFrame(points)
@@ -384,11 +411,11 @@ def draw_speedup(rows, output):
     markers = {"YCSB-A": "o", "YCSB-B": "s", "YCSB-C": "^"}
     fig, ax = plt.subplots(figsize=(7.2, 4.05), constrained_layout=True)
     for workload in WORKLOAD_ORDER:
-        sub = pdf[pdf["workload"] == workload].sort_values("total_threads")
+        sub = pdf[pdf["workload"] == workload].sort_values("worker_threads")
         if sub.empty:
             continue
         ax.plot(
-            sub["total_threads"],
+            sub["worker_threads"],
             sub["speedup"],
             color=colors[workload],
             marker=markers[workload],
@@ -400,9 +427,9 @@ def draw_speedup(rows, output):
             label=workload,
         )
     ax.axhline(1.0, color="#9ca3af", linewidth=1.0, linestyle="--")
-    ax.set_xlabel("Total active threads", labelpad=8)
+    ax.set_xlabel("Worker threads", labelpad=8)
     ax.set_ylabel("TideWAL / P-WAL ack throughput", labelpad=8)
-    ax.set_xticks(sorted(df["total_threads"].unique()))
+    ax.set_xticks(sorted(df["worker_threads"].unique()))
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.1f}x"))
     ax.grid(True, axis="y", color="#e5e7eb", linewidth=0.9)
     ax.grid(False, axis="x")
@@ -414,7 +441,7 @@ def draw_speedup(rows, output):
     ax.text(
         0.0,
         1.04,
-        "Fair total-thread-budget speedup with read-only WAL skip enabled for all systems",
+        "Worker-thread scaling; all modes use the same ERMIA-PWAL binary",
         transform=ax.transAxes,
         ha="left",
         va="bottom",
@@ -426,45 +453,45 @@ def draw_speedup(rows, output):
 
 
 def write_report(rows, raw_csv, outputs, args):
-    path = ROOT / "docs" / "ycsbabc_tidewal_fair_total_20260607.md"
-    with path.open("w") as f:
-        print("# YCSB-A/B/C fair total-thread TideWAL comparison", file=f)
+    with OUT_DOC.open("w") as f:
+        print("# YCSB-A/B/C worker-thread TideWAL comparison", file=f)
         print("", file=f)
         print(f"date: {datetime.now().isoformat(timespec='seconds')}", file=f)
         print("", file=f)
-        print("This rerun uses `total active threads = worker + flusher/logger + committer` for TideWAL. Single WAL and P-WAL use no background durability threads, so their worker count equals total active threads.", file=f)
+        print("This rerun uses worker threads on the x-axis. All three systems use the same `build/cc/ermia_pwal/ycsb_ermia_pwal.exe` binary. Single WAL is selected by `CCBENCH_WAL_MODE=shared`, while P-WAL and TideWAL use `CCBENCH_WAL_MODE=per_thread`.", file=f)
         print("", file=f)
-        print("Read-only WAL skip is enabled for every WAL system with `CCBENCH_WAL_SKIP_READ_ONLY=1`. For Single WAL and P-WAL this skips WAL records for read-only transactions. TideWAL keeps its read-only dependency wait semantics, but still skips WAL append and frontier publish for read-only transactions.", file=f)
+        print("Read-only WAL skip is enabled for every WAL system with `CCBENCH_WAL_SKIP_READ_ONLY=1`. TideWAL additionally has an empty-frontier read-only fast path: if a read-only transaction has no durable dependency, it does not enter the dependency waitlist.", file=f)
         print("", file=f)
         print("## Conditions", file=f)
         print("", file=f)
         print("| item | value |", file=f)
         print("|---|---|", file=f)
         print(f"| workloads | {args.workloads} |", file=f)
-        print(f"| total active threads | {args.totals} |", file=f)
+        print(f"| worker threads | {args.workers} |", file=f)
         print(f"| repeats | {args.repeats} |", file=f)
         print(f"| seconds | {args.seconds} |", file=f)
+        print(f"| TideWAL logger mapping | {TIDEWAL_LOGGERS} |", file=f)
         print(f"| TideWAL group_size | {args.group_size} |", file=f)
         print(f"| TideWAL flush_us | {args.flush_us} |", file=f)
         print(f"| TideWAL max_pending | {args.max_pending} |", file=f)
         print("", file=f)
-        print(f"raw csv: `{raw_csv.relative_to(ROOT)}`", file=f)
         print(f"summary csv: `{OUT_CSV.relative_to(ROOT)}`", file=f)
+        print(f"raw csv: `{raw_csv.relative_to(ROOT)}`", file=f)
         print("", file=f)
         print("## Figures", file=f)
         print("", file=f)
         for output in outputs:
             print(f"- `{output.relative_to(ROOT)}`", file=f)
         print("", file=f)
-        print("## 32 total-thread summary", file=f)
+        print("## 32-worker summary", file=f)
         print("", file=f)
-        print("| workload | system | worker | logger | committer | ack tps | p99 us | pending | read-only tx ratio |", file=f)
-        print("|---|---|---:|---:|---:|---:|---:|---:|---:|", file=f)
+        print("| workload | system | worker | logger | committer | total active | ack tps | p99 us | pending | read-only tx | read-only fast path | frontier collect ns/tx | waitlist reg ns/tx |", file=f)
+        print("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|", file=f)
         for workload in WORKLOAD_ORDER:
             for system in SYSTEM_ORDER:
                 match = [
                     r for r in rows
-                    if r["workload"] == workload and r["system"] == system and int(r["total_threads"]) == 32
+                    if r["workload"] == workload and r["system"] == system and int(r["worker_threads"]) == 32
                 ]
                 if not match:
                     continue
@@ -472,17 +499,21 @@ def write_report(rows, raw_csv, outputs, args):
                 print(
                     f"| {workload} | {system} | {float(r['worker_threads']):.0f} | "
                     f"{float(r['logger_num']):.0f} | {float(r['committer_num']):.0f} | "
-                    f"{float(r['ack_tps']):.0f} | {float(r['p99_us']):.0f} | "
-                    f"{float(r['pending']):.0f} | {float(r['read_only_commits_per_tx']):.3f} |",
+                    f"{float(r['total_active_threads']):.0f} | {float(r['ack_tps']):.0f} | "
+                    f"{float(r['p99_us']):.0f} | {float(r['pending']):.0f} | "
+                    f"{float(r['read_only_commits_per_tx']):.3f} | "
+                    f"{float(r['read_only_fast_path_per_tx']):.3f} | "
+                    f"{float(r['frontier_collect_ns_per_tx']):.1f} | "
+                    f"{float(r['waitlist_registration_ns_per_tx']):.1f} |",
                     file=f,
                 )
-    return path
+    return OUT_DOC
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workloads", default="ycsb_a,ycsb_b,ycsb_c")
-    parser.add_argument("--totals", default="1,2,4,8,16,32")
+    parser.add_argument("--workers", default="1,2,4,8,16,32")
     parser.add_argument("--seconds", type=int, default=5)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--group-size", type=int, default=16)
@@ -492,9 +523,9 @@ def main():
     args = parser.parse_args()
 
     workloads = parse_workloads(args.workloads)
-    totals = parse_int_list(args.totals)
+    workers = parse_int_list(args.workers)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = RESULTS / f"ycsbabc_tidewal_fair_total_{stamp}"
+    out_dir = RESULTS / f"ycsbabc_tidewal_worker_threads_{stamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if args.input_csv:
@@ -503,47 +534,43 @@ def main():
         raw_rows = []
         for repeat in range(args.repeats):
             for workload in workloads:
-                for total in totals:
+                for worker in workers:
                     for mode in MODES:
-                        row = run_case(out_dir, workload, mode, repeat, total, args)
-                        if row is None:
-                            print(f"fair skip repeat={repeat} workload={workload} total={total} mode={mode}")
-                            continue
+                        row = run_case(out_dir, workload, mode, repeat, worker, args)
                         raw_rows.append(row)
                         print(
-                            f"fair repeat={repeat} workload={workload} total={total} "
-                            f"mode={mode} worker={row['worker_threads']} "
-                            f"logger={row['logger_num']} committer={row['committer_num']} "
+                            f"worker repeat={repeat} workload={workload} worker={worker} "
+                            f"mode={mode} logger={row['logger_num']} committer={row['committer_num']} "
                             f"ack_tps={row['durable_ack_tps']} p99={row['ack_latency_p99_us']} "
                             f"pending={row['pending_commits']}",
                             flush=True,
                         )
 
-    raw_csv = out_dir / f"ycsbabc_tidewal_fair_total_raw_{stamp}.csv"
+    raw_csv = out_dir / f"ycsbabc_tidewal_worker_threads_raw_{stamp}.csv"
     write_csv(raw_csv, raw_rows)
     rows = aggregate(raw_rows)
     write_summary_csv(rows)
 
     FIG_DIR.mkdir(parents=True, exist_ok=True)
     outputs = [
-        FIG_DIR / "fig_ycsbabc_fair_total_throughput.pdf",
-        FIG_DIR / "fig_ycsbabc_fair_total_latency.pdf",
-        FIG_DIR / "fig_ycsbabc_fair_total_pending.pdf",
-        FIG_DIR / "fig_ycsbabc_fair_tidewal_speedup_vs_pwal.pdf",
+        FIG_DIR / "fig_ycsbabc_worker_threads_throughput.pdf",
+        FIG_DIR / "fig_ycsbabc_worker_threads_latency.pdf",
+        FIG_DIR / "fig_ycsbabc_worker_threads_pending.pdf",
+        FIG_DIR / "fig_ycsbabc_worker_threads_tidewal_speedup_vs_pwal.pdf",
     ]
     draw_faceted_lines(
         rows,
         "ack_tps",
         "Ack throughput [tx/s]",
         outputs[0],
-        "Fair total-thread-budget comparison with read-only WAL skip enabled for all systems",
+        "Worker-thread comparison with a common ERMIA-PWAL binary",
     )
     draw_faceted_lines(
         rows,
         "p99_us",
         "p99 latency [us]",
         outputs[1],
-        "Fair total-thread-budget p99 durable-ack latency",
+        "Worker-thread p99 durable-ack latency",
         yscale="log",
     )
     draw_faceted_lines(
@@ -551,7 +578,7 @@ def main():
         "pending",
         "Pending durable commits",
         outputs[2],
-        "Fair total-thread-budget pending durable commits",
+        "Worker-thread pending durable commits",
     )
     draw_speedup(rows, outputs[3])
     report = write_report(rows, raw_csv, outputs, args)

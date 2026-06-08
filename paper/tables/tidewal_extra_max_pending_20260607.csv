@@ -1,9 +1,0 @@
-mode,max_pending,ack_tps,p99_us,pending,fdatasync_per_sec
-Async global prefix,1024,360354,3686,1038,47428
-Async global prefix,4096,346064,13107,4081,45812
-Async global prefix,16384,355730,45875,16352,47089
-Async global prefix,65536,339250,235930,65497,46353
-TideWAL,1024,209847,512,52,38773
-TideWAL,4096,204283,512,57,39626
-TideWAL,16384,211863,512,48,39492
-TideWAL,65536,214237,512,59,39243

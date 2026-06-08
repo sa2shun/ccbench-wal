@@ -1,5 +1,0 @@
-condition,mode,ack_tps,p99_us,pending,atomic_per_tx,frontier_bytes_per_tx,lsn_alloc_ns_per_tx
-real_io,Dep frontier LSN,209401,512,48,1.5,72,227.4
-real_io,TideWAL,202531,512,52,0.0,72,0.0
-io_light,Dep frontier LSN,210800,1024,112,1.5,72,219.5
-io_light,TideWAL,205525,1024,96,0.0,72,0.0

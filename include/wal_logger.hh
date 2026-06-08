@@ -64,7 +64,7 @@ class WalLogger {
     std::lock_guard<std::mutex> guard(init_mutex_);
     if (configured_.load(std::memory_order_acquire)) return;
 
-    mode_ = mode;
+    mode_ = parseWalMode(mode);
     thread_num_ = thread_num;
     protocol_name_ = std::move(protocol_name);
     durable_mode_ = parseDurableMode();
@@ -142,27 +142,38 @@ class WalLogger {
       stats_.async_acked_commits.fetch_add(1, std::memory_order_relaxed);
       return;
     }
-    throttleAsyncPending();
 
     WalFrontier dep;
     const WalFrontier* dep_for_ack = &dep;
+    const uint32_t n = shardCount();
+    uint32_t nonzero_entries = 0;
+    if (dep_frontier) {
+      nonzero_entries = dep_frontier->nonzeroEntries(n);
+      stats_.dep_frontier_bytes.fetch_add(dep_frontier->sizeBytes(n),
+                                          std::memory_order_relaxed);
+      stats_.dep_frontier_entries.fetch_add(dep_frontier->entries(n),
+                                            std::memory_order_relaxed);
+      stats_.dep_frontier_nonzero_entries.fetch_add(
+          nonzero_entries, std::memory_order_relaxed);
+    }
+    if (!dep_frontier || nonzero_entries == 0) {
+      stats_.read_only_fast_path_acks.fetch_add(1, std::memory_order_relaxed);
+      recordAckLatency(0);
+      stats_.async_acked_commits.fetch_add(1, std::memory_order_relaxed);
+      return;
+    }
+
+    throttleAsyncPending();
     if (dep_frontier) {
       if (durable_mode_ == WalDurableMode::AsyncDepFrontierCstampPrealloc) {
         thread_local WalFrontier tls_dep;
-        tls_dep.reset(shardCount());
-        tls_dep.merge(*dep_frontier, shardCount());
+        tls_dep.reset(n);
+        tls_dep.merge(*dep_frontier, n);
         dep_for_ack = &tls_dep;
       } else {
         dep = *dep_frontier;
-        dep.ensureSize(shardCount());
+        dep.ensureSize(n);
       }
-      stats_.dep_frontier_bytes.fetch_add(dep_for_ack->sizeBytes(shardCount()),
-                                          std::memory_order_relaxed);
-      stats_.dep_frontier_entries.fetch_add(dep_for_ack->entries(shardCount()),
-                                            std::memory_order_relaxed);
-      stats_.dep_frontier_nonzero_entries.fetch_add(
-          dep_for_ack->nonzeroEntries(shardCount()),
-          std::memory_order_relaxed);
     }
     registerDepAck(0, 0, *dep_for_ack, enqueue_ns, false);
   }
@@ -372,6 +383,7 @@ class WalLogger {
     std::atomic<uint64_t> write_frontier_updates{0};
     std::atomic<uint64_t> frontier_alloc_count{0};
     std::atomic<uint64_t> frontier_shared_ptr_count{0};
+    std::atomic<uint64_t> read_only_fast_path_acks{0};
     std::atomic<uint64_t> waitlist_registrations{0};
     std::atomic<uint64_t> waitlist_pops{0};
     std::atomic<uint64_t> max_waitlist_len{0};
@@ -382,6 +394,10 @@ class WalLogger {
     std::atomic<uint64_t> ready_queue_len_samples{0};
     std::atomic<uint64_t> flusher_batches{0};
     std::atomic<uint64_t> flushed_commits{0};
+    std::atomic<uint64_t> flusher_idle_wait_ns{0};
+    std::atomic<uint64_t> flusher_idle_waits{0};
+    std::atomic<uint64_t> committer_idle_wait_ns{0};
+    std::atomic<uint64_t> committer_idle_waits{0};
   };
 
   WalLogger() = default;
@@ -435,6 +451,8 @@ class WalLogger {
         stats_.frontier_alloc_count.load(std::memory_order_acquire);
     const uint64_t frontier_shared_ptr_count =
         stats_.frontier_shared_ptr_count.load(std::memory_order_acquire);
+    const uint64_t read_only_fast_path_acks =
+        stats_.read_only_fast_path_acks.load(std::memory_order_acquire);
     const uint64_t waitlist_registrations =
         stats_.waitlist_registrations.load(std::memory_order_acquire);
     const uint64_t waitlist_pops = stats_.waitlist_pops.load(std::memory_order_acquire);
@@ -450,6 +468,14 @@ class WalLogger {
         stats_.ready_queue_len_samples.load(std::memory_order_acquire);
     const uint64_t flusher_batches = stats_.flusher_batches.load(std::memory_order_acquire);
     const uint64_t flushed_commits = stats_.flushed_commits.load(std::memory_order_acquire);
+    const uint64_t flusher_idle_wait_ns =
+        stats_.flusher_idle_wait_ns.load(std::memory_order_acquire);
+    const uint64_t flusher_idle_waits =
+        stats_.flusher_idle_waits.load(std::memory_order_acquire);
+    const uint64_t committer_idle_wait_ns =
+        stats_.committer_idle_wait_ns.load(std::memory_order_acquire);
+    const uint64_t committer_idle_waits =
+        stats_.committer_idle_waits.load(std::memory_order_acquire);
     const uint64_t ack_latency_samples =
         ack_latency_samples_.load(std::memory_order_acquire);
     const uint64_t total = payload + lsn_alloc + mutex + write + fsync + notify +
@@ -521,6 +547,8 @@ class WalLogger {
     std::cout << "wal_stats_frontier_alloc_count:	" << frontier_alloc_count << std::endl;
     std::cout << "wal_stats_frontier_shared_ptr_count:	"
               << frontier_shared_ptr_count << std::endl;
+    std::cout << "wal_stats_read_only_fast_path_acks:	"
+              << read_only_fast_path_acks << std::endl;
     std::cout << "wal_stats_waitlist_registrations:	" << waitlist_registrations << std::endl;
     std::cout << "wal_stats_waitlist_pops:	" << waitlist_pops << std::endl;
     std::cout << "wal_stats_max_waitlist_len:	" << max_waitlist_len << std::endl;
@@ -536,6 +564,10 @@ class WalLogger {
     std::cout << "wal_stats_avg_batch_size:	"
               << (flusher_batches ? flushed_commits / flusher_batches : 0)
               << std::endl;
+    std::cout << "wal_stats_flusher_idle_wait_ns:	" << flusher_idle_wait_ns << std::endl;
+    std::cout << "wal_stats_flusher_idle_waits:	" << flusher_idle_waits << std::endl;
+    std::cout << "wal_stats_committer_idle_wait_ns:	" << committer_idle_wait_ns << std::endl;
+    std::cout << "wal_stats_committer_idle_waits:	" << committer_idle_waits << std::endl;
     std::cout << "wal_stats_ack_latency_samples:	" << ack_latency_samples << std::endl;
     std::cout << "wal_stats_ack_latency_p50_us:	" << ackLatencyPercentile(50) << std::endl;
     std::cout << "wal_stats_ack_latency_p90_us:	" << ackLatencyPercentile(90) << std::endl;
@@ -611,6 +643,20 @@ class WalLogger {
     }
     if (value == "sync") return WalDurableMode::Sync;
     std::fprintf(stderr, "Unknown CCBENCH_WAL_DURABLE_MODE=%s\n", env);
+    std::abort();
+  }
+
+  static WalMode parseWalMode(WalMode fallback) {
+    const char* env = std::getenv("CCBENCH_WAL_MODE");
+    if (!env || !*env) return fallback;
+    const std::string value(env);
+    if (value == "shared" || value == "single" || value == "single_wal") {
+      return WalMode::Shared;
+    }
+    if (value == "per_thread" || value == "pwal" || value == "per_thread_wal") {
+      return WalMode::PerThread;
+    }
+    std::fprintf(stderr, "Unknown CCBENCH_WAL_MODE=%s\n", env);
     std::abort();
   }
 
@@ -1249,10 +1295,14 @@ class WalLogger {
         break;
       }
       std::unique_lock<std::mutex> lock(committer_cv_mutex_);
+      const uint64_t wait_start = nowNs();
       committer_cv_.wait_for(lock, std::chrono::microseconds(100), [&] {
         return committers_done_.load(std::memory_order_acquire) ||
                hasDurableEventForCommitter(committer_id);
       });
+      stats_.committer_idle_wait_ns.fetch_add(nowNs() - wait_start,
+                                              std::memory_order_relaxed);
+      stats_.committer_idle_waits.fetch_add(1, std::memory_order_relaxed);
     }
   }
 
@@ -1275,9 +1325,13 @@ class WalLogger {
       {
         AsyncQueue& q = *async_queues_[thid];
         std::unique_lock<std::mutex> lock(q.mutex);
+        const uint64_t wait_start = nowNs();
         q.cv.wait_for(lock, std::chrono::microseconds(async_flush_us_), [&] {
           return q.done || q.queue.size() >= async_group_size_;
         });
+        stats_.flusher_idle_wait_ns.fetch_add(nowNs() - wait_start,
+                                              std::memory_order_relaxed);
+        stats_.flusher_idle_waits.fetch_add(1, std::memory_order_relaxed);
         if (q.queue.empty()) {
           if (q.done) break;
           continue;

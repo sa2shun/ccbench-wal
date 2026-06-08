@@ -50,6 +50,10 @@ struct WalFrontier {
     return count;
   }
 
+  bool allZero(uint32_t shard_count = 0) const {
+    return nonzeroEntries(shard_count) == 0;
+  }
+
   bool covers(const WalFrontier& other, uint32_t shard_count = 0) const {
     uint32_t n = shard_count;
     if (n == 0) {

@@ -1,300 +1,106 @@
-# YCSB-C read-only workload で性能差が出る理由
+# YCSB-C read-only workload の再分析
 
 date: 2026-06-08
 
-## 問題
+## 結論
 
-YCSB-C は read-only workload なので、`CCBENCH_WAL_SKIP_READ_ONLY=1` の条件では
-Single WAL / P-WAL / TideWAL のどれも WAL record を書かないはずである。
+以前の YCSB-C 図で Single WAL / P-WAL / TideWAL に大きな差が出ていた主因は、
+WAL 永続化方式の差ではなく、実験条件と実装経路の差だった。
 
-それにもかかわらず、最新の fair total-thread-budget 結果では YCSB-C に性能差が出ている。
+今回、次を修正して測り直した。
 
-特に 32 total active threads では次の通り。
+1. Single WAL / P-WAL / TideWAL を同じ `build/cc/ermia_pwal/ycsb_ermia_pwal.exe` で実行する
+2. 横軸を total active threads ではなく transaction worker threads にする
+3. 全 system で `CCBENCH_WAL_SKIP_READ_ONLY=1` を有効化する
+4. TideWAL に read-only empty-frontier fast path を入れる
 
-| system | total threads | worker | logger | committer | ack tps | p99 us | pending | read-only ratio | fdatasync ns/tx |
+修正後、32 worker threads / YCSB-C では次の通り。
+
+| system | worker | logger | committer | total active | ack tps | p99 us | pending | read-only fast path | waitlist reg ns/tx |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Single WAL | 32 | 32 | 0 | 0 | 793,706 | 40.2 | 0 | 1.000 | 0 |
-| P-WAL | 32 | 32 | 32 | 0 | 1,443,722 | 21.8 | 0 | 1.000 | 0 |
-| TideWAL | 32 | 24 | 7 | 1 | 723,000 | 64.0 | 0 | 1.000 | 0 |
+| Single WAL | 32 | 0 | 0 | 32 | 802,237 | 39 | 0 | 0.000 | 0.0 |
+| P-WAL | 32 | 32 | 0 | 32 | 794,168 | 40 | 0 | 0.000 | 0.0 |
+| TideWAL | 32 | 7 | 1 | 40 | 783,114 | 41 | 0 | 1.000 | 0.0 |
 
-結論から言うと、この差は WAL I/O / fdatasync の差ではない。
-YCSB-C で見えているのは、read-only fast path の実装差、TideWAL の background thread 予約、
-および dependency frontier bookkeeping の overhead である。
+したがって、修正後の YCSB-C では 3 system はほぼ同等である。
+YCSB-C は read-only workload なので、WAL record / fdatasync は発生しない。
+この結果は durability protocol の I/O 性能ではなく、read-only fast path overhead の sanity check として扱う。
 
-## まず確認したこと
+## 何を直したか
 
-最新 summary は `paper/tables/ycsbabc_tidewal_fair_total_20260607.csv`。
-YCSB-C では全 system で次が成り立っている。
+### 1. 同一 binary で WAL mode を切り替える
 
-- `read_only_commits_per_tx = 1.000`
-- `pending = 0`
-- `fdatasync_ns_per_tx = 0`
-- TideWAL でも `frontier_publish_ns_per_tx = 0`
+以前は Single WAL と P-WAL/TideWAL が別 binary / 別 commit path だった。
+YCSB-C では WAL I/O が消えるため、この差がそのまま read path / fast path / 計測 path の差として出ていた。
 
-raw result でも、32 total threads の各 mode は次の通り。
+今回、`CCBENCH_WAL_MODE` を追加し、同じ ERMIA-PWAL binary 内で WAL mode を切り替えるようにした。
 
-| system | wal bytes | fdatasync count | read-only commits |
-|---|---:|---:|---:|
-| Single WAL | 0 | 0 | all commits |
-| P-WAL | 0 | 0 | all commits |
-| TideWAL | 0 | 0 | all commits |
+- `CCBENCH_WAL_MODE=shared`: Single WAL
+- `CCBENCH_WAL_MODE=per_thread`: P-WAL / TideWAL
 
-したがって、YCSB-C の throughput 差を「WAL 書き込みが速い / 遅い」と解釈してはいけない。
+これにより、YCSB-C の Single WAL と P-WAL の差は大きく縮小した。
 
-## 原因 1: TideWAL は fair total-thread 条件で worker 数が少ない
+### 2. worker-thread 軸に戻す
 
-fair total-thread 実験では、TideWAL の thread budget は worker / flusher / committer に分けている。
+以前の図は `total active threads = worker + logger + committer` を横軸にしていた。
+しかし、通常の DB 実験としては transaction worker threads を横軸にする方が自然である。
 
-設定は `scripts/run_ycsbabc_tidewal_fair_total.py` の `TOTAL_ALLOC`。
+今回の worker-thread 比較では、32 worker threads の TideWAL は追加で 7 logger threads と 1 committer thread を持つ。
+したがって OS thread 数は 40 だが、横軸は transaction worker 数である。
 
-```python
-TOTAL_ALLOC = {
-    4: (2, 1, 1),
-    8: (5, 2, 1),
-    16: (12, 3, 1),
-    24: (18, 5, 1),
-    32: (24, 7, 1),
-    48: (38, 9, 1),
-    96: (76, 19, 1),
-}
-```
+重要なのは、YCSB-C では logger は実質的に起動せず、committer も condition variable で待機している点である。
+つまり、read-only workload で background thread が WAL I/O を処理して速くしているわけではない。
 
-該当箇所:
+### 3. TideWAL read-only empty-frontier fast path
 
-- `scripts/run_ycsbabc_tidewal_fair_total.py:60`
-- `scripts/run_ycsbabc_tidewal_fair_total.py:142`
+TideWAL では read-only transaction でも、読んだ version の writer が未 durable の可能性を確認するために dependency frontier を collect する。
+これは安全性のために必要である。
 
-32 total threads の場合:
+ただし、frontier が全ゼロなら待つべき durable dependency は存在しない。
+以前はこの場合でも `registerDepAck()` に入り、request allocation / mutex / waitlist bookkeeping を実行していた。
 
-```text
-Single WAL: worker = 32
-P-WAL:      worker = 32
-TideWAL:    worker = 24, logger = 7, committer = 1
-```
-
-YCSB-C では read-only skip により logger / committer は実質的に仕事をしない。
-しかし TideWAL は total-thread budget のために worker を 24 本に減らしている。
-そのため、YCSB-C では TideWAL が最初から worker 数で不利になる。
-
-32 total threads の worker あたり throughput は次のようになる。
-
-| system | ack tps | workers | tx/s/worker |
-|---|---:|---:|---:|
-| Single WAL | 793,706 | 32 | 24,803 |
-| P-WAL | 1,443,722 | 32 | 45,116 |
-| TideWAL | 723,000 | 24 | 30,125 |
-
-TideWAL は worker 数が少ないだけでなく、worker あたりでも P-WAL より遅い。
-その追加原因が次の frontier / ack path overhead である。
-
-## 原因 2: TideWAL は read-only でも dependency frontier を collect している
-
-TideWAL では transaction begin 時に dependency frontier を初期化する。
+今回、次の fast path を入れた。
 
 ```cpp
-dep_frontier_.reset(ccbench::WalLogger::instance().shardCount());
-```
-
-該当箇所:
-
-- `cc/ermia_pwal/transaction.cc:89`
-
-さらに read では、読んだ version の `write_frontier_` を見て、自分の dependency frontier に merge する。
-
-```cpp
-mergeVersionFrontier(ver);
-```
-
-該当箇所:
-
-- `cc/ermia_pwal/transaction.cc:176`
-
-`mergeVersionFrontier()` の中では、version の `write_frontier_` を atomic load する。
-
-```cpp
-auto frontier = std::atomic_load_explicit(&ver->write_frontier_,
-                                          std::memory_order_acquire);
-```
-
-該当箇所:
-
-- `cc/ermia_pwal/transaction.cc:939`
-
-YCSB-C では、read-only transaction は DB state を作らないため、frontier publish は skip されている。
-これは正しい。
-
-しかし、読んだ version の writer が未 durable である可能性を判定するには、read 時の dependency collect は必要である。
-そのため、TideWAL は read-only でも collect cost を払う。
-
-実測では 32 total threads / YCSB-C で:
-
-```text
-frontier_collect_ns_per_tx ~= 2,740 ns / tx
-frontier_publish_ns_per_tx = 0
-fdatasync_ns_per_tx        = 0
-```
-
-つまり、WAL 書き込みは消えているが、dependency frontier の read-side bookkeeping は残っている。
-
-## 原因 3: TideWAL の read-only ack path が P-WAL より重い
-
-Single WAL / P-WAL の read-only skip は非常に軽い。
-
-`include/wal_logger.hh` の `logCommitWithFrontier()` では、worker-wait mode の read-only transaction は即 return する。
-
-```cpp
-if (skip_read_only_ && write_set.empty() && isWorkerWaitMode(durable_mode_)) {
-  stats_.commits.fetch_add(1, std::memory_order_relaxed);
-  stats_.read_only_commits.fetch_add(1, std::memory_order_relaxed);
+if (read_only && dep_frontier is empty_or_all_zero) {
   recordAckLatency(0);
-  return WalCommitResult{0, 0, 0};
+  async_acked_commits++;
+  return;
 }
 ```
 
-該当箇所:
+これにより、YCSB-C / TideWAL では全 read-only transaction が fast path に入り、
+`waitlist_registration_ns_per_tx = 0` になった。
 
-- `include/wal_logger.hh:116`
+## 残っている overhead
 
-一方、TideWAL では read-only transaction は `ackReadOnlyWithFrontier()` に入る。
+TideWAL は read-only でも dependency frontier collect を行う。
+32 worker threads / YCSB-C では:
 
-```cpp
-if (write_set_.empty() && ccbench::WalLogger::dependencyFrontierRequested()) {
-  ccbench::WalLogger::instance().ackReadOnlyWithFrontier(thid_, &dep_frontier_);
-}
-```
+| metric | value |
+|---|---:|
+| `frontier_collect_ns_per_tx` | 2,681.7 ns |
+| `waitlist_registration_ns_per_tx` | 0.0 ns |
+| `read_only_fast_path_per_tx` | 1.000 |
 
-該当箇所:
+つまり、修正後に残っている TideWAL 固有 overhead は主に frontier collect である。
 
-- `cc/ermia_pwal/transaction.cc:789`
+この collect は read-only response safety のために残している。
+read-only transaction が未 durable writer の値を読んだ場合、その writer が durable になる前に client response を返すと、
+crash 後に存在しない値を観測したことになるためである。
 
-`ackReadOnlyWithFrontier()` はログを書かないが、frontier をコピーして、最後に `registerDepAck()` を呼ぶ。
+## idle / yield の確認
 
-```cpp
-dep = *dep_frontier;
-dep.ensureSize(shardCount());
-...
-registerDepAck(0, 0, *dep_for_ack, enqueue_ns, false);
-```
+pure read-only workload では TideWAL の flusher は実質的に仕事がない。
+今回の smoke では flusher idle counter は 0 で、これは read-only path で logger/flusher が起動されていないためである。
 
-該当箇所:
+committer は起動するが、仕事がないときは condition variable で待機している。
+2 秒 smoke では `committer_idle_wait_ns` が約 2 秒分記録されており、busy spin ではなく休んでいることを確認した。
 
-- `include/wal_logger.hh:135`
+## 今後の読み方
 
-`registerDepAck()` は global mutex を取り、request を作り、pending counter を更新し、
-条件が満たされていれば即 ack する。
-
-```cpp
-std::lock_guard<std::mutex> guard(async_commit_mutex_);
-auto request = std::make_shared<DepAckRequest>();
-...
-pending_async_acks_.fetch_add(1, std::memory_order_relaxed);
-...
-if (request->remaining == 0) {
-  ackAsyncRequestLocked(request->enqueue_ns);
-}
-```
-
-該当箇所:
-
-- `include/wal_logger.hh:1097`
-
-YCSB-C では dependency frontier は全ゼロなので、実際には待つべき条件はない。
-raw counter でも:
-
-```text
-dep_wait_conditions_per_tx      = 0
-waitlist_registrations_per_tx   = 0
-pending                         = 0
-```
-
-しかし、`registerDepAck()` の mutex / allocation / counter / ack histogram 更新は毎 transaction で実行される。
-
-32 total threads / YCSB-C / TideWAL の raw counter:
-
-```text
-frontier_collect_ns_per_tx      ~= 2.74 us
-waitlist_registration_ns_per_tx ~= 19.2 us
-ack_process_ns_per_tx           ~= 0.42 us
-committer_queue_wait_us/tx      ~= 19.1 us
-dep_wait_conditions_per_tx      = 0
-fdatasync_count                 = 0
-wal bytes                       = 0
-```
-
-重要なのは、ここでの `committer_queue_wait_us/tx` はストレージ待ちではないこと。
-read-only transaction が即 ack されるまでの bookkeeping path を latency として記録している。
-
-## 原因 4: P-WAL が Single WAL より速い理由も WAL ではない
-
-YCSB-C では P-WAL が Single WAL よりかなり速い。
-しかしこれも WAL I/O の差ではない。
-
-短い再実行でも次の傾向が出た。
-
-```text
-32 workers / YCSB-C / 2 sec rerun
-
-Single WAL:
-  throughput ~= 652K tx/s
-  bytes = 0
-  fdatasync = 0
-  tx_breakdown_read_ns ~= 26.2s
-  tx_breakdown_wal_log_ns ~= 2.39s
-
-P-WAL:
-  throughput ~= 1.19M tx/s
-  bytes = 0
-  fdatasync = 0
-  tx_breakdown_read_ns ~= 15.0s
-  tx_breakdown_wal_log_ns ~= 1.45s
-```
-
-P-WAL と Single WAL は別 binary である。
-
-- Single WAL: `build/cc/ermia_wal/ycsb_ermia_wal.exe`
-- P-WAL/TideWAL: `build/cc/ermia_pwal/ycsb_ermia_pwal.exe`
-
-YCSB-C では WAL path がほぼ消えるため、binary の read/commit path 差、コード配置、計測 path、
-version layout 差などが見えてしまう。
-
-したがって、YCSB-C で「P-WAL の durability が Single WAL より速い」と読むのは誤りである。
-
-## 原因 5: latency の定義も完全には揃っていない
-
-Single WAL / P-WAL は read-only fast path で `recordAckLatency(0)` を呼ぶため、`ack_latency_p99_us = 0` になる。
-summary script は `p99 <= 0` の場合、closed-loop average latency に fallback している。
-
-該当箇所:
-
-- `scripts/run_ycsbabc_tidewal_fair_total.py:239`
-
-TideWAL は `ackReadOnlyWithFrontier()` で enqueue から ack までの latency を実測する。
-
-したがって、YCSB-C の latency graph は:
-
-- Single WAL / P-WAL: fallback された closed-loop average
-- TideWAL: measured durable-ack bookkeeping latency
-
-になっている。
-
-これは YCSB-C latency を paper main claim に使うには危険である。
-
-## まとめ
-
-YCSB-C の結果は次のように読むべき。
-
-1. YCSB-C では全 system が read-only で、WAL record / fdatasync は発生しない。
-2. したがって YCSB-C の throughput 差は durability protocol の I/O 性能差ではない。
-3. TideWAL は fair total-thread budget のため、32 total threads でも worker は 24 本しかない。
-4. TideWAL は read-only でも dependency frontier collect を行う。
-5. TideWAL は dependency が空でも `registerDepAck()` の mutex / request allocation / pending / ack bookkeeping path を通る。
-6. P-WAL と Single WAL の差も WAL I/O ではなく、binary / transaction path の差である。
-7. YCSB-C の latency は mode 間で計測定義が揃っていない。
-
-したがって、論文では YCSB-C を main durability result として強く使わない方がよい。
-使うなら、read-only fast path overhead を見る補助実験として扱うべきである。
-
-推奨する書き方:
+YCSB-C は main durability result ではない。
+論文では次のように扱うのが安全である。
 
 ```text
 YCSB-C is a read-only workload. With read-only WAL skipping enabled, it does
@@ -310,34 +116,3 @@ WAL record / fdatasync が発生しない。そのため、この結果は durab
 の性能差ではなく、read-only fast path と dependency frontier bookkeeping の
 overhead を見る補助実験として扱う。
 ```
-
-## 改善案
-
-最初に入れるべき改善は、TideWAL の read-only empty frontier fast path である。
-
-現在の TideWAL read-only path は、dependency frontier が全ゼロでも `registerDepAck()` に入る。
-しかし、frontier が全ゼロなら、読んだ version に durable wait すべき writer が存在しない。
-したがって、read-only response を待たせる必要はない。
-
-安全な fast path:
-
-```cpp
-if (read_only && dep_frontier.empty_or_all_zero()) {
-  record read-only commit;
-  record ack latency 0;
-  increment async ack counter;
-  return;
-}
-```
-
-ただし、次は消してはいけない。
-
-- read 時の dependency frontier collect
-- 非ゼロ dependency frontier の durable wait
-- CC / SSN 用の read tracking
-
-消してよいのは、dependency frontier が全ゼロであることが確認できた read-only transaction の
-`registerDepAck()` 経路だけである。
-
-さらに正確な比較をするなら、YCSB-C では TideWAL の worker 数を 32 にした worker-fixed 補助実験も取るとよい。
-ただし、それは main fair total-thread result ではなく、read-only overhead の切り分け用に置くべきである。
