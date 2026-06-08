@@ -275,6 +275,19 @@ class WalLogger {
     measured_durable_global_lsn_.store(
         durable_prefix_lsn_.load(std::memory_order_acquire),
         std::memory_order_release);
+    uint64_t durable_lag_sum = 0;
+    uint64_t durable_lag_max = 0;
+    for (uint32_t i = 0; i < logger_num_; ++i) {
+      const uint64_t next = next_local_seq_[i].load(std::memory_order_acquire);
+      const uint64_t local = next == 0 ? 0 : next - 1;
+      const uint64_t durable = durable_local_seq_[i].load(std::memory_order_acquire);
+      const uint64_t lag = local > durable ? local - durable : 0;
+      durable_lag_sum += lag;
+      durable_lag_max = std::max(durable_lag_max, lag);
+    }
+    measured_durable_lag_max_.store(durable_lag_max, std::memory_order_release);
+    measured_durable_lag_avg_.store(logger_num_ ? durable_lag_sum / logger_num_ : 0,
+                                    std::memory_order_release);
     measured_ack_latency_samples_.store(
         ack_latency_samples_.load(std::memory_order_acquire),
         std::memory_order_release);
@@ -526,6 +539,16 @@ class WalLogger {
     const uint64_t measured_durable_global_lsn =
         has_measurement_stop ? measured_durable_global_lsn_.load(std::memory_order_acquire)
                              : durable_prefix_lsn_.load(std::memory_order_acquire);
+    uint64_t durable_lag_sum = 0;
+    uint64_t durable_lag_max = 0;
+    for (uint32_t i = 0; i < logger_num_; ++i) {
+      const uint64_t next = next_local_seq_[i].load(std::memory_order_acquire);
+      const uint64_t local = next == 0 ? 0 : next - 1;
+      const uint64_t durable = durable_local_seq_[i].load(std::memory_order_acquire);
+      const uint64_t lag = local > durable ? local - durable : 0;
+      durable_lag_sum += lag;
+      durable_lag_max = std::max(durable_lag_max, lag);
+    }
     std::cout << "wal_stats_durable_mode:\t" << durableModeName(durable_mode_) << std::endl;
     std::cout << "wal_stats_logger_num:\t" << logger_num_ << std::endl;
     std::cout << "wal_stats_committer_num:\t" << committer_num_ << std::endl;
@@ -629,6 +652,16 @@ class WalLogger {
               << durable_prefix_lsn_.load(std::memory_order_acquire) << std::endl;
     std::cout << "wal_stats_measured_durable_global_lsn:	"
               << measured_durable_global_lsn << std::endl;
+    std::cout << "wal_stats_durable_lag_max:	"
+              << (has_measurement_stop
+                      ? measured_durable_lag_max_.load(std::memory_order_acquire)
+                      : durable_lag_max)
+              << std::endl;
+    std::cout << "wal_stats_durable_lag_avg:	"
+              << (has_measurement_stop
+                      ? measured_durable_lag_avg_.load(std::memory_order_acquire)
+                      : (logger_num_ ? durable_lag_sum / logger_num_ : 0))
+              << std::endl;
     std::cout << "wal_stats_total_accounted_ns:	" << total << std::endl;
     std::cout << "wal_stats_avg_accounted_ns_per_commit:	" << (total / commits) << std::endl;
   }
@@ -1511,6 +1544,8 @@ class WalLogger {
   std::atomic<uint64_t> measured_async_acked_commits_{0};
   std::atomic<uint64_t> measured_pending_commits_{0};
   std::atomic<uint64_t> measured_durable_global_lsn_{0};
+  std::atomic<uint64_t> measured_durable_lag_max_{0};
+  std::atomic<uint64_t> measured_durable_lag_avg_{0};
 
   int shared_fd_ = -1;
   std::mutex shared_mutex_;
