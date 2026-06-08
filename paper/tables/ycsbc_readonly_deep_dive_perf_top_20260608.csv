@@ -1,0 +1,30 @@
+dso,mode,rank,report_log,self_pct,symbol,system,worker_threads
+ycsb_ermia_pwal.exe,single_wal,1,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_single_wal.report.nochildren.txt,56.82,TxExecutor::read,Single WAL,32
+ycsb_ermia_pwal.exe,single_wal,2,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_single_wal.report.nochildren.txt,23.32,TxExecutor::ssn_parallel_commit,Single WAL,32
+ycsb_ermia_pwal.exe,single_wal,3,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_single_wal.report.nochildren.txt,4.15,MasstreeWrapper<Tuple>::get_value,Single WAL,32
+ycsb_ermia_pwal.exe,single_wal,4,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_single_wal.report.nochildren.txt,3.02,TxExecutor::read_internal,Single WAL,32
+ycsb_ermia_pwal.exe,single_wal,5,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_single_wal.report.nochildren.txt,2.93,TxExecutor::mainte,Single WAL,32
+ycsb_ermia_pwal.exe,single_wal,6,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_single_wal.report.nochildren.txt,2.14,worker,Single WAL,32
+ycsb_ermia_pwal.exe,single_wal,7,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_single_wal.report.nochildren.txt,1.16,TxExecutor::begin,Single WAL,32
+[vdso],single_wal,8,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_single_wal.report.nochildren.txt,0.82,0x00000000000006e5,Single WAL,32
+ycsb_ermia_pwal.exe,single_wal,9,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_single_wal.report.nochildren.txt,0.58,"std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::compare",Single WAL,32
+ycsb_ermia_pwal.exe,single_wal,10,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_single_wal.report.nochildren.txt,0.50,"YcsbWorkload::run<TxExecutor, TransactionStatus>",Single WAL,32
+ycsb_ermia_pwal.exe,pwal,1,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_pwal.report.nochildren.txt,58.88,TxExecutor::read,P-WAL,32
+ycsb_ermia_pwal.exe,pwal,2,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_pwal.report.nochildren.txt,23.03,TxExecutor::ssn_parallel_commit,P-WAL,32
+ycsb_ermia_pwal.exe,pwal,3,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_pwal.report.nochildren.txt,3.75,MasstreeWrapper<Tuple>::get_value,P-WAL,32
+ycsb_ermia_pwal.exe,pwal,4,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_pwal.report.nochildren.txt,2.99,TxExecutor::mainte,P-WAL,32
+ycsb_ermia_pwal.exe,pwal,5,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_pwal.report.nochildren.txt,2.83,TxExecutor::read_internal,P-WAL,32
+ycsb_ermia_pwal.exe,pwal,6,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_pwal.report.nochildren.txt,1.95,worker,P-WAL,32
+ycsb_ermia_pwal.exe,pwal,7,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_pwal.report.nochildren.txt,0.99,TxExecutor::begin,P-WAL,32
+[vdso],pwal,8,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_pwal.report.nochildren.txt,0.73,0x00000000000006e5,P-WAL,32
+ycsb_ermia_pwal.exe,tidewal,1,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_tidewal.report.nochildren.txt,52.88,TxExecutor::read,TideWAL,32
+ycsb_ermia_pwal.exe,tidewal,2,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_tidewal.report.nochildren.txt,20.92,TxExecutor::ssn_parallel_commit,TideWAL,32
+ycsb_ermia_pwal.exe,tidewal,3,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_tidewal.report.nochildren.txt,3.89,MasstreeWrapper<Tuple>::get_value,TideWAL,32
+libc.so.6,tidewal,4,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_tidewal.report.nochildren.txt,3.37,pthread_mutex_lock@@GLIBC_2.2.5,TideWAL,32
+ycsb_ermia_pwal.exe,tidewal,5,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_tidewal.report.nochildren.txt,3.02,TxExecutor::read_internal,TideWAL,32
+ycsb_ermia_pwal.exe,tidewal,6,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_tidewal.report.nochildren.txt,2.74,TxExecutor::mainte,TideWAL,32
+ycsb_ermia_pwal.exe,tidewal,7,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_tidewal.report.nochildren.txt,2.67,TxExecutor::mergeVersionFrontier,TideWAL,32
+[vdso],tidewal,8,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_tidewal.report.nochildren.txt,1.26,0x00000000000006e5,TideWAL,32
+ycsb_ermia_pwal.exe,tidewal,9,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_tidewal.report.nochildren.txt,1.15,worker,TideWAL,32
+ycsb_ermia_pwal.exe,tidewal,10,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_tidewal.report.nochildren.txt,1.06,TxExecutor::begin,TideWAL,32
+libc.so.6,tidewal,11,results/ycsbc_readonly_deep_dive_20260608_233803/perf_record/ycsbc_tidewal.report.nochildren.txt,0.82,getenv,TideWAL,32
