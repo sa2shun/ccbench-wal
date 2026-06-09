@@ -28,7 +28,7 @@
 \author{Hideyuki Kawashima}{Hideyuki Kawashima}{KEIO}
 
 \begin{abstract}
-This paper proposes TideWAL, a dependency-closed parallel WAL protocol for main-memory transaction processing. TideWAL avoids conservative global-prefix durable acknowledgment while preserving recovery safety by acknowledging a transaction only after both its own log record and the durable frontier of its observed dependencies are persistent. In an ERMIA-style implementation, TideWAL reaches 460K durable acknowledgments per second on YCSB-B at 32 worker threads, 1.8$\times$ P-WAL throughput, while keeping pending durable commits to 59.
+This paper proposes TideWAL, a dependency-closed parallel WAL protocol for main-memory transaction processing. TideWAL avoids conservative global-prefix durable acknowledgment while preserving recovery safety by acknowledging a transaction only after both its own log record and the durable frontier of its observed dependencies are persistent. In an ERMIA-style implementation, TideWAL reaches 553K durable acknowledgments per second on YCSB-B at 32 worker threads, 2.3$\times$ P-WAL throughput, while keeping pending durable commits to 58.
 \end{abstract}
 
 \maketitle

@@ -1,0 +1,18 @@
+\begin{table}[t]
+  \centering
+  \caption{YCSB-B perf-stat worker scaling.}
+  \label{tab:ycsbb-perf-scaling}
+  \small
+  \begin{tabular}{rrrrrrr}
+    \hline
+    Workers & Single tps & P-WAL tps & TideWAL tps & Single CPU & P-WAL CPU & TideWAL CPU \\
+    \hline
+    1 & 28.9K & 29.3K & 122.4K & 0.5 & 0.4 & 1.6 \\
+    2 & 32.6K & 53.9K & 195.1K & 0.6 & 0.9 & 2.9 \\
+    4 & 32.5K & 97.7K & 298.0K & 0.6 & 1.8 & 5.5 \\
+    8 & 32.6K & 161.8K & 452.1K & 0.6 & 3.7 & 10.6 \\
+    16 & 29.5K & 205.7K & 510.4K & 0.8 & 8.5 & 19.7 \\
+    32 & 29.0K & 247.4K & 570.6K & 1.0 & 18.1 & 32.2 \\
+    \hline
+  \end{tabular}
+\end{table}

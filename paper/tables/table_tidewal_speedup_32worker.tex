@@ -1,0 +1,15 @@
+\begin{table}[t]
+  \centering
+  \caption{TideWAL throughput relative to P-WAL at 32 transaction worker threads.}
+  \label{tab:tidewal-speedup-32worker}
+  \small
+  \begin{tabular}{lrrrrr}
+    \hline
+    Workload & P-WAL tps & TideWAL tps & Speedup & TideWAL p99 $\mu$s & TideWAL pending \\
+    \hline
+    YCSB-A & 65.9K & 298.1K & 4.52$\times$ & 8192 & 703 \\
+    YCSB-B & 237.6K & 553.2K & 2.33$\times$ & 512 & 58 \\
+    YCSB-C & 804.5K & 782.0K & 0.97$\times$ & 41 & 0 \\
+    \hline
+  \end{tabular}
+\end{table}

@@ -1,0 +1,29 @@
+\begin{table}[t]
+  \centering
+  \caption{Top self-time symbols for YCSB-C at 32 transaction worker threads.}
+  \label{tab:ycsbc-perf-top}
+  \small
+  \begin{tabular}{llrl}
+    \hline
+    System & Rank & Self \% & Symbol \\
+    \hline
+    Single WAL & 1 & 58.08 & TxExecutor::read \\
+    Single WAL & 2 & 23.07 & TxExecutor::ssn\_parallel\_commit \\
+    Single WAL & 3 & 4.22 & MasstreeWrapper<Tuple>::get\_value \\
+    Single WAL & 4 & 3.17 & TxExecutor::mainte \\
+    Single WAL & 5 & 2.74 & TxExecutor::read\_internal \\
+    P-WAL & 1 & 58.93 & TxExecutor::read \\
+    P-WAL & 2 & 22.93 & TxExecutor::ssn\_parallel\_commit \\
+    P-WAL & 3 & 3.93 & MasstreeWrapper<Tuple>::get\_value \\
+    P-WAL & 4 & 3.13 & TxExecutor::mainte \\
+    P-WAL & 5 & 2.81 & TxExecutor::read\_internal \\
+    TideWAL & 1 & 55.75 & TxExecutor::read \\
+    TideWAL & 2 & 21.67 & TxExecutor::ssn\_parallel\_commit \\
+    TideWAL & 3 & 4.08 & MasstreeWrapper<Tuple>::get\_value \\
+    TideWAL & 4 & 3.21 & TxExecutor::read\_internal \\
+    TideWAL & 5 & 3.03 & TxExecutor::mainte \\
+    \hline
+  \end{tabular}
+  \\[-1mm]
+  {\footnotesize YCSB-C is read-only; WAL bytes and fdatasync counts are zero for all systems.}
+\end{table}

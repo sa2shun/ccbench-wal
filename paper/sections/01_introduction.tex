@@ -137,13 +137,13 @@ workloads with the transaction worker count on the x-axis.  The comparison uses
 the same ERMIA-PWAL binary for all WAL systems; Single WAL and P-WAL are selected
 by runtime WAL-mode flags, while TideWAL additionally runs background
 flusher/logger and committer threads.  At 32 worker threads on YCSB-A, Single
-WAL achieves 10K durable acknowledgments per second and P-WAL achieves 69K,
-whereas TideWAL achieves 303K durable acknowledgments per second.  On YCSB-B,
-Single WAL achieves 28K and P-WAL achieves 252K, whereas TideWAL achieves 460K
-durable acknowledgments per second.  These results correspond to 4.3$\times$
-and 1.8$\times$ improvements over P-WAL on YCSB-A and YCSB-B, respectively.
+WAL achieves 10K durable acknowledgments per second and P-WAL achieves 66K,
+whereas TideWAL achieves 298K durable acknowledgments per second.  On YCSB-B,
+Single WAL achieves 28K and P-WAL achieves 238K, whereas TideWAL achieves 553K
+durable acknowledgments per second.  These results correspond to 4.5$\times$
+and 2.3$\times$ improvements over P-WAL on YCSB-A and YCSB-B, respectively.
 TideWAL also keeps the number of pending durable commits small at 32 worker
-threads: 221 pending commits on YCSB-A and 59 pending commits on YCSB-B.
+threads: 703 pending commits on YCSB-A and 58 pending commits on YCSB-B.
 
 Figure~\ref{fig:ycsbabc-worker-throughput} shows the worker-thread comparison.
 The results show that TideWAL improves update and mixed read-write workloads
@@ -197,52 +197,6 @@ acknowledgment, and separating workers from durable-wait processing.
   TideWAL throughput relative to P-WAL by transaction worker threads.
   }
   \label{fig:ycsbabc-worker-speedup}
-\end{figure}
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_diag_frontier_straggler_tps.pdf}
-  \caption{
-  Diagnostic throughput results for dependency-frontier and straggler effects.
-  }
-  \label{fig:diag-frontier-straggler-tps}
-\end{figure}
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_diag_frontier_straggler_latency_pending.pdf}
-  \caption{
-  Diagnostic latency and pending-commit results for dependency-frontier and
-  straggler effects.
-  }
-  \label{fig:diag-frontier-straggler-latency-pending}
-\end{figure}
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_diag_cstamp_integration_tps.pdf}
-  \caption{
-  Diagnostic throughput results for commit-timestamp integration.
-  }
-  \label{fig:diag-cstamp-integration-tps}
-\end{figure}
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_diag_cstamp_integration_overhead.pdf}
-  \caption{
-  Diagnostic overhead results for commit-timestamp integration.
-  }
-  \label{fig:diag-cstamp-integration-overhead}
-\end{figure}
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_ycsbc_readonly_deep_dive.pdf}
-  \caption{
-  YCSB-C read-only diagnostic results.
-  }
-  \label{fig:ycsbc-readonly-deep-dive}
 \end{figure}
 
 \subsection{Organization}
