@@ -27,8 +27,8 @@ from run_ermia_cstamp_pwal_experiments import (
 
 FIG_DIR = ROOT / "paper" / "figures"
 TABLE_DIR = ROOT / "paper" / "tables"
-OUT_CSV = TABLE_DIR / "ycsbabc_tidewal_worker_threads_20260608.csv"
-OUT_DOC = ROOT / "docs" / "ycsbabc_tidewal_worker_threads_20260608.md"
+OUT_CSV = TABLE_DIR / "ycsbabc_tidewal_worker_threads_20260609.csv"
+OUT_DOC = ROOT / "docs" / "ycsbabc_tidewal_worker_threads_20260609.md"
 
 MODES = ["single_wal", "pwal", "tidewal"]
 SYSTEM_LABELS = {
@@ -571,7 +571,7 @@ def write_report(rows, raw_csv, outputs, args):
         print("", file=f)
         print("This rerun uses worker threads on the x-axis. All three systems use the same `build/cc/ermia_pwal/ycsb_ermia_pwal.exe` binary. Single WAL is selected by `CCBENCH_WAL_MODE=shared`, while P-WAL and TideWAL use `CCBENCH_WAL_MODE=per_thread`.", file=f)
         print("", file=f)
-        print("Read-only WAL skip is enabled for every WAL system with `CCBENCH_WAL_SKIP_READ_ONLY=1`. TideWAL additionally has an empty-frontier read-only fast path: if a read-only transaction has no durable dependency, it does not enter the dependency waitlist.", file=f)
+        print("Read-only WAL skip is enabled for every WAL system with `CCBENCH_WAL_SKIP_READ_ONLY=1`. TideWAL also applies the read-only SI fast path: once a transaction is known to be read-only, it skips durability frontier collection and uses the empty-frontier read-only ack path.", file=f)
         print("", file=f)
         print("## Conditions", file=f)
         print("", file=f)

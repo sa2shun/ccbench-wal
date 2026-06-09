@@ -673,7 +673,7 @@ def write_total_budget_report(path, rows, modes, total_values, workload, title):
         print("## Definition", file=f)
         print("", file=f)
         print("`total active threads = worker threads + flusher/logger threads + committer threads`.", file=f)
-        print("All worker/flusher/committer threads are pinned through `CCBENCH_CPU_LIST`.", file=f)
+        print("Transaction workers are pinned through `CCBENCH_CPU_LIST`; background flusher/committer threads are intentionally left unpinned and yield when idle.", file=f)
         print("Totals up to one socket's physical cores use one socket only; totals up to 48 use one logical CPU per physical core; 96 uses SMT siblings as well.", file=f)
         print("These runs use `numactl --interleave=all` unless explicitly disabled.", file=f)
         print("", file=f)

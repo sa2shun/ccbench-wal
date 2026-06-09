@@ -938,8 +938,7 @@ void TxExecutor::verify_exclusion_or_abort() {
 
 void TxExecutor::mergeVersionFrontier(Version *ver) {
   if (!ver || !ccbench::WalLogger::dependencyFrontierRequested()) return;
-  if (is_ronly_ &&
-      ccbench::WalLogger::readOnlyFrontierCollectSkippedForDebug()) {
+  if (is_ronly_ && ccbench::WalLogger::readOnlyFrontierCollectSkipped()) {
     ccbench::WalLogger::instance().recordReadOnlyFrontierCollectSkipped();
     return;
   }
@@ -959,8 +958,7 @@ void TxExecutor::mergeVersionFrontier(Version *ver) {
 
 void TxExecutor::mergeVersionReadFrontier(Version *ver) {
   if (!ver || !ccbench::WalLogger::dependencyFrontierRequested()) return;
-  if (is_ronly_ &&
-      ccbench::WalLogger::readOnlyFrontierCollectSkippedForDebug()) {
+  if (is_ronly_ && ccbench::WalLogger::readOnlyFrontierCollectSkipped()) {
     ccbench::WalLogger::instance().recordReadOnlyFrontierCollectSkipped();
     return;
   }

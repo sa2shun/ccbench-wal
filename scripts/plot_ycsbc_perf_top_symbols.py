@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 from pathlib import Path
 
 import matplotlib
@@ -14,19 +15,6 @@ FIG_DIR = ROOT / "paper" / "figures"
 TABLE_DIR = ROOT / "paper" / "tables"
 OUT_FIG = FIG_DIR / "fig_ycsbc_perf_top_symbols_horizontal.pdf"
 OUT_CSV = TABLE_DIR / "ycsbc_perf_top_symbols_selected_20260609.csv"
-
-ROWS = [
-    {"system": "P-WAL", "symbol": "TxExecutor::read", "self_pct": 58.88},
-    {"system": "P-WAL", "symbol": "TxExecutor::ssn_parallel_commit", "self_pct": 23.03},
-    {"system": "P-WAL", "symbol": "MasstreeWrapper::get_value", "self_pct": 3.75},
-    {"system": "P-WAL", "symbol": "TxExecutor::mainte", "self_pct": 2.99},
-    {"system": "P-WAL", "symbol": "TxExecutor::read_internal", "self_pct": 2.83},
-    {"system": "TideWAL", "symbol": "TxExecutor::read", "self_pct": 52.88},
-    {"system": "TideWAL", "symbol": "TxExecutor::ssn_parallel_commit", "self_pct": 20.92},
-    {"system": "TideWAL", "symbol": "pthread_mutex_lock", "self_pct": 3.37},
-    {"system": "TideWAL", "symbol": "TxExecutor::read_internal", "self_pct": 3.02},
-    {"system": "TideWAL", "symbol": "TxExecutor::mergeVersionFrontier", "self_pct": 2.67},
-]
 
 COLORS = {"P-WAL": "#d97706", "TideWAL": "#047857"}
 
@@ -49,9 +37,30 @@ def setup_style():
     plt.rcParams.update({"figure.facecolor": "white", "axes.facecolor": "white"})
 
 
-def draw():
+def short_symbol(symbol):
+    if symbol == "pthread_mutex_lock@@GLIBC_2.2.5":
+        return "pthread_mutex_lock"
+    if symbol.startswith("MasstreeWrapper<"):
+        return "MasstreeWrapper::get_value"
+    return symbol
+
+
+def load_rows(input_csv, top_n):
+    df = pd.read_csv(input_csv)
+    df = df[(df["workload"] == "YCSB-C") & (df["system"].isin(["P-WAL", "TideWAL"]))].copy()
+    df["self_pct"] = pd.to_numeric(df["self_pct"], errors="coerce")
+    df["rank"] = pd.to_numeric(df["rank"], errors="coerce")
+    df["symbol"] = df["symbol"].map(short_symbol)
+    out = []
+    for system in ["P-WAL", "TideWAL"]:
+        sub = df[df["system"] == system].sort_values("rank").head(top_n)
+        out.append(sub[["system", "symbol", "self_pct"]])
+    return pd.concat(out, ignore_index=True)
+
+
+def draw(input_csv, top_n):
     setup_style()
-    df = pd.DataFrame(ROWS)
+    df = load_rows(input_csv, top_n)
     TABLE_DIR.mkdir(parents=True, exist_ok=True)
     df.to_csv(OUT_CSV, index=False)
 
@@ -77,7 +86,8 @@ def draw():
             )
         ax.set_title(system, fontsize=12.5, fontweight="bold", pad=8)
         ax.set_xlabel("Self samples [%]")
-        ax.set_xlim(0, 65)
+        xmax = max(10.0, df["self_pct"].max() * 1.18)
+        ax.set_xlim(0, xmax)
         ax.grid(True, axis="x")
         ax.grid(False, axis="y")
         ax.spines["top"].set_visible(False)
@@ -102,4 +112,11 @@ def draw():
 
 
 if __name__ == "__main__":
-    draw()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--input-csv",
+        default=str(TABLE_DIR / "tidewal_perf_top_20260609.csv"),
+    )
+    parser.add_argument("--top-n", type=int, default=5)
+    args = parser.parse_args()
+    draw(Path(args.input_csv), args.top_n)

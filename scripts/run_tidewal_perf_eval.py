@@ -26,9 +26,9 @@ from run_ycsbabc_tidewal_worker_threads import (
 
 FIG_DIR = ROOT / "paper" / "figures"
 TABLE_DIR = ROOT / "paper" / "tables"
-OUT_STAT_CSV = TABLE_DIR / "tidewal_perf_stat_20260608.csv"
-OUT_TOP_CSV = TABLE_DIR / "tidewal_perf_top_20260608.csv"
-OUT_DOC = ROOT / "docs" / "tidewal_perf_eval_20260608.md"
+OUT_STAT_CSV = TABLE_DIR / "tidewal_perf_stat_20260609.csv"
+OUT_TOP_CSV = TABLE_DIR / "tidewal_perf_top_20260609.csv"
+OUT_DOC = ROOT / "docs" / "tidewal_perf_eval_20260609.md"
 
 MODES = ["single_wal", "pwal", "tidewal"]
 SYSTEM_ORDER = ["Single WAL", "P-WAL", "TideWAL"]

@@ -192,8 +192,8 @@ class WalLogger {
     return parseDurableMode() == WalDurableMode::AsyncDepFrontierCstampZeroDep;
   }
 
-  static bool readOnlyFrontierCollectSkippedForDebug() {
-    return envBool("CCBENCH_WAL_READ_ONLY_SKIP_FRONTIER_COLLECT", false);
+  static bool readOnlyFrontierCollectSkipped() {
+    return envBool("CCBENCH_WAL_READ_ONLY_SKIP_FRONTIER_COLLECT", true);
   }
 
   void recordVersionInstall(uint64_t ns) {
@@ -1343,9 +1343,6 @@ class WalLogger {
   }
 
   void committerLoop(uint32_t committer_id) {
-#ifdef Linux
-    setThreadAffinity(static_cast<int>(thread_num_ + logger_num_ + committer_id));
-#endif
     const uint64_t cpu_start = threadCpuNs();
     for (;;) {
       bool did_work = false;
@@ -1371,6 +1368,7 @@ class WalLogger {
       stats_.committer_idle_wait_ns.fetch_add(nowNs() - wait_start,
                                               std::memory_order_relaxed);
       stats_.committer_idle_waits.fetch_add(1, std::memory_order_relaxed);
+      std::this_thread::yield();
     }
     const uint64_t cpu_end = threadCpuNs();
     if (cpu_end >= cpu_start) {
@@ -1390,9 +1388,6 @@ class WalLogger {
   }
 
   void asyncFlusherLoop(uint32_t thid) {
-#ifdef Linux
-    setThreadAffinity(static_cast<int>(thread_num_ + thid));
-#endif
     const uint64_t cpu_start = threadCpuNs();
     for (;;) {
       std::vector<AsyncLogEntry> batch;
@@ -1408,6 +1403,7 @@ class WalLogger {
         stats_.flusher_idle_waits.fetch_add(1, std::memory_order_relaxed);
         if (q.queue.empty()) {
           if (q.done) break;
+          std::this_thread::yield();
           continue;
         }
         const uint64_t limit = std::max<uint64_t>(1, async_group_size_);

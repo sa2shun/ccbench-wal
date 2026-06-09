@@ -1,6 +1,6 @@
 # YCSB-B perf stat worker scaling
 
-date: 2026-06-09T07:48:05
+date: 2026-06-09T15:52:42
 
 `perf stat` was used to collect `task-clock` and `context-switches`.
 CPU cores are computed as `task-clock-ms / elapsed-ms`.
@@ -19,7 +19,7 @@ CPU cores are computed as `task-clock-ms / elapsed-ms`.
 | TideWAL max_pending | 65536 |
 
 summary csv: `paper/tables/ycsbb_perf_scaling_20260609.csv`
-raw csv: `results/ycsbb_perf_scaling_20260609_074240/ycsbb_perf_scaling_raw_20260609_074240.csv`
+raw csv: `results/ycsbb_perf_scaling_20260609_154803/ycsbb_perf_scaling_raw_20260609_154803.csv`
 
 ## Figures
 
@@ -32,21 +32,21 @@ raw csv: `results/ycsbb_perf_scaling_20260609_074240/ycsbb_perf_scaling_raw_2026
 
 | system | workers | ack tps | CPU cores | context switches |
 |---|---:|---:|---:|---:|
-| Single WAL | 1 | 29647 | 0.45 | 99888 |
-| Single WAL | 2 | 32594 | 0.57 | 162061 |
-| Single WAL | 4 | 32385 | 0.57 | 160970 |
-| Single WAL | 8 | 32378 | 0.60 | 161202 |
-| Single WAL | 16 | 29025 | 0.74 | 145076 |
-| Single WAL | 32 | 29080 | 1.01 | 145873 |
-| P-WAL | 1 | 29633 | 0.45 | 100090 |
-| P-WAL | 2 | 54428 | 0.86 | 208459 |
-| P-WAL | 4 | 98113 | 1.75 | 413758 |
-| P-WAL | 8 | 163214 | 3.77 | 734901 |
-| P-WAL | 16 | 208444 | 8.71 | 1073575 |
-| P-WAL | 32 | 244122 | 17.92 | 1448989 |
-| TideWAL | 1 | 110552 | 1.57 | 184644 |
-| TideWAL | 2 | 172701 | 2.87 | 214741 |
-| TideWAL | 4 | 273648 | 5.39 | 270767 |
-| TideWAL | 8 | 388868 | 10.26 | 691645 |
-| TideWAL | 16 | 413587 | 17.89 | 1929473 |
-| TideWAL | 32 | 469655 | 29.48 | 4043411 |
+| Single WAL | 1 | 28928 | 0.46 | 97963 |
+| Single WAL | 2 | 32632 | 0.57 | 162103 |
+| Single WAL | 4 | 32505 | 0.58 | 161439 |
+| Single WAL | 8 | 32616 | 0.61 | 161886 |
+| Single WAL | 16 | 29497 | 0.75 | 146971 |
+| Single WAL | 32 | 29042 | 1.01 | 145446 |
+| P-WAL | 1 | 29342 | 0.45 | 99274 |
+| P-WAL | 2 | 53867 | 0.87 | 210683 |
+| P-WAL | 4 | 97719 | 1.78 | 413660 |
+| P-WAL | 8 | 161836 | 3.70 | 729465 |
+| P-WAL | 16 | 205701 | 8.48 | 1071911 |
+| P-WAL | 32 | 247425 | 18.13 | 1462729 |
+| TideWAL | 1 | 122408 | 1.59 | 186083 |
+| TideWAL | 2 | 195146 | 2.91 | 208916 |
+| TideWAL | 4 | 297996 | 5.50 | 182894 |
+| TideWAL | 8 | 452103 | 10.61 | 494083 |
+| TideWAL | 16 | 510386 | 19.72 | 1237843 |
+| TideWAL | 32 | 570554 | 32.25 | 3197369 |
