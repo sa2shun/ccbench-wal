@@ -1,8 +1,10 @@
-\begin{table}[t]
+\begin{table}[tbp]
   \centering
   \caption{Ayame throughput relative to P-WAL at 32 transaction worker threads.}
   \label{tab:ayame-speedup-32worker}
-  \small
+  \footnotesize
+  \setlength{\tabcolsep}{3pt}
+  \resizebox{\linewidth}{!}{%
   \begin{tabular}{lrrrrr}
     \hline
     Workload & P-WAL tps & Ayame tps & Speedup & Ayame p99 $\mu$s & Ayame pending \\
@@ -12,4 +14,5 @@
     YCSB-C & 804.5K & 782.0K & 0.97$\times$ & 41 & 0 \\
     \hline
   \end{tabular}
+  }
 \end{table}

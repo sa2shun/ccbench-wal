@@ -1,8 +1,10 @@
-\begin{table}[t]
+\begin{table*}[tbp]
   \centering
   \caption{Top self-time symbols for YCSB-C at 32 transaction worker threads.}
   \label{tab:ycsbc-perf-top}
-  \small
+  \footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \resizebox{\textwidth}{!}{%
   \begin{tabular}{llrl}
     \hline
     System & Rank & Self \% & Symbol \\
@@ -24,6 +26,7 @@
     Ayame & 5 & 3.03 & TxExecutor::mainte \\
     \hline
   \end{tabular}
+  }
   \\[-1mm]
   {\footnotesize YCSB-C is read-only; WAL bytes and fdatasync counts are zero for all systems.}
-\end{table}
+\end{table*}

@@ -1,8 +1,10 @@
-\begin{table}[t]
+\begin{table*}[tbp]
   \centering
   \caption{Perf-stat summary at 32 transaction worker threads.}
   \label{tab:perf-stat-32worker}
-  \small
+  \footnotesize
+  \setlength{\tabcolsep}{3pt}
+  \resizebox{\textwidth}{!}{%
   \begin{tabular}{llrrrrrrr}
     \hline
     Workload & System & Ack tps & CPU cores & Cycles/tx & Instr/tx & IPC & Ctx sw. & Tx/sync \\
@@ -18,4 +20,5 @@
     YCSB-C & Ayame & 772.3K & 40.2 & 135099 & 32551 & 0.24 & 35684 & 0.0 \\
     \hline
   \end{tabular}
-\end{table}
+  }
+\end{table*}
