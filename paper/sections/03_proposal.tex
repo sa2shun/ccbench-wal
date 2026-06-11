@@ -45,7 +45,7 @@ return durable acknowledgments (Algorithm~\ref{alg:ayame-ack}).
 \label{alg:ayame-commit}
 \begin{algorithmic}[1]
 \Function{Commit}{$T$}
-    \State $T.c \gets$ next commit timestamp of ERMIA/SSN
+    \State $T.c \gets$ commit timestamp assigned by SSN
            \label{ln:cstamp}
            \Comment{logical LSN}
     \If{\Call{SsnValidate}{$T$} fails}
@@ -122,7 +122,7 @@ additionally depend on the readers of the overwritten version
 collection entirely.
 
 In Algorithm~\ref{alg:ayame-commit}, the commit timestamp $T.c$ that
-ERMIA/SSN assigns for validation doubles as the logical LSN of the log
+SSN assigns for validation doubles as the logical LSN of the log
 record (line~\ref{ln:cstamp}); Ayame allocates no WAL-side global
 sequence number.  The worker only enqueues the record to its own shard
 (line~\ref{ln:enqueue}) and never calls \texttt{fdatasync} or waits
