@@ -15,9 +15,10 @@ from run_ermia_cstamp_pwal_experiments import (
     derived,
     write_csv,
 )
-from run_ycsbabc_tidewal_worker_threads import (
+from run_ycsbabc_ayame_worker_threads import (
     SYSTEM_LABELS,
-    TIDEWAL_LOGGERS,
+    AYAME_LOGGERS,
+    display_system,
     mode_allocation,
     parse_metrics,
     safe_float,
@@ -26,12 +27,12 @@ from run_ycsbabc_tidewal_worker_threads import (
 
 FIG_DIR = ROOT / "paper" / "figures"
 TABLE_DIR = ROOT / "paper" / "tables"
-OUT_STAT_CSV = TABLE_DIR / "tidewal_perf_stat_20260609.csv"
-OUT_TOP_CSV = TABLE_DIR / "tidewal_perf_top_20260609.csv"
-OUT_DOC = ROOT / "docs" / "tidewal_perf_eval_20260609.md"
+OUT_STAT_CSV = TABLE_DIR / "ayame_perf_stat_20260609.csv"
+OUT_TOP_CSV = TABLE_DIR / "ayame_perf_top_20260609.csv"
+OUT_DOC = ROOT / "docs" / "ayame_perf_eval_20260609.md"
 
 MODES = ["single_wal", "pwal", "tidewal"]
-SYSTEM_ORDER = ["Single WAL", "P-WAL", "TideWAL"]
+SYSTEM_ORDER = ["Single WAL", "P-WAL", "Ayame"]
 WORKLOAD_ORDER = ["YCSB-A", "YCSB-B", "YCSB-C"]
 WORKLOAD_LABELS = {
     "ycsb_a": "YCSB-A",
@@ -253,7 +254,7 @@ def run_record_case(out_dir, workload, mode, args):
 def aggregate_stat(rows):
     groups = {}
     for row in rows:
-        key = (row["workload"], row["system"])
+        key = (row["workload"], display_system(row))
         groups.setdefault(key, []).append(row)
     out = []
     for (workload, system), rs in sorted(groups.items()):
@@ -310,11 +311,11 @@ def aggregate_stat(rows):
 
 def write_report(summary, top_rows, raw_csv, top_csv, args):
     with OUT_DOC.open("w") as f:
-        print("# TideWAL perf evaluation", file=f)
+        print("# Ayame perf evaluation", file=f)
         print("", file=f)
         print(f"date: {datetime.now().isoformat(timespec='seconds')}", file=f)
         print("", file=f)
-        print("This perf run uses only the three paper systems: Single WAL, P-WAL, and TideWAL.", file=f)
+        print("This perf run uses only the three paper systems: Single WAL, P-WAL, and Ayame.", file=f)
         print("It is internal analysis, not a component ablation.", file=f)
         print("", file=f)
         print("## Conditions", file=f)
@@ -369,7 +370,10 @@ def write_report(summary, top_rows, raw_csv, top_csv, args):
 
 def read_csv_rows(path):
     with Path(path).open() as f:
-        return list(csv.DictReader(f))
+        rows = list(csv.DictReader(f))
+    for row in rows:
+        row["system"] = display_system(row)
+    return rows
 
 
 def workspace_path(path):
@@ -398,7 +402,7 @@ def main():
 
     workloads = parse_workloads(args.workloads)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = RESULTS / f"tidewal_perf_eval_{stamp}"
+    out_dir = RESULTS / f"ayame_perf_eval_{stamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if args.input_csv:
@@ -417,7 +421,7 @@ def main():
                         flush=True,
                     )
 
-        raw_csv = out_dir / f"tidewal_perf_stat_raw_{stamp}.csv"
+        raw_csv = out_dir / f"ayame_perf_stat_raw_{stamp}.csv"
         write_csv(raw_csv, stat_rows)
     summary = aggregate_stat(stat_rows)
     TABLE_DIR.mkdir(parents=True, exist_ok=True)

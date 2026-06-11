@@ -1,6 +1,6 @@
 # YCSB-B perf stat worker scaling
 
-date: 2026-06-09T15:52:42
+date: 2026-06-11T11:22:37
 
 `perf stat` was used to collect `task-clock` and `context-switches`.
 CPU cores are computed as `task-clock-ms / elapsed-ms`.
@@ -11,12 +11,12 @@ CPU cores are computed as `task-clock-ms / elapsed-ms`.
 |---|---|
 | workload | YCSB-B |
 | worker threads | 1,2,4,8,16,32 |
-| systems | Single WAL, P-WAL, TideWAL |
+| systems | Single WAL, P-WAL, Ayame |
 | seconds | 5 |
 | repeats | 3 |
-| TideWAL group_size | 16 |
-| TideWAL flush_us | 50 |
-| TideWAL max_pending | 65536 |
+| Ayame group_size | 16 |
+| Ayame flush_us | 50 |
+| Ayame max_pending | 65536 |
 
 summary csv: `paper/tables/ycsbb_perf_scaling_20260609.csv`
 raw csv: `results/ycsbb_perf_scaling_20260609_154803/ycsbb_perf_scaling_raw_20260609_154803.csv`
@@ -44,9 +44,9 @@ raw csv: `results/ycsbb_perf_scaling_20260609_154803/ycsbb_perf_scaling_raw_2026
 | P-WAL | 8 | 161836 | 3.70 | 729465 |
 | P-WAL | 16 | 205701 | 8.48 | 1071911 |
 | P-WAL | 32 | 247425 | 18.13 | 1462729 |
-| TideWAL | 1 | 122408 | 1.59 | 186083 |
-| TideWAL | 2 | 195146 | 2.91 | 208916 |
-| TideWAL | 4 | 297996 | 5.50 | 182894 |
-| TideWAL | 8 | 452103 | 10.61 | 494083 |
-| TideWAL | 16 | 510386 | 19.72 | 1237843 |
-| TideWAL | 32 | 570554 | 32.25 | 3197369 |
+| Ayame | 1 | 122408 | 1.59 | 186083 |
+| Ayame | 2 | 195146 | 2.91 | 208916 |
+| Ayame | 4 | 297996 | 5.50 | 182894 |
+| Ayame | 8 | 452103 | 10.61 | 494083 |
+| Ayame | 16 | 510386 | 19.72 | 1237843 |
+| Ayame | 32 | 570554 | 32.25 | 3197369 |

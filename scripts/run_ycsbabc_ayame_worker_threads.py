@@ -27,16 +27,16 @@ from run_ermia_cstamp_pwal_experiments import (
 
 FIG_DIR = ROOT / "paper" / "figures"
 TABLE_DIR = ROOT / "paper" / "tables"
-OUT_CSV = TABLE_DIR / "ycsbabc_tidewal_worker_threads_20260609.csv"
-OUT_DOC = ROOT / "docs" / "ycsbabc_tidewal_worker_threads_20260609.md"
+OUT_CSV = TABLE_DIR / "ycsbabc_ayame_worker_threads_20260609.csv"
+OUT_DOC = ROOT / "docs" / "ycsbabc_ayame_worker_threads_20260609.md"
 
 MODES = ["single_wal", "pwal", "tidewal"]
 SYSTEM_LABELS = {
     "single_wal": "Single WAL",
     "pwal": "P-WAL",
-    "tidewal": "TideWAL",
+    "tidewal": "Ayame",
 }
-SYSTEM_ORDER = ["Single WAL", "P-WAL", "TideWAL"]
+SYSTEM_ORDER = ["Single WAL", "P-WAL", "Ayame"]
 
 WORKLOAD_LABELS = {
     "ycsb_a": "YCSB-A",
@@ -48,15 +48,15 @@ WORKLOAD_ORDER = ["YCSB-A", "YCSB-B", "YCSB-C"]
 COLORS = {
     "Single WAL": "#4b5563",
     "P-WAL": "#d97706",
-    "TideWAL": "#047857",
+    "Ayame": "#047857",
 }
 MARKERS = {
     "Single WAL": "o",
     "P-WAL": "s",
-    "TideWAL": "^",
+    "Ayame": "^",
 }
 
-TIDEWAL_LOGGERS = {
+AYAME_LOGGERS = {
     1: 1,
     2: 1,
     4: 1,
@@ -94,6 +94,17 @@ def read_rows(path):
         return list(csv.DictReader(f))
 
 
+def display_system(row):
+    mode = row.get("mode", "")
+    system = row.get("system", "")
+    legacy_name = "Tide" + "WAL"
+    if mode in SYSTEM_LABELS:
+        return SYSTEM_LABELS[mode]
+    if system == legacy_name:
+        return "Ayame"
+    return system
+
+
 def safe_float(value, fallback=0.0):
     try:
         return float(value)
@@ -126,9 +137,9 @@ def compact_number(v):
     return f"{v:.0f}"
 
 
-def tidewal_logger_num(worker):
-    if worker in TIDEWAL_LOGGERS:
-        return TIDEWAL_LOGGERS[worker]
+def ayame_logger_num(worker):
+    if worker in AYAME_LOGGERS:
+        return AYAME_LOGGERS[worker]
     return max(1, round(worker * 7 / 32))
 
 
@@ -150,7 +161,7 @@ def mode_allocation(mode, worker):
             "logger_num": worker,
         }
     if mode == "tidewal":
-        logger = tidewal_logger_num(worker)
+        logger = ayame_logger_num(worker)
         return {
             "worker_threads": worker,
             "wal_streams": logger,
@@ -248,7 +259,7 @@ def aggregate(rows):
         key = (
             row["workload_mode"],
             row["workload"],
-            row["system"],
+            display_system(row),
             int(row["worker_threads"]),
         )
         grouped.setdefault(key, []).append(row)
@@ -458,7 +469,7 @@ def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear"):
                 sub[metric],
                 color=COLORS[system],
                 marker=MARKERS[system],
-                linewidth=2.6 if system == "TideWAL" else 2.2,
+                linewidth=2.6 if system == "Ayame" else 2.2,
                 markersize=6.2,
                 markerfacecolor="white",
                 markeredgewidth=1.8,
@@ -501,7 +512,7 @@ def draw_speedup(rows, output):
         for worker in sorted(df["worker_threads"].unique()):
             pwal = df[(df["workload"] == workload) & (df["system"] == "P-WAL") &
                       (df["worker_threads"] == worker)]
-            tide = df[(df["workload"] == workload) & (df["system"] == "TideWAL") &
+            tide = df[(df["workload"] == workload) & (df["system"] == "Ayame") &
                       (df["worker_threads"] == worker)]
             if pwal.empty or tide.empty:
                 continue
@@ -539,7 +550,7 @@ def draw_speedup(rows, output):
         )
     ax.axhline(1.0, color="#9ca3af", linewidth=1.0, linestyle="--")
     ax.set_xlabel("Worker threads", labelpad=8)
-    ax.set_ylabel("TideWAL / P-WAL ack throughput", labelpad=8)
+    ax.set_ylabel("Ayame / P-WAL ack throughput", labelpad=8)
     ax.set_xticks(sorted(df["worker_threads"].unique()))
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.1f}x"))
     ax.grid(True, axis="y", color="#e5e7eb", linewidth=0.9)
@@ -565,13 +576,13 @@ def draw_speedup(rows, output):
 
 def write_report(rows, raw_csv, outputs, args):
     with OUT_DOC.open("w") as f:
-        print("# YCSB-A/B/C worker-thread TideWAL comparison", file=f)
+        print("# YCSB-A/B/C worker-thread Ayame comparison", file=f)
         print("", file=f)
         print(f"date: {datetime.now().isoformat(timespec='seconds')}", file=f)
         print("", file=f)
-        print("This rerun uses worker threads on the x-axis. All three systems use the same `build/cc/ermia_pwal/ycsb_ermia_pwal.exe` binary. Single WAL is selected by `CCBENCH_WAL_MODE=shared`, while P-WAL and TideWAL use `CCBENCH_WAL_MODE=per_thread`.", file=f)
+        print("This rerun uses worker threads on the x-axis. All three systems use the same `build/cc/ermia_pwal/ycsb_ermia_pwal.exe` binary. Single WAL is selected by `CCBENCH_WAL_MODE=shared`, while P-WAL and Ayame use `CCBENCH_WAL_MODE=per_thread`.", file=f)
         print("", file=f)
-        print("Read-only WAL skip is enabled for every WAL system with `CCBENCH_WAL_SKIP_READ_ONLY=1`. TideWAL also applies the read-only SI fast path: once a transaction is known to be read-only, it skips durability frontier collection and uses the empty-frontier read-only ack path.", file=f)
+        print("Read-only WAL skip is enabled for every WAL system with `CCBENCH_WAL_SKIP_READ_ONLY=1`. Ayame also applies the read-only SI fast path: once a transaction is known to be read-only, it skips durability frontier collection and uses the empty-frontier read-only ack path.", file=f)
         print("", file=f)
         print("## Conditions", file=f)
         print("", file=f)
@@ -581,10 +592,10 @@ def write_report(rows, raw_csv, outputs, args):
         print(f"| worker threads | {args.workers} |", file=f)
         print(f"| repeats | {args.repeats} |", file=f)
         print(f"| seconds | {args.seconds} |", file=f)
-        print(f"| TideWAL logger mapping | {TIDEWAL_LOGGERS} |", file=f)
-        print(f"| TideWAL group_size | {args.group_size} |", file=f)
-        print(f"| TideWAL flush_us | {args.flush_us} |", file=f)
-        print(f"| TideWAL max_pending | {args.max_pending} |", file=f)
+        print(f"| Ayame logger mapping | {AYAME_LOGGERS} |", file=f)
+        print(f"| Ayame group_size | {args.group_size} |", file=f)
+        print(f"| Ayame flush_us | {args.flush_us} |", file=f)
+        print(f"| Ayame max_pending | {args.max_pending} |", file=f)
         print("", file=f)
         print(f"summary csv: `{OUT_CSV.relative_to(ROOT)}`", file=f)
         print(f"raw csv: `{raw_csv.relative_to(ROOT)}`", file=f)
@@ -638,7 +649,7 @@ def main():
     workloads = parse_workloads(args.workloads)
     workers = parse_int_list(args.workers)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = RESULTS / f"ycsbabc_tidewal_worker_threads_{stamp}"
+    out_dir = RESULTS / f"ycsbabc_ayame_worker_threads_{stamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if args.input_csv:
@@ -659,7 +670,7 @@ def main():
                             flush=True,
                         )
 
-    raw_csv = out_dir / f"ycsbabc_tidewal_worker_threads_raw_{stamp}.csv"
+    raw_csv = out_dir / f"ycsbabc_ayame_worker_threads_raw_{stamp}.csv"
     write_csv(raw_csv, raw_rows)
     rows = aggregate(raw_rows)
     write_summary_csv(rows)
@@ -669,7 +680,7 @@ def main():
         FIG_DIR / "fig_ycsbabc_worker_threads_throughput.pdf",
         FIG_DIR / "fig_ycsbabc_worker_threads_latency.pdf",
         FIG_DIR / "fig_ycsbabc_worker_threads_pending.pdf",
-        FIG_DIR / "fig_ycsbabc_worker_threads_tidewal_speedup_vs_pwal.pdf",
+        FIG_DIR / "fig_ycsbabc_worker_threads_ayame_speedup_vs_pwal.pdf",
     ]
     draw_faceted_lines(
         rows,

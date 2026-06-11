@@ -1,4 +1,0 @@
-ack_tps,benchmark_latency_ns,closed_loop_service_ns,committer_cpu_ns_per_tx,committer_threads,context_switches,cycles_per_tx,fdatasync_count,flusher_cpu_ns_per_tx,flusher_threads,frontier_collect_ns_per_read,frontier_collect_ns_per_tx,instructions_per_tx,ipc,p99_us,pending,read_only_fast_path_per_tx,read_only_ratio,system,total_active_threads,waitlist_registration_ns_per_tx,wal_bytes,wal_streams,worker_threads
-801708.05,49958.819919999994,39967.3662186,0.0,0,4006.8,129818.8608944,0.0,0.0,0,0.0,0.0,28265.8693034,0.21801720000000002,0.0,0.0,0.0,1.0000086,Single WAL,32,0.0,0.0,1,32
-796269.15,50250.57422,40200.7681762,0.0,0,4126.2,130576.77927640002,0.0,0.0,0,0.0,0.0,28275.810335,0.2166166,0.0,0.0,0.0,1.0000082000000003,P-WAL,32,0.0,0.0,32,32
-783287.15,51080.16432,40864.463191999996,67.69627419999999,1,40175.8,132769.30862820003,0.0,0.0,7,267.60588700000005,2676.0588682000002,36726.153488200005,0.27669180000000004,0.0,0.0,1.0000086,1.0000086,TideWAL,40,0.0,0.0,7,32

@@ -78,12 +78,12 @@ transactions it depends on are durable.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\linewidth]{figures/fig1_tidewal_ack_policies.pdf}
+  \includegraphics[width=\linewidth]{figures/fig1_ayame_ack_policies.pdf}
   \caption{
   Durable acknowledgment policies in parallel WAL.  Global-prefix acknowledgment
   is safe but can delay transactions whose dependencies are already durable
   because it waits for unrelated slow shards.  Local-only acknowledgment avoids
-  this delay but is unsafe.  TideWAL uses dependency-closed acknowledgment,
+  this delay but is unsafe.  Ayame uses dependency-closed acknowledgment,
   acknowledging a transaction only after its own log record and dependency
   frontier are durable.
   }
@@ -100,24 +100,24 @@ reports it together with pending durable commits and tail latency.
 \subsection{Approach}
 \label{sec:introduction-approach}
 
-This paper proposes \emph{TideWAL}, a timestamp-integrated,
+This paper proposes \emph{Ayame}, a timestamp-integrated,
 dependency-closed parallel WAL protocol for main-memory transaction processing.
-TideWAL targets timestamp-based engines such as ERMIA, where the transaction
+Ayame targets timestamp-based engines such as ERMIA, where the transaction
 engine already computes a logical commit order.  Its goal is not merely to
 maximize raw logical commit throughput, but to return durable commit
 acknowledgments safely without unnecessary global-prefix waiting.
 
-TideWAL addresses the three problems above with three corresponding techniques.
+Ayame addresses the three problems above with three corresponding techniques.
 
 \noindent\textbf{A1. Commit timestamps as logical LSNs.}
-TideWAL reuses the SSN/ERMIA commit timestamp as the logical LSN for recovery.
+Ayame reuses the SSN/ERMIA commit timestamp as the logical LSN for recovery.
 WAL shards still maintain local physical positions, but the WAL layer does not
 allocate an additional global logical order.  This removes duplicated global
 ordering between CC and recovery and eliminates WAL-side separate global LSN
 allocation on the commit path.
 
 \noindent\textbf{A2. Worker/flusher/committer separation.}
-TideWAL decouples transaction execution from durable acknowledgment.  Workers
+Ayame decouples transaction execution from durable acknowledgment.  Workers
 execute and validate transactions, assign commit timestamps, and enqueue log
 records.  Flushers batch and persist shard-local logs.  Committers observe
 durable-frontier advances and return durable acknowledgments.  This pipeline
@@ -125,32 +125,32 @@ keeps workers from directly blocking on \texttt{fdatasync} or on durable-prefix
 notification waits.
 
 \noindent\textbf{A3. Dependency-closed durable acknowledgment.}
-TideWAL replaces global-prefix acknowledgment with dependency-closed
-acknowledgment.  For each transaction, TideWAL maintains a dependency frontier
+Ayame replaces global-prefix acknowledgment with dependency-closed
+acknowledgment.  For each transaction, Ayame maintains a dependency frontier
 that summarizes the log positions that must be recoverable before the
 transaction can be acknowledged.  A transaction is acknowledged only when its own
 log record and this dependency frontier are durable.  This preserves recovery
 safety while avoiding waits for unrelated WAL shards.
 
-We implement TideWAL in an ERMIA-style engine and evaluate it using YCSB
+We implement Ayame in an ERMIA-style engine and evaluate it using YCSB
 workloads with the transaction worker count on the x-axis.  The comparison uses
 the same ERMIA-PWAL binary for all WAL systems; Single WAL and P-WAL are selected
-by runtime WAL-mode flags, while TideWAL additionally runs background
+by runtime WAL-mode flags, while Ayame additionally runs background
 flusher/logger and committer threads.  At 32 worker threads on YCSB-A, Single
 WAL achieves 10K durable acknowledgments per second and P-WAL achieves 66K,
-whereas TideWAL achieves 298K durable acknowledgments per second.  On YCSB-B,
-Single WAL achieves 28K and P-WAL achieves 238K, whereas TideWAL achieves 553K
+whereas Ayame achieves 298K durable acknowledgments per second.  On YCSB-B,
+Single WAL achieves 28K and P-WAL achieves 238K, whereas Ayame achieves 553K
 durable acknowledgments per second.  These results correspond to 4.5$\times$
 and 2.3$\times$ improvements over P-WAL on YCSB-A and YCSB-B, respectively.
-TideWAL also keeps the number of pending durable commits small at 32 worker
+Ayame also keeps the number of pending durable commits small at 32 worker
 threads: 703 pending commits on YCSB-A and 58 pending commits on YCSB-B.
 
 Figure~\ref{fig:ycsbabc-worker-throughput} shows the worker-thread comparison.
-The results show that TideWAL improves update and mixed read-write workloads
+The results show that Ayame improves update and mixed read-write workloads
 where durable logging remains on the critical path.  We also evaluate YCSB-C,
 where all transactions are read-only and WAL records are skipped.  In this case,
 durability work largely disappears; after using the same binary and a read-only
-empty-frontier fast path, Single WAL, P-WAL, and TideWAL perform similarly at 32
+empty-frontier fast path, Single WAL, P-WAL, and Ayame perform similarly at 32
 worker threads.  We therefore use YCSB-C as a sanity check for read-only
 bookkeeping overhead rather than as evidence of WAL persistence performance.
 
@@ -159,14 +159,14 @@ bookkeeping overhead rather than as evidence of WAL persistence performance.
   \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_throughput.pdf}
   \caption{
   Durable-acknowledgment throughput by transaction worker threads.
-  TideWAL improves update and mixed read-write workloads by combining parallel
+  Ayame improves update and mixed read-write workloads by combining parallel
   WAL logging, dependency-closed durable acknowledgment, and timestamp-integrated
   logical ordering.
   }
   \label{fig:ycsbabc-worker-throughput}
 \end{figure}
 
-TideWAL's timestamp integration is primarily a design simplification: it removes
+Ayame's timestamp integration is primarily a design simplification: it removes
 duplicated logical ordering between concurrency control and WAL durability by
 reusing ERMIA's commit timestamp as the logical recovery order.  We do not rely
 on timestamp integration alone as a direct throughput optimization; the main
@@ -192,9 +192,9 @@ acknowledgment, and separating workers from durable-wait processing.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_tidewal_speedup_vs_pwal.pdf}
+  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_ayame_speedup_vs_pwal.pdf}
   \caption{
-  TideWAL throughput relative to P-WAL by transaction worker threads.
+  Ayame throughput relative to P-WAL by transaction worker threads.
   }
   \label{fig:ycsbabc-worker-speedup}
 \end{figure}

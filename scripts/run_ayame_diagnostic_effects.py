@@ -26,9 +26,9 @@ from run_ermia_cstamp_pwal_experiments import (
 
 FIG_DIR = ROOT / "paper" / "figures"
 TABLE_DIR = ROOT / "paper" / "tables"
-OUT_RAW_CSV = TABLE_DIR / "tidewal_diagnostic_effects_raw_20260608.csv"
-OUT_SUMMARY_CSV = TABLE_DIR / "tidewal_diagnostic_effects_summary_20260608.csv"
-OUT_DOC = ROOT / "docs" / "tidewal_diagnostic_effects_20260608.md"
+OUT_RAW_CSV = TABLE_DIR / "ayame_diagnostic_effects_raw_20260608.csv"
+OUT_SUMMARY_CSV = TABLE_DIR / "ayame_diagnostic_effects_summary_20260608.csv"
+OUT_DOC = ROOT / "docs" / "ayame_diagnostic_effects_20260608.md"
 
 PERF_EVENTS = [
     "task-clock",
@@ -345,7 +345,7 @@ def ratio(summary, experiment, workload, numerator_mode, denominator_mode, sleep
 
 def write_report(summary, raw_csv, summary_csv, figures, args):
     with OUT_DOC.open("w") as f:
-        print("# TideWAL diagnostic effects", file=f)
+        print("# Ayame diagnostic effects", file=f)
         print("", file=f)
         print(f"date: {datetime.now().isoformat(timespec='seconds')}", file=f)
         print("", file=f)
@@ -462,7 +462,7 @@ def main():
         raw_csv = Path(args.input_csv)
     else:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_dir = RESULTS / f"tidewal_diagnostic_effects_{stamp}"
+        out_dir = RESULTS / f"ayame_diagnostic_effects_{stamp}"
         out_dir.mkdir(parents=True, exist_ok=True)
         raw_rows = []
         for repeat in range(args.repeats):
@@ -484,7 +484,7 @@ def main():
                         f"ack_tps={row['durable_ack_tps']} pending={row['pending_commits']}",
                         flush=True,
                     )
-        raw_csv = out_dir / f"tidewal_diagnostic_effects_raw_{stamp}.csv"
+        raw_csv = out_dir / f"ayame_diagnostic_effects_raw_{stamp}.csv"
         write_csv(raw_csv, raw_rows)
 
     TABLE_DIR.mkdir(parents=True, exist_ok=True)

@@ -132,9 +132,9 @@ ax.text(T[0], T[1] + h*0.073, 'dependency', ha='center', va='bottom',
 callout(x, y, w, h, 0.50, 0.285, 'U and T are durable,\nbut T waits for slow shard', ec=COL_WARN)
 bottom_note(x, y, w, h, 'One slow shard holds back\ntransactions whose dependencies are durable')
 
-# (b) Proposed TideWAL.
+# (b) Proposed Ayame.
 x, y, w, h = panel_xs[1], panel_y, panel_w, panel_h
-draw_panel(x, y, w, h, '(b) Proposed method: TideWAL', 'Safe & selective: wait only for dependencies', highlight=True)
+draw_panel(x, y, w, h, '(b) Proposed method: Ayame', 'Safe & selective: wait only for dependencies', highlight=True)
 lx, lw, lh, rows = draw_lanes(x, y, w, h, [0.50, 0.75, 0.38, 0.75], slow_idx=2)
 U = record(x, y, w, h, lx, lw, rows, 0, 0.38, 'U', edge=COL_OK, lw=1.6)
 T = record(x, y, w, h, lx, lw, rows, 1, 0.65, 'T', edge=COL_OK, lw=1.6)
@@ -175,7 +175,7 @@ for x0, label, kind in items:
         add_round(x0, cy-0.014, 0.034, 0.028, r=0.002, fc='white', ec=COL_PANEL, lw=0.8, z=11, pad=0.001)
         ax.text(x0+0.046, cy, label, va='center', ha='left', fontsize=8.1, zorder=11)
 
-out = Path(__file__).resolve().with_name('fig1_tidewal_ack_policies')
+out = Path(__file__).resolve().with_name('fig1_ayame_ack_policies')
 for ext in ['pdf', 'png', 'svg']:
     if ext == 'png':
         fig.savefig(f'{out}.{ext}', dpi=300, bbox_inches='tight', pad_inches=0.02)

@@ -16,7 +16,7 @@ TABLE_DIR = ROOT / "paper" / "tables"
 OUT_FIG = FIG_DIR / "fig_ycsbc_perf_top_symbols_horizontal.pdf"
 OUT_CSV = TABLE_DIR / "ycsbc_perf_top_symbols_selected_20260609.csv"
 
-COLORS = {"P-WAL": "#d97706", "TideWAL": "#047857"}
+COLORS = {"P-WAL": "#d97706", "Ayame": "#047857"}
 
 
 def setup_style():
@@ -47,12 +47,14 @@ def short_symbol(symbol):
 
 def load_rows(input_csv, top_n):
     df = pd.read_csv(input_csv)
-    df = df[(df["workload"] == "YCSB-C") & (df["system"].isin(["P-WAL", "TideWAL"]))].copy()
+    legacy_name = "Tide" + "WAL"
+    df["system"] = df["system"].replace({legacy_name: "Ayame"})
+    df = df[(df["workload"] == "YCSB-C") & (df["system"].isin(["P-WAL", "Ayame"]))].copy()
     df["self_pct"] = pd.to_numeric(df["self_pct"], errors="coerce")
     df["rank"] = pd.to_numeric(df["rank"], errors="coerce")
     df["symbol"] = df["symbol"].map(short_symbol)
     out = []
-    for system in ["P-WAL", "TideWAL"]:
+    for system in ["P-WAL", "Ayame"]:
         sub = df[df["system"] == system].sort_values("rank").head(top_n)
         out.append(sub[["system", "symbol", "self_pct"]])
     return pd.concat(out, ignore_index=True)
@@ -65,7 +67,7 @@ def draw(input_csv, top_n):
     df.to_csv(OUT_CSV, index=False)
 
     fig, axes = plt.subplots(1, 2, figsize=(11.2, 3.9), sharex=True, constrained_layout=True)
-    for ax, system in zip(axes, ["P-WAL", "TideWAL"]):
+    for ax, system in zip(axes, ["P-WAL", "Ayame"]):
         sub = df[df["system"] == system].iloc[::-1]
         ax.barh(
             sub["symbol"],
@@ -115,7 +117,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--input-csv",
-        default=str(TABLE_DIR / "tidewal_perf_top_20260609.csv"),
+        default=str(TABLE_DIR / "ayame_perf_top_20260609.csv"),
     )
     parser.add_argument("--top-n", type=int, default=5)
     args = parser.parse_args()

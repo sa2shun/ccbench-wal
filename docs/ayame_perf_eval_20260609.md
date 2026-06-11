@@ -1,8 +1,8 @@
-# TideWAL perf evaluation
+# Ayame perf evaluation
 
-date: 2026-06-09T15:47:30
+date: 2026-06-11T11:23:47
 
-This perf run uses only the three paper systems: Single WAL, P-WAL, and TideWAL.
+This perf run uses only the three paper systems: Single WAL, P-WAL, and Ayame.
 It is internal analysis, not a component ablation.
 
 ## Conditions
@@ -15,8 +15,8 @@ It is internal analysis, not a component ablation.
 | perf stat seconds | 5 |
 | perf record seconds | 5 |
 | events | task-clock,context-switches,cpu-migrations,page-faults,cycles,instructions,cache-references,cache-misses,LLC-loads,LLC-load-misses |
-| stat csv | `results/tidewal_perf_eval_20260609_154309/tidewal_perf_stat_raw_20260609_154309.csv` |
-| top csv | `paper/tables/tidewal_perf_top_20260609.csv` |
+| stat csv | `results/ayame_perf_eval_20260609_154309/ayame_perf_stat_raw_20260609_154309.csv` |
+| top csv | `paper/tables/ayame_perf_top_20260609.csv` |
 
 ## perf stat summary
 
@@ -24,13 +24,13 @@ It is internal analysis, not a component ablation.
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | YCSB-A | Single WAL | 9620 | 1.21 | 316310 | 648780 | 2.055 | 125696 | 38476 | 1.00 | 0 | 4096 |
 | YCSB-A | P-WAL | 65159 | 19.51 | 760326 | 447343 | 0.589 | 1535950 | 260403 | 1.00 | 0 | 512 |
-| YCSB-A | TideWAL | 295683 | 25.67 | 216136 | 144297 | 0.667 | 2971234 | 81647 | 14.49 | 1131 | 8192 |
+| YCSB-A | Ayame | 295683 | 25.67 | 216136 | 144297 | 0.667 | 2971234 | 81647 | 14.49 | 1131 | 8192 |
 | YCSB-B | Single WAL | 27107 | 1.07 | 98355 | 157182 | 1.598 | 136108 | 43497 | 2.49 | 0 | 4096 |
 | YCSB-B | P-WAL | 246623 | 18.63 | 191636 | 108816 | 0.569 | 1423509 | 396387 | 2.49 | 0 | 256 |
-| YCSB-B | TideWAL | 542500 | 31.15 | 145051 | 63165 | 0.436 | 2462420 | 123765 | 17.53 | 74 | 512 |
+| YCSB-B | Ayame | 542500 | 31.15 | 145051 | 63165 | 0.436 | 2462420 | 123765 | 17.53 | 74 | 512 |
 | YCSB-C | Single WAL | 791532 | 39.99 | 131145 | 28270 | 0.216 | 4927 | 0 | 0.00 | 0 | 41 |
 | YCSB-C | P-WAL | 810788 | 40.03 | 128225 | 28264 | 0.221 | 4198 | 0 | 0.00 | 0 | 40 |
-| YCSB-C | TideWAL | 772297 | 40.17 | 135099 | 32551 | 0.241 | 35684 | 0 | 0.00 | 0 | 41 |
+| YCSB-C | Ayame | 772297 | 40.17 | 135099 | 32551 | 0.241 | 35684 | 0 | 0.00 | 0 | 41 |
 
 ## perf top symbols
 
@@ -48,11 +48,11 @@ It is internal analysis, not a component ablation.
 | P-WAL | 3 | 3.50 | `pthread_mutex_lock@@GLIBC_2.2.5` |
 | P-WAL | 4 | 3.00 | `TxExecutor::ssn_parallel_commit` |
 | P-WAL | 5 | 2.51 | `pthread_mutex_unlock@@GLIBC_2.2.5` |
-| TideWAL | 1 | 7.40 | `pthread_mutex_lock@@GLIBC_2.2.5` |
-| TideWAL | 2 | 6.11 | `TxExecutor::mergeVersionFrontier` |
-| TideWAL | 3 | 4.46 | `TxExecutor::ssn_parallel_commit` |
-| TideWAL | 4 | 3.83 | `MasstreeWrapper<Tuple>::get_value` |
-| TideWAL | 5 | 3.80 | `TxExecutor::install_version` |
+| Ayame | 1 | 7.40 | `pthread_mutex_lock@@GLIBC_2.2.5` |
+| Ayame | 2 | 6.11 | `TxExecutor::mergeVersionFrontier` |
+| Ayame | 3 | 4.46 | `TxExecutor::ssn_parallel_commit` |
+| Ayame | 4 | 3.83 | `MasstreeWrapper<Tuple>::get_value` |
+| Ayame | 5 | 3.80 | `TxExecutor::install_version` |
 
 ### YCSB-B
 
@@ -68,11 +68,11 @@ It is internal analysis, not a component ablation.
 | P-WAL | 3 | 7.95 | `TxExecutor::ssn_parallel_commit` |
 | P-WAL | 4 | 6.55 | `ccbench::WalLogger::logPerThread<std::vector<SetElement<Tuple>, std::allocator<SetElement<Tuple> > > >` |
 | P-WAL | 5 | 3.96 | `MasstreeWrapper<Tuple>::get_value` |
-| TideWAL | 1 | 19.42 | `TxExecutor::read` |
-| TideWAL | 2 | 8.33 | `TxExecutor::ssn_parallel_commit` |
-| TideWAL | 3 | 4.55 | `TxExecutor::read_internal` |
-| TideWAL | 4 | 4.28 | `pthread_mutex_lock@@GLIBC_2.2.5` |
-| TideWAL | 5 | 4.24 | `MasstreeWrapper<Tuple>::get_value` |
+| Ayame | 1 | 19.42 | `TxExecutor::read` |
+| Ayame | 2 | 8.33 | `TxExecutor::ssn_parallel_commit` |
+| Ayame | 3 | 4.55 | `TxExecutor::read_internal` |
+| Ayame | 4 | 4.28 | `pthread_mutex_lock@@GLIBC_2.2.5` |
+| Ayame | 5 | 4.24 | `MasstreeWrapper<Tuple>::get_value` |
 
 ### YCSB-C
 
@@ -88,9 +88,9 @@ It is internal analysis, not a component ablation.
 | P-WAL | 3 | 3.93 | `MasstreeWrapper<Tuple>::get_value` |
 | P-WAL | 4 | 3.13 | `TxExecutor::mainte` |
 | P-WAL | 5 | 2.81 | `TxExecutor::read_internal` |
-| TideWAL | 1 | 55.75 | `TxExecutor::read` |
-| TideWAL | 2 | 21.67 | `TxExecutor::ssn_parallel_commit` |
-| TideWAL | 3 | 4.08 | `MasstreeWrapper<Tuple>::get_value` |
-| TideWAL | 4 | 3.21 | `TxExecutor::read_internal` |
-| TideWAL | 5 | 3.03 | `TxExecutor::mainte` |
+| Ayame | 1 | 55.75 | `TxExecutor::read` |
+| Ayame | 2 | 21.67 | `TxExecutor::ssn_parallel_commit` |
+| Ayame | 3 | 4.08 | `MasstreeWrapper<Tuple>::get_value` |
+| Ayame | 4 | 3.21 | `TxExecutor::read_internal` |
+| Ayame | 5 | 3.03 | `TxExecutor::mainte` |
 

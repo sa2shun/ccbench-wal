@@ -4,8 +4,8 @@ P-WAL,TxExecutor::ssn_parallel_commit,22.93
 P-WAL,MasstreeWrapper::get_value,3.93
 P-WAL,TxExecutor::mainte,3.13
 P-WAL,TxExecutor::read_internal,2.81
-TideWAL,TxExecutor::read,55.75
-TideWAL,TxExecutor::ssn_parallel_commit,21.67
-TideWAL,MasstreeWrapper::get_value,4.08
-TideWAL,TxExecutor::read_internal,3.21
-TideWAL,TxExecutor::mainte,3.03
+Ayame,TxExecutor::read,55.75
+Ayame,TxExecutor::ssn_parallel_commit,21.67
+Ayame,MasstreeWrapper::get_value,4.08
+Ayame,TxExecutor::read_internal,3.21
+Ayame,TxExecutor::mainte,3.03

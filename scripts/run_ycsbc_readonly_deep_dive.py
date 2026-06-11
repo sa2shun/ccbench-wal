@@ -21,7 +21,7 @@ from run_ermia_cstamp_pwal_experiments import (
     derived,
     write_csv,
 )
-from run_ycsbabc_tidewal_worker_threads import mode_allocation
+from run_ycsbabc_ayame_worker_threads import mode_allocation
 
 
 TABLE_DIR = ROOT / "paper" / "tables"
@@ -36,9 +36,9 @@ MODES = ["single_wal", "pwal", "tidewal"]
 SYSTEM_LABELS = {
     "single_wal": "Single WAL",
     "pwal": "P-WAL",
-    "tidewal": "TideWAL",
+    "tidewal": "Ayame",
 }
-SYSTEM_ORDER = ["Single WAL", "P-WAL", "TideWAL"]
+SYSTEM_ORDER = ["Single WAL", "P-WAL", "Ayame"]
 
 EVENTS = [
     "task-clock",
@@ -327,7 +327,7 @@ def save_figure(summary):
     setup_style()
     df = pd.DataFrame(summary)
     fig, axes = plt.subplots(1, 3, figsize=(11.2, 3.4), constrained_layout=True)
-    palette = {"Single WAL": "#4b5563", "P-WAL": "#d97706", "TideWAL": "#047857"}
+    palette = {"Single WAL": "#4b5563", "P-WAL": "#d97706", "Ayame": "#047857"}
     sns.barplot(data=df, x="system", y="ack_tps", hue="system",
                 order=SYSTEM_ORDER, hue_order=SYSTEM_ORDER, palette=palette,
                 legend=False, ax=axes[0])
@@ -370,7 +370,7 @@ def top_pct(top_rows, system, symbol_part):
 
 def write_report(summary, top_rows, raw_csv, summary_csv, top_csv, args):
     pwal = find_row(summary, "P-WAL")
-    tide = find_row(summary, "TideWAL")
+    tide = find_row(summary, "Ayame")
     single = find_row(summary, "Single WAL")
     pwal_service = fnum(pwal, "closed_loop_service_ns")
     tide_service = fnum(tide, "closed_loop_service_ns")
@@ -381,8 +381,8 @@ def write_report(summary, top_rows, raw_csv, summary_csv, top_csv, args):
     frontier = fnum(tide, "frontier_collect_ns_per_tx")
     frontier_read = fnum(tide, "frontier_collect_ns_per_read")
     ratio = frontier / service_delta if service_delta > 0 else 0.0
-    merge_pct = top_pct(top_rows, "TideWAL", "mergeVersionFrontier")
-    lock_pct = top_pct(top_rows, "TideWAL", "pthread_mutex_lock")
+    merge_pct = top_pct(top_rows, "Ayame", "mergeVersionFrontier")
+    lock_pct = top_pct(top_rows, "Ayame", "pthread_mutex_lock")
 
     with OUT_DOC.open("w") as f:
         print("# YCSB-C read-only deep dive", file=f)
@@ -390,7 +390,7 @@ def write_report(summary, top_rows, raw_csv, summary_csv, top_csv, args):
         print(f"date: {datetime.now().isoformat(timespec='seconds')}", file=f)
         print("", file=f)
         print("YCSB-C is read-only, so read-only WAL skipping removes WAL persistence from all three systems.", file=f)
-        print("This report re-runs Single WAL, P-WAL, and TideWAL and quantifies why TideWAL can still differ from P-WAL.", file=f)
+        print("This report re-runs Single WAL, P-WAL, and Ayame and quantifies why Ayame can still differ from P-WAL.", file=f)
         print("", file=f)
         print("## Conditions", file=f)
         print("", file=f)
@@ -402,9 +402,9 @@ def write_report(summary, top_rows, raw_csv, summary_csv, top_csv, args):
         print(f"| repeats | {args.repeats} |", file=f)
         print(f"| seconds | {args.seconds} |", file=f)
         print("| read-only WAL skip | enabled for all systems |", file=f)
-        print("| TideWAL mode | `async_dep_frontier_cstamp` |", file=f)
-        print(f"| TideWAL flusher/logger threads | {mode_allocation('tidewal', args.worker)['flusher_threads']} |", file=f)
-        print("| TideWAL committer threads | 1 |", file=f)
+        print("| Ayame mode | `async_dep_frontier_cstamp` |", file=f)
+        print(f"| Ayame flusher/logger threads | {mode_allocation('tidewal', args.worker)['flusher_threads']} |", file=f)
+        print("| Ayame committer threads | 1 |", file=f)
         print(f"| raw csv | `{raw_csv.relative_to(ROOT)}` |", file=f)
         print(f"| summary csv | `{summary_csv.relative_to(ROOT)}` |", file=f)
         print(f"| perf top csv | `{top_csv.relative_to(ROOT)}` |", file=f)
@@ -431,34 +431,34 @@ def write_report(summary, top_rows, raw_csv, summary_csv, top_csv, args):
             )
         print("", file=f)
 
-        print("## P-WAL vs TideWAL difference", file=f)
+        print("## P-WAL vs Ayame difference", file=f)
         print("", file=f)
         print(f"- P-WAL throughput: {fnum(pwal, 'ack_tps'):.0f} tx/s", file=f)
-        print(f"- TideWAL throughput: {fnum(tide, 'ack_tps'):.0f} tx/s", file=f)
-        print(f"- closed-loop service time: P-WAL {pwal_service:.1f} ns/tx, TideWAL {tide_service:.1f} ns/tx", file=f)
+        print(f"- Ayame throughput: {fnum(tide, 'ack_tps'):.0f} tx/s", file=f)
+        print(f"- closed-loop service time: P-WAL {pwal_service:.1f} ns/tx, Ayame {tide_service:.1f} ns/tx", file=f)
         print(f"- service-time gap: {service_delta:.1f} ns/tx", file=f)
         print(f"- benchmark latency gap: {latency_delta:.1f} ns/tx", file=f)
-        print(f"- TideWAL frontier collection: {frontier:.1f} ns/tx, or {frontier_read:.1f} ns/read op", file=f)
+        print(f"- Ayame frontier collection: {frontier:.1f} ns/tx, or {frontier_read:.1f} ns/read op", file=f)
         if ratio > 0:
             print(f"- frontier collection / service-time gap: {ratio:.2f}x", file=f)
         print(f"- extra cycles: {fnum(tide, 'cycles_per_tx') - fnum(pwal, 'cycles_per_tx'):.0f} cycles/tx", file=f)
         print(f"- extra instructions: {fnum(tide, 'instructions_per_tx') - fnum(pwal, 'instructions_per_tx'):.0f} instructions/tx", file=f)
-        print(f"- TideWAL read-only fast path: {fnum(tide, 'read_only_fast_path_per_tx'):.3f} per tx", file=f)
-        print(f"- TideWAL waitlist registration: {fnum(tide, 'waitlist_registration_ns_per_tx'):.1f} ns/tx", file=f)
-        print(f"- TideWAL committer CPU: {fnum(tide, 'committer_cpu_ns_per_tx'):.1f} ns/tx", file=f)
+        print(f"- Ayame read-only fast path: {fnum(tide, 'read_only_fast_path_per_tx'):.3f} per tx", file=f)
+        print(f"- Ayame waitlist registration: {fnum(tide, 'waitlist_registration_ns_per_tx'):.1f} ns/tx", file=f)
+        print(f"- Ayame committer CPU: {fnum(tide, 'committer_cpu_ns_per_tx'):.1f} ns/tx", file=f)
         print("", file=f)
         print("Interpretation:", file=f)
         print("", file=f)
         print("- WAL persistence is not the cause of the difference: WAL bytes and fdatasync counts are zero for all systems.", file=f)
-        print("- TideWAL does not enter the dependency waitlist on this workload: pending is zero and waitlist registration is zero.", file=f)
-        print("- TideWAL still collects read-side dependency frontiers to check whether versions read by a read-only transaction depend on non-durable writers.", file=f)
-        print("- The measured frontier-collection cost is large enough to account for the P-WAL/TideWAL service-time gap. Because the benchmark is closed-loop and multithreaded, the counter is not expected to equal the throughput-derived gap exactly; it is a consistency check.", file=f)
+        print("- Ayame does not enter the dependency waitlist on this workload: pending is zero and waitlist registration is zero.", file=f)
+        print("- Ayame still collects read-side dependency frontiers to check whether versions read by a read-only transaction depend on non-durable writers.", file=f)
+        print("- The measured frontier-collection cost is large enough to account for the P-WAL/Ayame service-time gap. Because the benchmark is closed-loop and multithreaded, the counter is not expected to equal the throughput-derived gap exactly; it is a consistency check.", file=f)
         print("", file=f)
 
         print("## perf top symbols", file=f)
         print("", file=f)
-        print(f"TideWAL `mergeVersionFrontier` self samples: {merge_pct:.2f}%", file=f)
-        print(f"TideWAL `pthread_mutex_lock` self samples: {lock_pct:.2f}%", file=f)
+        print(f"Ayame `mergeVersionFrontier` self samples: {merge_pct:.2f}%", file=f)
+        print(f"Ayame `pthread_mutex_lock` self samples: {lock_pct:.2f}%", file=f)
         print("", file=f)
         print("| system | rank | self % | symbol |", file=f)
         print("|---|---:|---:|---|", file=f)
@@ -469,9 +469,9 @@ def write_report(summary, top_rows, raw_csv, summary_csv, top_csv, args):
         print("", file=f)
         print("## Conclusion", file=f)
         print("", file=f)
-        print("YCSB-C confirms that Single WAL, P-WAL, and TideWAL are all on read-only fast paths with no WAL persistence.", file=f)
-        print("The remaining P-WAL/TideWAL gap is explained by TideWAL-specific read-side frontier bookkeeping, not by fdatasync or durable-ack wait.", file=f)
-        print("The quantitative evidence is: zero fdatasync, zero pending/waitlist registration, nonzero frontier collection cost, and `mergeVersionFrontier` appearing in TideWAL's perf profile.", file=f)
+        print("YCSB-C confirms that Single WAL, P-WAL, and Ayame are all on read-only fast paths with no WAL persistence.", file=f)
+        print("The remaining P-WAL/Ayame gap is explained by Ayame-specific read-side frontier bookkeeping, not by fdatasync or durable-ack wait.", file=f)
+        print("The quantitative evidence is: zero fdatasync, zero pending/waitlist registration, nonzero frontier collection cost, and `mergeVersionFrontier` appearing in Ayame's perf profile.", file=f)
 
 
 def main():

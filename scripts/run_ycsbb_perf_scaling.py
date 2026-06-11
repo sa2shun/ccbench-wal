@@ -22,12 +22,13 @@ from run_ermia_cstamp_pwal_experiments import (
     derived,
     write_csv,
 )
-from run_ycsbabc_tidewal_worker_threads import (
+from run_ycsbabc_ayame_worker_threads import (
     COLORS,
     MARKERS,
     SYSTEM_LABELS,
     SYSTEM_ORDER,
     compact_number,
+    display_system,
     mode_allocation,
     parse_metrics,
     safe_float,
@@ -62,6 +63,11 @@ def parse_perf_stat(path):
             except ValueError:
                 pass
     return result
+
+
+def workspace_path(path):
+    p = Path(path)
+    return p if p.is_absolute() else ROOT / p
 
 
 def ycsb_cmd(worker, seconds):
@@ -179,7 +185,7 @@ def run_case(out_dir, mode, worker, repeat, args):
 def aggregate(rows):
     grouped = {}
     for row in rows:
-        key = (row["system"], int(row["worker_threads"]))
+        key = (display_system(row), int(row["worker_threads"]))
         grouped.setdefault(key, []).append(row)
     out = []
     for (system, worker), rs in sorted(grouped.items()):
@@ -237,7 +243,7 @@ def draw_metric(rows, metric, ylabel, output, title):
             sub[metric],
             color=COLORS[system],
             marker=MARKERS[system],
-            linewidth=2.6 if system == "TideWAL" else 2.25,
+            linewidth=2.6 if system == "Ayame" else 2.25,
             markersize=6.5,
             markerfacecolor="white",
             markeredgewidth=1.8,
@@ -279,7 +285,7 @@ def draw_combined(rows, output):
                 sub[metric],
                 color=COLORS[system],
                 marker=MARKERS[system],
-                linewidth=2.6 if system == "TideWAL" else 2.25,
+                linewidth=2.6 if system == "Ayame" else 2.25,
                 markersize=6.0,
                 markerfacecolor="white",
                 markeredgewidth=1.7,
@@ -318,12 +324,12 @@ def write_report(summary, raw_csv, outputs, args):
         print("|---|---|", file=f)
         print(f"| workload | YCSB-B |", file=f)
         print(f"| worker threads | {args.workers} |", file=f)
-        print(f"| systems | Single WAL, P-WAL, TideWAL |", file=f)
+        print(f"| systems | Single WAL, P-WAL, Ayame |", file=f)
         print(f"| seconds | {args.seconds} |", file=f)
         print(f"| repeats | {args.repeats} |", file=f)
-        print(f"| TideWAL group_size | {args.group_size} |", file=f)
-        print(f"| TideWAL flush_us | {args.flush_us} |", file=f)
-        print(f"| TideWAL max_pending | {args.max_pending} |", file=f)
+        print(f"| Ayame group_size | {args.group_size} |", file=f)
+        print(f"| Ayame flush_us | {args.flush_us} |", file=f)
+        print(f"| Ayame max_pending | {args.max_pending} |", file=f)
         print("", file=f)
         print(f"summary csv: `{OUT_CSV.relative_to(ROOT)}`", file=f)
         print(f"raw csv: `{raw_csv.relative_to(ROOT)}`", file=f)
@@ -363,9 +369,9 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if args.input_csv:
-        with Path(args.input_csv).open(newline="") as f:
+        raw_csv = workspace_path(args.input_csv)
+        with raw_csv.open(newline="") as f:
             rows = list(csv.DictReader(f))
-        raw_csv = Path(args.input_csv)
     else:
         rows = []
         for repeat in range(args.repeats):
