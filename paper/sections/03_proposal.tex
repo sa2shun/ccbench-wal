@@ -1,65 +1,60 @@
 \section{Proposal: Ayame}
 \label{sec:design}
 
-\newcounter{ayamealg}
-\newcommand{\ayamealgtitle}[2]{%
-  \refstepcounter{ayamealg}%
-  \textbf{Algorithm~\theayamealg: #1}\label{#2}%
-}
-
 \begin{figure}[t]
 \small
 \begin{tabular}{@{}rp{0.86\linewidth}@{}}
 \hline
-\multicolumn{2}{@{}l}{\textbf{Protocol Overview: Dependency Tracking}} \\
+\multicolumn{2}{@{}l}{\textbf{Algorithm 1: Dependency Collection}} \\
 \hline
-1 & Each WAL shard $i$ maintains durable local position $durable\_seq[i]$. \\
-2 & Each committed version $v$ stores $v.write\_frontier$. \\
-3 & Each version $v$ also stores $v.read\_frontier$ for read-write dependencies. \\
-4 & When transaction $T$ reads version $v$: \\
-5 & \quad $T.dep \leftarrow \max(T.dep, v.write\_frontier)$ \\
-6 & When transaction $T$ overwrites version $v$: \\
-7 & \quad $T.dep \leftarrow \max(T.dep, v.write\_frontier)$ \\
-8 & \quad $T.dep \leftarrow \max(T.dep, v.read\_frontier)$ \\
-9 & After $T$ obtains local WAL position $(T.log,T.seq)$: \\
-10 & \quad $T.closed \leftarrow T.dep$ \\
-11 & \quad $T.closed[T.log] \leftarrow \max(T.closed[T.log], T.seq)$ \\
-12 & For each version $v$ written by $T$: \\
-13 & \quad $v.write\_frontier \leftarrow T.closed$ \\
-14 & For each version $v$ read by read-write $T$: \\
-15 & \quad $v.read\_frontier \leftarrow \max(v.read\_frontier, T.closed)$ \\
+1 & \textbf{Input:} transaction $T$ and accessed version $v$ \\
+2 & \textbf{procedure} \textsc{ReadVersion}$(T,v)$ \\
+3 & \quad $T.dep \leftarrow \max(T.dep, v.write\_frontier)$ \\
+4 & \quad Add $v$ to $T$'s read set. \\
+5 & \textbf{procedure} \textsc{OverwriteVersion}$(T,v)$ \\
+6 & \quad $T.dep \leftarrow \max(T.dep, v.write\_frontier)$ \\
+7 & \quad $T.dep \leftarrow \max(T.dep, v.read\_frontier)$ \\
+8 & \quad Add $v$ to $T$'s write set. \\
 \hline
 \end{tabular}
-\label{prot:ayame-dependency}
+\caption{
+Dependency collection during transaction execution.  A transaction inherits the
+frontier of versions it reads and conservatively inherits both writer and reader
+frontiers when overwriting a version.
+}
+\label{alg:ayame-dep-collect}
 \end{figure}
 
 \begin{figure}[t]
 \small
 \begin{tabular}{@{}rp{0.86\linewidth}@{}}
 \hline
-\multicolumn{2}{@{}l}{\ayamealgtitle{Ayame Commit Protocol}{alg:ayame-commit}} \\
+\multicolumn{2}{@{}l}{\textbf{Algorithm 2: Transaction Commit}} \\
 \hline
-1 & \textbf{Input:} transaction $T$, read set $R$, write set $W$ \\
-2 & Execute reads and writes under ERMIA/SSN. \\
-3 & \textbf{if} \textsc{ValidateAndSSNCheck}$(T)$ fails \textbf{then} abort $T$. \\
-4 & \textbf{if} $W=\emptyset$ \textbf{then} return using read-only fast path. \\
-5 & $T.c \leftarrow$ ERMIA/SSN commit timestamp. \\
-6 & $T.dep \leftarrow \vec{0}$. \\
-7 & \textbf{for each} version $v \in R$ \textbf{do} \\
-8 & \quad $T.dep \leftarrow \max(T.dep, v.write\_frontier)$. \\
-9 & \textbf{for each} overwritten version $v \in W$ \textbf{do} \\
-10 & \quad $T.dep \leftarrow \max(T.dep, v.write\_frontier)$. \\
-11 & \quad $T.dep \leftarrow \max(T.dep, v.read\_frontier)$. \\
-12 & $T.log \leftarrow$ \textsc{ChooseWalShard}$(worker\_id)$. \\
-13 & $record \leftarrow$ \textsc{BuildWalRecord}$(T.c,T.dep,W)$. \\
-14 & $T.seq \leftarrow$ \textsc{Append}$(wal[T.log], record)$. \\
-15 & $T.closed \leftarrow T.dep$. \\
-16 & $T.closed[T.log] \leftarrow \max(T.closed[T.log], T.seq)$. \\
-17 & Publish $T.closed$ to written versions and read versions. \\
-18 & \textsc{RegisterCommitRequest}$(T.log,T.seq,T.dep,T.c)$. \\
-19 & Return logical commit. \\
+1 & \textbf{Input:} transaction $T$ with dependency frontier $T.dep$ \\
+2 & \textbf{if} \textsc{ValidateAndSSNCheck}$(T)$ fails \textbf{then} abort $T$. \\
+3 & \textbf{if} $T$ is read-only \textbf{then} \\
+4 & \quad \textbf{if} $T.dep$ is empty or already durable \textbf{then} \\
+5 & \quad\quad \textsc{Ack}$(T)$ and return. \\
+6 & \quad \textsc{RegisterReadOnlyRequest}$(T.dep)$ and return. \\
+7 & $T.c \leftarrow$ ERMIA/SSN commit timestamp. \\
+8 & $T.log \leftarrow$ \textsc{ChooseWalShard}$(worker\_id)$. \\
+9 & $record \leftarrow$ \textsc{BuildWalRecord}$(T.c,T.dep,T.write\_set)$. \\
+10 & $T.seq \leftarrow$ \textsc{Append}$(wal[T.log], record)$. \\
+11 & $T.closed \leftarrow T.dep$. \\
+12 & $T.closed[T.log] \leftarrow \max(T.closed[T.log], T.seq)$. \\
+13 & Publish $T.closed$ to versions written by $T$. \\
+14 & Publish $T.closed$ to read frontiers of versions read by read-write $T$. \\
+15 & \textsc{RegisterCommitRequest}$(T.log,T.seq,T.dep,T.c)$. \\
+16 & Return logical commit to the worker. \\
 \hline
 \end{tabular}
+\caption{
+Ayame commit protocol.  Workers do not wait for \texttt{fdatasync}; they append
+a WAL record, publish the closed frontier, and register a durable-ack request.
+Read-only transactions do not append WAL records, but they still wait if they
+observed non-durable dependencies.
+}
 \label{alg:ayame-commit}
 \end{figure}
 
@@ -67,48 +62,27 @@
 \small
 \begin{tabular}{@{}rp{0.86\linewidth}@{}}
 \hline
-\multicolumn{2}{@{}l}{\ayamealgtitle{Committer Protocol}{alg:ayame-committer}} \\
+\multicolumn{2}{@{}l}{\textbf{Algorithm 3: Durable Acknowledgment}} \\
 \hline
 1 & \textbf{procedure} \textsc{RegisterCommitRequest}$(log,seq,dep,c)$ \\
 2 & \quad $req \leftarrow dep$. \\
 3 & \quad $req[log] \leftarrow \max(req[log], seq)$. \\
-4 & \quad $remaining \leftarrow 0$. \\
-5 & \quad \textbf{for each} WAL shard $i$ \textbf{do} \\
-6 & \quad\quad \textbf{if} $req[i] = 0$ \textbf{then continue}. \\
-7 & \quad\quad \textbf{if} $durable\_seq[i] \ge req[i]$ \textbf{then continue}. \\
-8 & \quad\quad Insert $(req[i],T)$ into $waitlist[i]$. \\
-9 & \quad\quad $remaining \leftarrow remaining + 1$. \\
-10 & \quad \textbf{if} $remaining = 0$ \textbf{then} \textsc{Ack}$(T,c)$. \\
+4 & \quad \textsc{RegisterRequest}$(req,c)$. \\
+5 & \textbf{procedure} \textsc{RegisterReadOnlyRequest}$(dep)$ \\
+6 & \quad \textsc{RegisterRequest}$(dep,\bot)$. \\
+7 & \textbf{procedure} \textsc{RegisterRequest}$(req,c)$ \\
+8 & \quad \textbf{if} $durable\_seq[i] \ge req[i]$ for all shards $i$ \textbf{then} \\
+9 & \quad\quad \textsc{Ack}$(c)$ and return. \\
+10 & \quad Insert the request into waitlists of unsatisfied shards. \\
 11 & \textbf{procedure} \textsc{OnDurableAdvanced}$(i,durable)$ \\
-12 & \quad \textbf{while} $waitlist[i]$ is nonempty and $waitlist[i].min \le durable$ \textbf{do} \\
-13 & \quad\quad Remove transaction $T$ from $waitlist[i]$. \\
-14 & \quad\quad $T.remaining \leftarrow T.remaining - 1$. \\
-15 & \quad\quad \textbf{if} $T.remaining = 0$ \textbf{then} \textsc{Ack}$(T,T.c)$. \\
+12 & \quad $durable\_seq[i] \leftarrow durable$. \\
+13 & \quad Wake requests whose requirement on shard $i$ is now satisfied. \\
+14 & \quad Ack each request whose all requirements are satisfied. \\
 \hline
 \end{tabular}
-\label{alg:ayame-committer}
-\end{figure}
-
-\begin{figure}[t]
-\small
-\begin{tabular}{@{}rp{0.86\linewidth}@{}}
-\hline
-\multicolumn{2}{@{}l}{\ayamealgtitle{Flusher/Committer Pipeline}{alg:ayame-flusher}} \\
-\hline
-1 & \textbf{Flusher thread for WAL shard $i$:} \\
-2 & \quad \textbf{repeat} \\
-3 & \quad\quad $B \leftarrow$ \textsc{CollectBatch}$(wal[i])$. \\
-4 & \quad\quad \textbf{if} $B$ is empty \textbf{then} yield or sleep. \\
-5 & \quad\quad \textbf{else} \\
-6 & \quad\quad\quad \textsc{Write}$(fd[i],B.bytes)$. \\
-7 & \quad\quad\quad \texttt{fdatasync}$(fd[i])$. \\
-8 & \quad\quad\quad $durable\_seq[i] \leftarrow B.max\_seq$. \\
-9 & \quad\quad\quad \textsc{NotifyCommitter}$(i,durable\_seq[i])$. \\
-10 & \textbf{Committer thread:} \\
-11 & \quad \textbf{repeat} \\
-12 & \quad\quad Wait for \textsc{NotifyCommitter}$(i,durable)$. \\
-13 & \quad\quad \textsc{OnDurableAdvanced}$(i,durable)$. \\
-\hline
-\end{tabular}
-\label{alg:ayame-flusher}
+\caption{
+Durable acknowledgment in Ayame.  A transaction is acknowledged only after its
+own log record and dependency frontier are durable.
+}
+\label{alg:ayame-durable-ack}
 \end{figure}
