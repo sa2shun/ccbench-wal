@@ -19,7 +19,7 @@
 
 \begin{document}
 
-\title{TideWAL: Timestamp-Integrated Dependency-Closed Parallel WAL for Main-Memory Transaction Processing}
+\title{Ayame: Fast Logging for Serial Safety Net}
 
 \affiliate{KEIO}{Faculty of Environment and Information Studies, Keio University, Japan}
 
@@ -28,18 +28,17 @@
 \author{Hideyuki Kawashima}{Hideyuki Kawashima}{KEIO}
 
 \begin{abstract}
-This paper proposes TideWAL, a dependency-closed parallel WAL protocol for main-memory transaction processing. TideWAL avoids conservative global-prefix durable acknowledgment while preserving recovery safety by acknowledging a transaction only after both its own log record and the durable frontier of its observed dependencies are persistent. In an ERMIA-style implementation, TideWAL reaches 553K durable acknowledgments per second on YCSB-B at 32 worker threads, 2.3$\times$ P-WAL throughput, while keeping pending durable commits to 58.
+Concurrency control is essential for database access, and the Serial Safety Net (SSN) represents one of the state-of-the-art methods in this field. Integrating SSN with logging ensures that transaction processing is recoverable. While P-WAL is an efficient logging method that leverages parallel I/O extensively, it still suffers from certain limitations. To overcome these drawbacks, this paper proposes a novel logging method, Ayame. The proposed method incorporates three optimization techniques: the elimination of global counters, dependency analysis, and asynchronous I/O. Experimental results demonstrate that Ayame achieves up to a 4.5-fold performance improvement over P-WAL in YCSB-A.
 \end{abstract}
 
 \maketitle
 
-\input{sections/01_introduction}
-\input{sections/02_background}
-\input{sections/03_design}
-%\input{sections/04_correctness}
-\input{sections/05_evaluation}
-\input{sections/06_related_work}
-\input{sections/07_conclusion}
+\input{sections/01_intro}
+\input{sections/02_prep}
+\input{sections/03_proposal}
+\input{sections/04_evaluation}
+\input{sections/05_related}
+\input{sections/06_concl}
 
 \begin{acknowledgment}
 \end{acknowledgment}
