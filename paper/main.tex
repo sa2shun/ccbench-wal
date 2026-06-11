@@ -4,7 +4,7 @@
 %% This source follows the UTF-8 tech-jsample.tex in ipsj_v4-1.zip.
 %%
 
-\documentclass[submit,techrep,noauthor]{ipsj}
+\documentclass[english,submit,techrep]{ipsj}
 
 \usepackage[dvipdfmx]{graphicx}
 \usepackage{latexsym}
@@ -21,11 +21,12 @@
 
 \title{Ayame: Fast Logging for Serial Safety Net}
 
-\affiliate{KEIO}{Faculty of Environment and Information Studies, Keio University, Japan}
+\affiliate{GSMG}{Graduate School of Media and Governance, Keio University, Japan}
+\affiliate{SFC}{Faculty of Environment and Information Studies, Keio University, Japan}
 
-\author{Shun Sasaki}{Shun Sasaki}{KEIO}
-\author{Takayuki Tanabe}{Takayuki Tanabe}{KEIO}
-\author{Hideyuki Kawashima}{Hideyuki Kawashima}{KEIO}
+\author{Shun Sasaki}{GSMG}[shun.sasaki@keio.jp]
+\author{Takayuki Tanabe}{GSMG}[tanab@keio.jp]
+\author{Hideyuki Kawashima}{SFC}[river@sfc.keio.ac.jp]
 
 \begin{abstract}
 Concurrency control is essential for database access, and the Serial Safety Net (SSN) represents one of the state-of-the-art methods in this field. Integrating SSN with logging ensures that transaction processing is recoverable. While P-WAL is an efficient logging method that leverages parallel I/O extensively, it still suffers from certain limitations. To overcome these drawbacks, this paper proposes a novel logging method, Ayame. The proposed method incorporates three optimization techniques: the elimination of global counters, dependency analysis, and asynchronous I/O. Experimental results demonstrate that Ayame achieves up to a 4.5-fold performance improvement over P-WAL in YCSB-A.
@@ -43,7 +44,7 @@ Concurrency control is essential for database access, and the Serial Safety Net 
 \begin{acknowledgment}
 \end{acknowledgment}
 
-\bibliographystyle{ipsjunsrt}
+\bibliographystyle{ipsjunsrt-e}
 \bibliography{refs}
 
 \end{document}
