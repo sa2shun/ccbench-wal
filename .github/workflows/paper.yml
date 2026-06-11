@@ -32,7 +32,8 @@ jobs:
             latexmk \
             texlive-lang-japanese \
             texlive-latex-recommended \
-            texlive-fonts-recommended
+            texlive-fonts-recommended \
+            texlive-science
 
       - name: Build IPSJ paper
         working-directory: paper

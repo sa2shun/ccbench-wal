@@ -14,109 +14,104 @@ function that appends the log record and publishes the closed frontier
 (Algorithm~\ref{alg:ayame-commit}), and committer-side functions that
 return durable acknowledgments (Algorithm~\ref{alg:ayame-ack}).
 
-\begin{algorithmblock}[t]
-\algcaption{Worker-side dependency collection.}
+\begin{algorithm}[t]
+\caption{\bfseries Worker-Side Dependency Collection (Ayame)}
 \label{alg:ayame-dep}
-\algline{\textbf{function} \textsc{Begin}$(T)$}
-\algline{\algind $T.\dep \gets \bot$}
-\algline{\textbf{end function}}
-\algskip
-\algline{\textbf{function} \textsc{ReadVersion}$(T, v)$}
-\algline{\algind add $v$ to $T$'s read set}
-\algline{\algind \textbf{if} $T$ is known read-only \textbf{then}
-         \algcom{SI read-only fast path}}
-\algline{\algind\algind \textbf{return}}
-\algline{\algind \textbf{end if}}
-\algline{\algind $T.\dep \gets T.\dep \fjoin v.\wfr$
-         \algcom{the writer of $v$}
-         \label{ln:dep-read}}
-\algline{\textbf{end function}}
-\algskip
-\algline{\textbf{function} \textsc{OverwriteVersion}$(T, v)$}
-\algline{\algind add the new version to $T$'s write set}
-\algline{\algind $T.\dep \gets T.\dep \fjoin v.\wfr \fjoin v.\rfr$
-         \algcom{the writer of $v$ and its readers}
-         \label{ln:dep-write}}
-\algline{\textbf{end function}}
-\end{algorithmblock}
+\begin{algorithmic}[1]
+\Function{Begin}{$T$}
+    \State $T.\dep \gets \bot$
+\EndFunction
+\Statex
+\Function{ReadVersion}{$T, v$}
+    \State add $v$ to $T$'s read set
+    \If{$T$ is known read-only}
+        \State \Return \Comment{SI read-only fast path}
+    \EndIf
+    \State $T.\dep \gets T.\dep \fjoin v.\wfr$ \label{ln:dep-read}
+           \Comment{the writer of $v$}
+\EndFunction
+\Statex
+\Function{OverwriteVersion}{$T, v$}
+    \State add the new version to $T$'s write set
+    \State $T.\dep \gets T.\dep \fjoin v.\wfr \fjoin v.\rfr$
+           \label{ln:dep-write}
+           \Comment{the writer of $v$ and its readers}
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
 
-\begin{algorithmblock}[t]
-\algcaption{Worker-side commit protocol.}
+\begin{algorithm}[t]
+\caption{\bfseries Worker-Side Commit Protocol (Ayame)}
 \label{alg:ayame-commit}
-\algline{\textbf{function} \textsc{Commit}$(T)$}
-\algline{\algind $T.c \gets$ next commit timestamp of ERMIA/SSN
-         \algcom{logical LSN}
-         \label{ln:cstamp}}
-\algline{\algind \textbf{if} \textsc{SsnValidate}$(T)$ fails \textbf{then}}
-\algline{\algind\algind abort $T$; \textbf{return}}
-\algline{\algind \textbf{end if}}
-\algline{\algind \textbf{if} $T$'s write set is empty \textbf{then}
-         \algcom{read-only}}
-\algline{\algind\algind \textsc{Register}$(T.\dep, T)$; \textbf{return}
-         \algcom{no log record; Algorithm~\ref{alg:ayame-ack}}
-         \label{ln:ro-register}}
-\algline{\algind \textbf{end if}}
-\algline{\algind $s \gets$ WAL shard owned by this worker}
-\algline{\algind $r \gets$
-         \textsc{BuildRecord}$(T.c, T.\dep, T.\mathit{write\_set})$}
-\algline{\algind $T.\lseq \gets$ \textsc{Enqueue}$(\mathit{wal}[s], r)$
-         \algcom{append only; no flush, no wait}
-         \label{ln:enqueue}}
-\algline{\algind $F \gets T.\dep$; \quad $F[s] \gets \max(F[s], T.\lseq)$
-         \algcom{closed frontier}
-         \label{ln:closed}}
-\algline{\algind \textbf{for all} versions $v$ created by $T$ \textbf{do}}
-\algline{\algind\algind $v.\wfr \gets F$
-         \label{ln:pub-w}}
-\algline{\algind \textbf{end for}}
-\algline{\algind \textbf{for all} versions $v$ read by $T$ \textbf{do}}
-\algline{\algind\algind $v.\rfr \gets v.\rfr \fjoin F$
-         \algcom{monotone merge}
-         \label{ln:pub-r}}
-\algline{\algind \textbf{end for}}
-\algline{\algind \textsc{Register}$(F, T)$
-         \algcom{durable ack deferred to the committer}
-         \label{ln:register}}
-\algline{\algind \textbf{return}
-         \algcom{logical commit; worker proceeds to the next transaction}}
-\algline{\textbf{end function}}
-\end{algorithmblock}
+\begin{algorithmic}[1]
+\Function{Commit}{$T$}
+    \State $T.c \gets$ next commit timestamp of ERMIA/SSN
+           \label{ln:cstamp}
+           \Comment{logical LSN}
+    \If{\Call{SsnValidate}{$T$} fails}
+        \State abort $T$; \Return
+    \EndIf
+    \If{$T$'s write set is empty} \Comment{read-only}
+        \State \Call{Register}{$T.\dep, T$}; \Return
+               \label{ln:ro-register}
+               \Comment{Algorithm~\ref{alg:ayame-ack}}
+    \EndIf
+    \State $s \gets$ WAL shard owned by this worker
+    \State $r \gets$ \Call{BuildRecord}{$T.c, T.\dep, T.\mathit{write\_set}$}
+    \State $T.\lseq \gets$ \Call{Enqueue}{$\mathit{wal}[s], r$}
+           \label{ln:enqueue}
+           \Comment{append only; no flush, no wait}
+    \State $F \gets T.\dep$; \quad $F[s] \gets \max(F[s], T.\lseq)$
+           \label{ln:closed}
+           \Comment{closed frontier}
+    \ForAll{versions $v$ created by $T$}
+        \State $v.\wfr \gets F$ \label{ln:pub-w}
+    \EndFor
+    \ForAll{versions $v$ read by $T$}
+        \State $v.\rfr \gets v.\rfr \fjoin F$ \label{ln:pub-r}
+               \Comment{monotone merge}
+    \EndFor
+    \State \Call{Register}{$F, T$}
+           \label{ln:register}
+           \Comment{durable ack deferred to the committer}
+    \State \Return logical commit
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
 
-\begin{algorithmblock}[t]
-\algcaption{Committer-side durable acknowledgment.}
+\begin{algorithm}[t]
+\caption{\bfseries Committer-Side Durable Acknowledgment (Ayame)}
 \label{alg:ayame-ack}
-\algline{\textbf{State:} durable vector $D$; per-shard waitlists $W[i]$
-         ordered by required position}
-\algline{\textbf{function} \textsc{Register}$(F, T)$
-         \algcom{atomic w.r.t.\ \textsc{OnDurableAdvance}}}
-\algline{\algind $T.\mathit{remaining} \gets 0$}
-\algline{\algind \textbf{for all} shards $i$ such that $F[i] > D[i]$
-         \textbf{do}}
-\algline{\algind\algind $T.\mathit{remaining} \gets T.\mathit{remaining} + 1$}
-\algline{\algind\algind insert $(F[i], T)$ into $W[i]$
-         \label{ln:park}}
-\algline{\algind \textbf{end for}}
-\algline{\algind \textbf{if} $T.\mathit{remaining} = 0$ \textbf{then}}
-\algline{\algind\algind \textsc{Ack}$(T)$
-         \algcom{own record and all dependencies durable}
-         \label{ln:dur-check}}
-\algline{\algind \textbf{end if}}
-\algline{\textbf{end function}}
-\algskip
-\algline{\textbf{function} \textsc{OnDurableAdvance}$(i, d)$
-         \algcom{called by flusher $i$ after \texttt{fdatasync}}}
-\algline{\algind $D[i] \gets d$}
-\algline{\algind \textbf{while} $W[i]$ is not empty and
-         \textsc{MinKey}$(W[i]) \le d$ \textbf{do}}
-\algline{\algind\algind $(\mathit{need}, T) \gets \textsc{PopMin}(W[i])$}
-\algline{\algind\algind $T.\mathit{remaining} \gets T.\mathit{remaining} - 1$}
-\algline{\algind\algind \textbf{if} $T.\mathit{remaining} = 0$ \textbf{then}}
-\algline{\algind\algind\algind \textsc{Ack}$(T)$
-         \label{ln:ack-ready}}
-\algline{\algind\algind \textbf{end if}}
-\algline{\algind \textbf{end while}}
-\algline{\textbf{end function}}
-\end{algorithmblock}
+\begin{algorithmic}[1]
+\Statex \textbf{State:} durable vector $D$; per-shard waitlists $W[i]$
+        ordered by required position
+\Function{Register}{$F, T$}
+        \Comment{atomic w.r.t.\ \textsc{OnDurableAdvance}}
+    \State $T.\mathit{remaining} \gets 0$
+    \ForAll{shards $i$ such that $F[i] > D[i]$}
+        \State $T.\mathit{remaining} \gets T.\mathit{remaining} + 1$
+        \State insert $(F[i], T)$ into $W[i]$ \label{ln:park}
+    \EndFor
+    \If{$T.\mathit{remaining} = 0$}
+        \State \Call{Ack}{$T$}
+               \label{ln:dur-check}
+               \Comment{own record and all dependencies durable}
+    \EndIf
+\EndFunction
+\Statex
+\Function{OnDurableAdvance}{$i, d$}
+        \Comment{called by flusher $i$ after \texttt{fdatasync}}
+    \State $D[i] \gets d$
+    \While{$W[i]$ is not empty and \Call{MinKey}{$W[i]$} $\le d$}
+        \State $(\mathit{need}, T) \gets$ \Call{PopMin}{$W[i]$}
+        \State $T.\mathit{remaining} \gets T.\mathit{remaining} - 1$
+        \If{$T.\mathit{remaining} = 0$}
+            \State \Call{Ack}{$T$} \label{ln:ack-ready}
+        \EndIf
+    \EndWhile
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
 
 Algorithm~\ref{alg:ayame-dep} accumulates into $T.\dep$ the log
 positions that must be durable before $T$ may be acknowledged: reading
