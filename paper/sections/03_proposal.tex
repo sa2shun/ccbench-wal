@@ -2,39 +2,55 @@
 \label{sec:design}
 
 A frontier $F$ is a vector of per-shard log positions.  $F \fjoin F'$
-denotes the element-wise maximum, and $F \le F'$ holds iff $F[i] \le F'[i]$
-for every shard $i$.  $D$ denotes the durable vector, where $D[i]$ is the
-durable position of shard $i$.
+denotes the element-wise maximum, $F \le F'$ holds iff $F[i] \le F'[i]$
+for every shard $i$, and $\bot$ denotes the empty frontier whose
+positions are all zero.  $D$ denotes the durable vector, where $D[i]$ is
+the largest log position of shard $i$ that is known to be durable;
+each $D[i]$ advances monotonically.
+
+Ayame consists of three worker-side procedures that collect
+dependencies during execution (Algorithm~\ref{alg:ayame-dep}), a
+worker-side commit protocol that appends the log record and publishes
+the closed frontier (Algorithm~\ref{alg:ayame-commit}), and a
+committer-side protocol that returns durable acknowledgments
+(Algorithm~\ref{alg:ayame-ack}).
 
 \begin{algorithmblock}[t]
-\algcaption{Dependency collection.}
+\algcaption{Worker-side dependency collection.}
 \label{alg:ayame-dep}
+\algline{\textbf{procedure} \textsc{Begin}$(T)$}
+\algline{\algind $T.\dep \gets \bot$}
+\algskip
 \algline{\textbf{procedure} \textsc{ReadVersion}$(T, v)$}
 \algline{\algind add $v$ to $T$'s read set}
 \algline{\algind \textbf{if} $T$ is known read-only \textbf{then return}
          \algcom{SI read-only fast path}}
 \algline{\algind $T.\dep \gets T.\dep \fjoin v.\wfr$
+         \algcom{the writer of $v$}
          \label{ln:dep-read}}
 \algskip
 \algline{\textbf{procedure} \textsc{OverwriteVersion}$(T, v)$}
+\algline{\algind add the new version to $T$'s write set}
 \algline{\algind $T.\dep \gets T.\dep \fjoin v.\wfr \fjoin v.\rfr$
-         \algcom{writer and reader frontiers}
+         \algcom{the writer of $v$ and its readers}
          \label{ln:dep-write}}
-\algline{\algind add $v$ to $T$'s write set}
 \end{algorithmblock}
 
 \begin{algorithmblock}[t]
 \algcaption{Worker-side commit protocol.}
 \label{alg:ayame-commit}
 \algline{\textbf{Input:} transaction $T$ with dependency frontier $T.\dep$}
-\algline{\textbf{if} \textsc{SsnValidate}$(T)$ fails \textbf{then} abort $T$ and return}
-\algline{\textbf{if} $T$ is read-only \textbf{then}}
-\algline{\algind \textbf{if} $T.\dep \le D$ \textbf{then} \textsc{Ack}$(T)$ and return}
-\algline{\algind \textsc{Register}$(T.\dep, T)$ and return
-         \algcom{Algorithm~\ref{alg:ayame-ack}}}
-\algline{$T.c \gets$ commit timestamp assigned by ERMIA/SSN
-         \algcom{logical LSN}
+\algline{$T.c \gets$ next commit timestamp of ERMIA/SSN
+         \algcom{logical LSN; no WAL-side counter}
          \label{ln:cstamp}}
+\algline{\textbf{if} \textsc{SsnValidate}$(T)$ fails
+         \textbf{then} abort $T$ \textbf{and return}
+         \algcom{exclusion check with $T.c$}}
+\algline{\textbf{if} $T$'s write set is empty \textbf{then}
+         \algcom{read-only}}
+\algline{\algind \textsc{Register}$(T.\dep, T)$ \textbf{and return}
+         \algcom{no log record; Algorithm~\ref{alg:ayame-ack}}
+         \label{ln:ro-register}}
 \algline{$s \gets$ WAL shard owned by this worker}
 \algline{$r \gets$ \textsc{BuildRecord}$(T.c, T.\dep, T.\mathit{write\_set})$}
 \algline{$T.\lseq \gets$ \textsc{Enqueue}$(\mathit{wal}[s], r)$
@@ -43,39 +59,75 @@ durable position of shard $i$.
 \algline{$F \gets T.\dep$; \quad $F[s] \gets \max(F[s], T.\lseq)$
          \algcom{closed frontier}
          \label{ln:closed}}
-\algline{\textbf{for all} versions $v$ created by $T$ \textbf{do} $v.\wfr \gets F$
+\algline{\textbf{for all} versions $v$ created by $T$ \textbf{do}
+         $v.\wfr \gets F$
          \label{ln:pub-w}}
-\algline{\textbf{for all} versions $v$ read by read-write $T$ \textbf{do}
+\algline{\textbf{for all} versions $v$ read by $T$ \textbf{do}
          $v.\rfr \gets v.\rfr \fjoin F$
+         \algcom{monotone merge}
          \label{ln:pub-r}}
 \algline{\textsc{Register}$(F, T)$
          \algcom{durable ack deferred to the committer}
          \label{ln:register}}
-\algline{\textbf{return} logical commit}
+\algline{\textbf{return} logical commit
+         \algcom{worker proceeds to the next transaction}}
 \end{algorithmblock}
 
 \begin{algorithmblock}[t]
 \algcaption{Committer-side durable acknowledgment.}
 \label{alg:ayame-ack}
-\algline{\textbf{State:} durable vector $D$ and per-shard waitlists $W[i]$}
-\algline{\textbf{procedure} \textsc{Register}$(F, T)$}
-\algline{\algind \textbf{if} $F \le D$ \textbf{then} \textsc{Ack}$(T)$ and return
-         \algcom{own log and dependencies are durable}
-         \label{ln:dur-check}}
+\algline{\textbf{State:} durable vector $D$; per-shard waitlists $W[i]$
+         ordered by required position}
+\algline{\textbf{procedure} \textsc{Register}$(F, T)$
+         \algcom{atomic w.r.t.\ \textsc{OnDurableAdvance}}}
 \algline{\algind $T.\mathit{remaining} \gets 0$}
-\algline{\algind \textbf{for all} shards $i$ such that $F[i] > D[i]$ \textbf{do}}
+\algline{\algind \textbf{for all} shards $i$ such that $F[i] > D[i]$
+         \textbf{do}}
 \algline{\algind\algind $T.\mathit{remaining} \gets T.\mathit{remaining} + 1$}
 \algline{\algind\algind insert $(F[i], T)$ into $W[i]$
          \label{ln:park}}
+\algline{\algind \textbf{if} $T.\mathit{remaining} = 0$ \textbf{then}
+         \textsc{Ack}$(T)$
+         \algcom{own record and all dependencies durable}
+         \label{ln:dur-check}}
 \algskip
 \algline{\textbf{procedure} \textsc{OnDurableAdvance}$(i, d)$
          \algcom{called by flusher $i$ after \texttt{fdatasync}}}
 \algline{\algind $D[i] \gets d$}
 \algline{\algind \textbf{while} $W[i]$ is not empty and
-         \textsc{MinNeed}$(W[i]) \le d$ \textbf{do}}
+         \textsc{MinKey}$(W[i]) \le d$ \textbf{do}}
 \algline{\algind\algind $(\mathit{need}, T) \gets \textsc{PopMin}(W[i])$}
 \algline{\algind\algind $T.\mathit{remaining} \gets T.\mathit{remaining} - 1$}
 \algline{\algind\algind \textbf{if} $T.\mathit{remaining} = 0$
          \textbf{then} \textsc{Ack}$(T)$
          \label{ln:ack-ready}}
 \end{algorithmblock}
+
+Algorithm~\ref{alg:ayame-dep} accumulates into $T.\dep$ the log
+positions that must be durable before $T$ may be acknowledged: reading
+a version makes $T$ depend on its writer
+(line~\ref{ln:dep-read}), and overwriting a version makes $T$
+additionally depend on the readers of the overwritten version
+(line~\ref{ln:dep-write}).  Transactions known to be read-only skip
+collection entirely.
+
+In Algorithm~\ref{alg:ayame-commit}, the commit timestamp $T.c$ that
+ERMIA/SSN assigns for validation doubles as the logical LSN of the log
+record (line~\ref{ln:cstamp}); Ayame allocates no WAL-side global
+sequence number.  The worker only enqueues the record to its own shard
+(line~\ref{ln:enqueue}) and never calls \texttt{fdatasync} or waits
+for durability.  The closed frontier $F$ extends $T.\dep$ with $T$'s
+own log position (line~\ref{ln:closed}) and is published to the
+versions $T$ wrote and read
+(lines~\ref{ln:pub-w}--\ref{ln:pub-r}), so that future transactions
+inherit it through Algorithm~\ref{alg:ayame-dep}.
+
+Algorithm~\ref{alg:ayame-ack} acknowledges $T$ once $F \le D$, i.e.,
+once $T$'s own record and every record $T$ depends on are durable.
+A transaction waits only on the shards whose durable position has not
+yet reached its requirement (line~\ref{ln:park}); shards unrelated to
+$T$ never delay its acknowledgment, unlike a global durable prefix.
+Flushers require no algorithm of their own: each flusher owns one WAL
+shard, writes the queued records as a single batch, calls
+\texttt{fdatasync}, and invokes \textsc{OnDurableAdvance} with the new
+durable position.
