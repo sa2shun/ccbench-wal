@@ -132,72 +132,9 @@ transaction can be acknowledged.  A transaction is acknowledged only when its ow
 log record and this dependency frontier are durable.  This preserves recovery
 safety while avoiding waits for unrelated WAL shards.
 
-We implement Ayame in an ERMIA-style engine and evaluate it using YCSB
-workloads with the transaction worker count on the x-axis.  The comparison uses
-the same ERMIA-PWAL binary for all WAL systems; Single WAL and P-WAL are selected
-by runtime WAL-mode flags, while Ayame additionally runs background
-flusher/logger and committer threads.  At 32 worker threads on YCSB-A, Single
-WAL achieves 10K durable acknowledgments per second and P-WAL achieves 66K,
-whereas Ayame achieves 298K durable acknowledgments per second.  On YCSB-B,
-Single WAL achieves 28K and P-WAL achieves 238K, whereas Ayame achieves 553K
-durable acknowledgments per second.  These results correspond to 4.5$\times$
-and 2.3$\times$ improvements over P-WAL on YCSB-A and YCSB-B, respectively.
-Ayame also keeps the number of pending durable commits small at 32 worker
-threads: 703 pending commits on YCSB-A and 58 pending commits on YCSB-B.
-
-Figure~\ref{fig:ycsbabc-worker-throughput} shows the worker-thread comparison.
-The results show that Ayame improves update and mixed read-write workloads
-where durable logging remains on the critical path.  We also evaluate YCSB-C,
-where all transactions are read-only and WAL records are skipped.  In this case,
-durability work largely disappears; after using the same binary and a read-only
-empty-frontier fast path, Single WAL, P-WAL, and Ayame perform similarly at 32
-worker threads.  We therefore use YCSB-C as a sanity check for read-only
-bookkeeping overhead rather than as evidence of WAL persistence performance.
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_throughput.pdf}
-  \caption{
-  Durable-acknowledgment throughput by transaction worker threads.
-  Ayame improves update and mixed read-write workloads by combining parallel
-  WAL logging, dependency-closed durable acknowledgment, and timestamp-integrated
-  logical ordering.
-  }
-  \label{fig:ycsbabc-worker-throughput}
-\end{figure}
-
-Ayame's timestamp integration is primarily a design simplification: it removes
-duplicated logical ordering between concurrency control and WAL durability by
-reusing ERMIA's commit timestamp as the logical recovery order.  We do not rely
-on timestamp integration alone as a direct throughput optimization; the main
-performance effect comes from parallel logging, dependency-closed durable
-acknowledgment, and separating workers from durable-wait processing.
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_latency.pdf}
-  \caption{
-  P99 durable-acknowledgment latency by transaction worker threads.
-  }
-  \label{fig:ycsbabc-worker-latency}
-\end{figure}
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_pending.pdf}
-  \caption{
-  Pending durable commits by transaction worker threads.
-  }
-  \label{fig:ycsbabc-worker-pending}
-\end{figure}
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_ayame_speedup_vs_pwal.pdf}
-  \caption{
-  Ayame throughput relative to P-WAL by transaction worker threads.
-  }
-  \label{fig:ycsbabc-worker-speedup}
-\end{figure}
+We implement Ayame in an ERMIA-style engine and evaluate it against P-WAL
+using SSN and YCSB workloads.  The detailed experimental methodology, figures,
+and tables are presented in Section~\ref{sec:evaluation}.
 
 \subsection{Organization}
 \label{sec:introduction-organization}
