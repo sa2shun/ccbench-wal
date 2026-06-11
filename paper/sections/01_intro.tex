@@ -249,13 +249,12 @@ acknowledgment, and separating workers from durable-wait processing.
 \label{sec:introduction-organization}
 
 The rest of this paper is organized as follows.
-Section~\ref{sec:background} reviews WAL, parallel WAL, timestamp-based
-concurrency control, and dependency requirements for recovery.
-Section~\ref{sec:design} presents TideWAL's timestamp-integrated logical
-ordering, dependency-frontier construction, and worker/flusher/committer
-pipeline.
-%Section~\ref{sec:correctness} discusses the correctness of dependency-closed durable acknowledgment.
-Section~\ref{sec:evaluation} evaluates durable-acknowledgment throughput,
-pending durable commits, and tail latency.
+Section~\ref{sec:background} describes transaction processing, including serial-safety-net and parallel logging protocols.
+%
+Section~\ref{sec:design} presents Ayame, which is a fast logging protocol. 
+%
+Section~\ref{sec:evaluation} describes the evaluation of Ayame compared with the P-WAL protocol using SSN.
+%
 Section~\ref{sec:related} discusses related work.
-Section~\ref{sec:conclusion} concludes the paper.
+%
+Section~\ref{sec:conclusion} finally concludes this paper.
