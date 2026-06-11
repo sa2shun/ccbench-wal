@@ -23,9 +23,9 @@ empty-frontier fast path, Single WAL, P-WAL, and Ayame perform similarly at 32
 worker threads.  We therefore use YCSB-C as a sanity check for read-only
 bookkeeping overhead rather than as evidence of WAL persistence performance.
 
-\begin{figure}[tbp]
+\begin{figure}[!tbp]
   \centering
-  \includegraphics[width=0.92\linewidth]{figures/fig_ycsbabc_worker_threads_throughput.pdf}
+  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbabc_worker_threads_throughput.pdf}
   \caption{
   Durable-acknowledgment throughput by transaction worker threads.
   Ayame improves update and mixed read-write workloads by combining parallel
@@ -42,27 +42,27 @@ on timestamp integration alone as a direct throughput optimization; the main
 performance effect comes from parallel logging, dependency-closed durable
 acknowledgment, and separating workers from durable-wait processing.
 
-\begin{figure}[tbp]
+\begin{figure}[!tbp]
   \centering
-  \includegraphics[width=0.92\linewidth]{figures/fig_ycsbabc_worker_threads_latency.pdf}
+  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbabc_worker_threads_latency.pdf}
   \caption{
   P99 durable-acknowledgment latency by transaction worker threads.
   }
   \label{fig:ycsbabc-worker-latency}
 \end{figure}
 
-\begin{figure}[tbp]
+\begin{figure}[!tbp]
   \centering
-  \includegraphics[width=0.92\linewidth]{figures/fig_ycsbabc_worker_threads_pending.pdf}
+  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbabc_worker_threads_pending.pdf}
   \caption{
   Pending durable commits by transaction worker threads.
   }
   \label{fig:ycsbabc-worker-pending}
 \end{figure}
 
-\begin{figure}[tbp]
+\begin{figure}[!tbp]
   \centering
-  \includegraphics[width=0.92\linewidth]{figures/fig_ycsbabc_worker_threads_ayame_speedup_vs_pwal.pdf}
+  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbabc_worker_threads_ayame_speedup_vs_pwal.pdf}
   \caption{
   Ayame throughput relative to P-WAL by transaction worker threads.
   }
@@ -85,36 +85,36 @@ YCSB-B, where Ayame's throughput improvement is most visible.
 
 \input{tables/table_ycsbb_perf_scaling}
 
-\begin{figure}[tbp]
+\begin{figure}[!tbp]
   \centering
-  \includegraphics[width=0.92\linewidth]{figures/fig_ycsbb_perf_scaling_tps.pdf}
+  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbb_perf_scaling_tps.pdf}
   \caption{
   YCSB-B durable-acknowledgment throughput in the perf-stat worker-scaling runs.
   }
   \label{fig:ycsbb-perf-scaling-tps}
 \end{figure}
 
-\begin{figure}[tbp]
+\begin{figure}[!tbp]
   \centering
-  \includegraphics[width=0.92\linewidth]{figures/fig_ycsbb_perf_scaling_cpu_cores.pdf}
+  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbb_perf_scaling_cpu_cores.pdf}
   \caption{
   CPU-core utilization in the YCSB-B perf-stat worker-scaling runs.
   }
   \label{fig:ycsbb-perf-scaling-cpu-cores}
 \end{figure}
 
-\begin{figure}[tbp]
+\begin{figure}[!tbp]
   \centering
-  \includegraphics[width=0.92\linewidth]{figures/fig_ycsbb_perf_scaling_context_switches.pdf}
+  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbb_perf_scaling_context_switches.pdf}
   \caption{
   Context-switch counts in the YCSB-B perf-stat worker-scaling runs.
   }
   \label{fig:ycsbb-perf-scaling-context-switches}
 \end{figure}
 
-\begin{figure}[tbp]
+\begin{figure}[!tbp]
   \centering
-  \includegraphics[width=0.92\linewidth]{figures/fig_ycsbb_perf_scaling_perf_stat.pdf}
+  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbb_perf_scaling_perf_stat.pdf}
   \caption{
   Perf-stat summary for YCSB-B worker scaling.
   }
@@ -127,9 +127,9 @@ the remaining cost is read-path bookkeeping rather than WAL persistence.
 
 \input{tables/table_ycsbc_perf_top}
 
-\begin{figure}[tbp]
+\begin{figure}[!tbp]
   \centering
-  \includegraphics[width=0.92\linewidth]{figures/fig_ycsbc_perf_top_symbols_horizontal.pdf}
+  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbc_perf_top_symbols_horizontal.pdf}
   \caption{
   Top self-time symbols for YCSB-C at 32 transaction worker threads.
   }

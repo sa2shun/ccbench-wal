@@ -1,10 +1,11 @@
-\begin{table*}[tbp]
+\begin{table}[!tbp]
   \centering
   \caption{Perf-stat summary at 32 transaction worker threads.}
   \label{tab:perf-stat-32worker}
-  \footnotesize
-  \setlength{\tabcolsep}{3pt}
-  \resizebox{\textwidth}{!}{%
+  \scriptsize
+  \setlength{\tabcolsep}{2pt}
+  \renewcommand{\arraystretch}{0.92}
+  \resizebox{\linewidth}{!}{%
   \begin{tabular}{llrrrrrrr}
     \hline
     Workload & System & Ack tps & CPU cores & Cycles/tx & Instr/tx & IPC & Ctx sw. & Tx/sync \\
@@ -21,4 +22,4 @@
     \hline
   \end{tabular}
   }
-\end{table*}
+\end{table}

@@ -1,10 +1,11 @@
-\begin{table*}[tbp]
+\begin{table}[!tbp]
   \centering
   \caption{End-to-end YCSB results at 32 transaction worker threads.}
   \label{tab:ycsbabc-32worker-summary}
-  \footnotesize
-  \setlength{\tabcolsep}{3pt}
-  \resizebox{\textwidth}{!}{%
+  \scriptsize
+  \setlength{\tabcolsep}{2pt}
+  \renewcommand{\arraystretch}{0.92}
+  \resizebox{\linewidth}{!}{%
   \begin{tabular}{llrrrrrrr}
     \hline
     Workload & System & Ack tps & p99 $\mu$s & Pending & fdatasync & Tx/sync & Frontier B/tx & WAL atomic/tx \\
@@ -21,6 +22,7 @@
     \hline
   \end{tabular}
   }
-  \\[-1mm]
-  {\footnotesize Ack tps is durable-acknowledgment throughput. Ayame uses 7 flusher threads and 1 committer thread at 32 workers.}
-\end{table*}
+  \vspace{1mm}
+  \parbox{\linewidth}{\scriptsize Ack tps is durable-acknowledgment throughput.
+  Ayame uses 7 flusher threads and 1 committer thread at 32 workers.}
+\end{table}

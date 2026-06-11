@@ -1,10 +1,11 @@
-\begin{table*}[tbp]
+\begin{table}[!tbp]
   \centering
   \caption{Top self-time symbols for YCSB-C at 32 transaction worker threads.}
   \label{tab:ycsbc-perf-top}
-  \footnotesize
-  \setlength{\tabcolsep}{4pt}
-  \resizebox{\textwidth}{!}{%
+  \scriptsize
+  \setlength{\tabcolsep}{2pt}
+  \renewcommand{\arraystretch}{0.92}
+  \resizebox{\linewidth}{!}{%
   \begin{tabular}{llrl}
     \hline
     System & Rank & Self \% & Symbol \\
@@ -27,6 +28,7 @@
     \hline
   \end{tabular}
   }
-  \\[-1mm]
-  {\footnotesize YCSB-C is read-only; WAL bytes and fdatasync counts are zero for all systems.}
-\end{table*}
+  \vspace{1mm}
+  \parbox{\linewidth}{\scriptsize YCSB-C is read-only; WAL bytes and fdatasync
+  counts are zero for all systems.}
+\end{table}
