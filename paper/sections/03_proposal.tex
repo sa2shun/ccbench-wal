@@ -6,102 +6,76 @@ denotes the element-wise maximum, and $F \le F'$ holds iff $F[i] \le F'[i]$
 for every shard $i$.  $D$ denotes the durable vector, where $D[i]$ is the
 durable position of shard $i$.
 
-\begin{algorithm}[t]
-\small
-\caption{Dependency collection.}
+\begin{algorithmblock}[t]
+\algcaption{Dependency collection.}
 \label{alg:ayame-dep}
-\begin{algorithmic}[1]
-\Procedure{ReadVersion}{$T, v$}
-  \State add $v$ to $T$'s read set
-  \If{$T$ is known read-only}
-    \State \Return \Comment{SI read-only fast path}
-  \EndIf
-  \State $T.\dep \gets T.\dep \fjoin v.\wfr$
-        \label{ln:dep-read}
-\EndProcedure
-\Statex
-\Procedure{OverwriteVersion}{$T, v$}
-  \State $T.\dep \gets T.\dep \fjoin v.\wfr \fjoin v.\rfr$
-        \Comment{writer and reader frontiers}
-        \label{ln:dep-write}
-  \State add $v$ to $T$'s write set
-\EndProcedure
-\end{algorithmic}
-\end{algorithm}
+\algline{\textbf{procedure} \textsc{ReadVersion}$(T, v)$}
+\algline{\algind add $v$ to $T$'s read set}
+\algline{\algind \textbf{if} $T$ is known read-only \textbf{then return}
+         \algcom{SI read-only fast path}}
+\algline{\algind $T.\dep \gets T.\dep \fjoin v.\wfr$
+         \label{ln:dep-read}}
+\algskip
+\algline{\textbf{procedure} \textsc{OverwriteVersion}$(T, v)$}
+\algline{\algind $T.\dep \gets T.\dep \fjoin v.\wfr \fjoin v.\rfr$
+         \algcom{writer and reader frontiers}
+         \label{ln:dep-write}}
+\algline{\algind add $v$ to $T$'s write set}
+\end{algorithmblock}
 
-\begin{algorithm}[t]
-\small
-\caption{Worker-side commit protocol.}
+\begin{algorithmblock}[t]
+\algcaption{Worker-side commit protocol.}
 \label{alg:ayame-commit}
-\begin{algorithmic}[1]
-\Require transaction $T$ with dependency frontier $T.\dep$
-\If{\Call{SsnValidate}{$T$} fails}
-  \State \textbf{abort} $T$ and \Return
-\EndIf
-\If{$T$ is read-only}
-  \If{$T.\dep \le D$}
-    \State \Call{Ack}{$T$}; \Return
-  \EndIf
-  \State \Call{Register}{$T.\dep, T$}; \Return
-        \Comment{Algorithm~\ref{alg:ayame-ack}}
-\EndIf
-\State $T.c \gets$ commit timestamp assigned by ERMIA/SSN
-       \Comment{logical LSN}
-       \label{ln:cstamp}
-\State $s \gets$ WAL shard owned by this worker
-\State $r \gets$ \Call{BuildRecord}{$T.c, T.\dep, T.\mathit{write\_set}$}
-\State $T.\lseq \gets$ \Call{Enqueue}{$\mathit{wal}[s], r$}
-       \Comment{append only; no flush, no wait}
-       \label{ln:enqueue}
-\State $F \gets T.\dep$; \quad $F[s] \gets \max(F[s], T.\lseq)$
-       \Comment{closed frontier}
-       \label{ln:closed}
-\ForAll{versions $v$ created by $T$}
-  \State $v.\wfr \gets F$
-        \label{ln:pub-w}
-\EndFor
-\ForAll{versions $v$ read by read-write $T$}
-  \State $v.\rfr \gets v.\rfr \fjoin F$
-        \label{ln:pub-r}
-\EndFor
-\State \Call{Register}{$F, T$}
-       \Comment{durable ack deferred to the committer}
-       \label{ln:register}
-\State \Return logical commit
-\end{algorithmic}
-\end{algorithm}
+\algline{\textbf{Input:} transaction $T$ with dependency frontier $T.\dep$}
+\algline{\textbf{if} \textsc{SsnValidate}$(T)$ fails \textbf{then} abort $T$ and return}
+\algline{\textbf{if} $T$ is read-only \textbf{then}}
+\algline{\algind \textbf{if} $T.\dep \le D$ \textbf{then} \textsc{Ack}$(T)$ and return}
+\algline{\algind \textsc{Register}$(T.\dep, T)$ and return
+         \algcom{Algorithm~\ref{alg:ayame-ack}}}
+\algline{$T.c \gets$ commit timestamp assigned by ERMIA/SSN
+         \algcom{logical LSN}
+         \label{ln:cstamp}}
+\algline{$s \gets$ WAL shard owned by this worker}
+\algline{$r \gets$ \textsc{BuildRecord}$(T.c, T.\dep, T.\mathit{write\_set})$}
+\algline{$T.\lseq \gets$ \textsc{Enqueue}$(\mathit{wal}[s], r)$
+         \algcom{append only; no flush, no wait}
+         \label{ln:enqueue}}
+\algline{$F \gets T.\dep$; \quad $F[s] \gets \max(F[s], T.\lseq)$
+         \algcom{closed frontier}
+         \label{ln:closed}}
+\algline{\textbf{for all} versions $v$ created by $T$ \textbf{do} $v.\wfr \gets F$
+         \label{ln:pub-w}}
+\algline{\textbf{for all} versions $v$ read by read-write $T$ \textbf{do}
+         $v.\rfr \gets v.\rfr \fjoin F$
+         \label{ln:pub-r}}
+\algline{\textsc{Register}$(F, T)$
+         \algcom{durable ack deferred to the committer}
+         \label{ln:register}}
+\algline{\textbf{return} logical commit}
+\end{algorithmblock}
 
-\begin{algorithm}[t]
-\small
-\caption{Committer-side durable acknowledgment.}
+\begin{algorithmblock}[t]
+\algcaption{Committer-side durable acknowledgment.}
 \label{alg:ayame-ack}
-\begin{algorithmic}[1]
-\Statex \textbf{State:} durable vector $D$ and per-shard waitlists $W[i]$
-\Procedure{Register}{$F, T$}
-  \If{$F \le D$}
-    \State \Call{Ack}{$T$}; \Return
-        \Comment{own log and dependencies are durable}
-        \label{ln:dur-check}
-  \EndIf
-  \State $T.\mathit{remaining} \gets 0$
-  \ForAll{shards $i$ such that $F[i] > D[i]$}
-    \State $T.\mathit{remaining} \gets T.\mathit{remaining} + 1$
-    \State insert $(F[i], T)$ into $W[i]$
-          \label{ln:park}
-  \EndFor
-\EndProcedure
-\Statex
-\Procedure{OnDurableAdvance}{$i, d$}
-        \Comment{called by flusher $i$ after \texttt{fdatasync}}
-  \State $D[i] \gets d$
-  \While{$W[i]$ is not empty and \Call{MinNeed}{$W[i]$} $\le d$}
-    \State $(\mathit{need}, T) \gets$ \Call{PopMin}{$W[i]$}
-    \State $T.\mathit{remaining} \gets T.\mathit{remaining} - 1$
-    \If{$T.\mathit{remaining} = 0$}
-      \State \Call{Ack}{$T$}
-          \label{ln:ack-ready}
-    \EndIf
-  \EndWhile
-\EndProcedure
-\end{algorithmic}
-\end{algorithm}
+\algline{\textbf{State:} durable vector $D$ and per-shard waitlists $W[i]$}
+\algline{\textbf{procedure} \textsc{Register}$(F, T)$}
+\algline{\algind \textbf{if} $F \le D$ \textbf{then} \textsc{Ack}$(T)$ and return
+         \algcom{own log and dependencies are durable}
+         \label{ln:dur-check}}
+\algline{\algind $T.\mathit{remaining} \gets 0$}
+\algline{\algind \textbf{for all} shards $i$ such that $F[i] > D[i]$ \textbf{do}}
+\algline{\algind\algind $T.\mathit{remaining} \gets T.\mathit{remaining} + 1$}
+\algline{\algind\algind insert $(F[i], T)$ into $W[i]$
+         \label{ln:park}}
+\algskip
+\algline{\textbf{procedure} \textsc{OnDurableAdvance}$(i, d)$
+         \algcom{called by flusher $i$ after \texttt{fdatasync}}}
+\algline{\algind $D[i] \gets d$}
+\algline{\algind \textbf{while} $W[i]$ is not empty and
+         \textsc{MinNeed}$(W[i]) \le d$ \textbf{do}}
+\algline{\algind\algind $(\mathit{need}, T) \gets \textsc{PopMin}(W[i])$}
+\algline{\algind\algind $T.\mathit{remaining} \gets T.\mathit{remaining} - 1$}
+\algline{\algind\algind \textbf{if} $T.\mathit{remaining} = 0$
+         \textbf{then} \textsc{Ack}$(T)$
+         \label{ln:ack-ready}}
+\end{algorithmblock}

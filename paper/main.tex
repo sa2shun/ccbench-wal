@@ -8,15 +8,38 @@
 
 \usepackage[dvipdfmx]{graphicx}
 \usepackage{latexsym}
-\usepackage{algorithm}
-\usepackage[noend]{algpseudocode}
 
-\algrenewcommand\algorithmicrequire{\textbf{Input:}}
 \newcommand{\dep}{\mathit{dep}}
 \newcommand{\wfr}{\mathit{wf}}
 \newcommand{\rfr}{\mathit{rf}}
 \newcommand{\lseq}{\mathit{seq}}
 \newcommand{\fjoin}{\sqcup}
+\newcounter{algorithm}
+\newcounter{algline}
+\newenvironment{algorithmblock}[1][t]{%
+  \begin{figure}[#1]\small
+  \begin{center}
+  \begin{minipage}{0.96\linewidth}
+  \hrule\vspace{1mm}%
+}{%
+  \vspace{1mm}\hrule
+  \end{minipage}
+  \end{center}
+  \end{figure}%
+}
+\newcommand{\algcaption}[1]{%
+  \refstepcounter{algorithm}%
+  \setcounter{algline}{0}%
+  \noindent\textbf{Algorithm~\thealgorithm: #1}\par\vspace{1mm}%
+}
+\newcommand{\algline}[1]{%
+  \refstepcounter{algline}%
+  \noindent\makebox[2em][r]{\thealgline}\hspace{0.6em}%
+  \parbox[t]{0.86\linewidth}{#1}\par
+}
+\newcommand{\algskip}{\par\vspace{0.4mm}}
+\newcommand{\algind}{\hspace*{1.4em}}
+\newcommand{\algcom}[1]{\hfill{\footnotesize\textit{#1}}}
 
 \newtheorem{definition}{Definition}
 \newtheorem{theorem}{Theorem}
