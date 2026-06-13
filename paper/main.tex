@@ -19,6 +19,7 @@
 
 \newtheorem{definition}{Definition}
 \newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
 \newenvironment{proof}[1][Proof]{\par\noindent\textbf{#1.}\ }{\par}
 
 %\setcounter{巻数}{59}
@@ -37,7 +38,7 @@
 \author{Hideyuki Kawashima}{SFC}[river@sfc.keio.ac.jp]
 
 \begin{abstract}
-Concurrency control is essential for database access, and the Serial Safety Net (SSN) represents one of the state-of-the-art methods in this field. Integrating SSN with logging ensures that transaction processing is recoverable. While P-WAL is an efficient logging method that leverages parallel I/O extensively, it still suffers from certain limitations. To overcome these drawbacks, this paper proposes a novel logging method, Ayame. The proposed method incorporates three optimization techniques: the elimination of global counters, dependency analysis, and asynchronous I/O. Experimental results demonstrate that Ayame achieves up to a 4.7-fold performance improvement over P-WAL in YCSB-A.
+Concurrency control is essential for database access, and the Serial Safety Net (SSN) represents one of the state-of-the-art methods in this field. Integrating SSN with logging ensures that transaction processing is recoverable. While P-WAL is an efficient logging method that leverages parallel I/O extensively, it still suffers from certain limitations. To overcome these drawbacks, this paper proposes a novel logging method, Ayame. The proposed method incorporates three optimization techniques: the elimination of the separate WAL-side global LSN allocation, dependency analysis, and asynchronous I/O. Experimental results demonstrate that Ayame achieves up to a 4.7-fold performance improvement over P-WAL in YCSB-A.
 \end{abstract}
 
 \maketitle

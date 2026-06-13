@@ -7,8 +7,9 @@ Section~\ref{sec:background}.  It combines three techniques.
 First, it reuses the commit timestamp that SSN already assigns as the
 logical log sequence number, eliminating the separate WAL-side global
 counter (addresses \textbf{P1}).  Second, it splits commit processing
-into worker, flusher, and committer roles so that worker threads never
-block on \texttt{fdatasync} or durable waiting (addresses \textbf{P2}).
+into worker, flusher, and committer roles so that worker threads do not
+block on \texttt{fdatasync} or durable-ack waiting, subject only to a
+bounded backpressure limit (addresses \textbf{P2}).
 Third, it acknowledges a transaction using a \emph{dependency-closed
 durable frontier} instead of a global durable prefix, so that a
 transaction waits only for the log records it actually depends on
@@ -46,18 +47,21 @@ Ayame divides commit processing into three roles.  A \emph{worker}
 executes the transaction, validates it with SSN, assigns the commit
 timestamp, appends the log record to its own WAL shard, publishes
 durability metadata, and registers a durable-acknowledgment request.
-The worker then returns to its next transaction; it never calls
-\texttt{fdatasync} and never waits for durability.  A \emph{flusher}
-owns one WAL shard, batches the queued records, writes them, calls
-\texttt{fdatasync}, and advances the shard's durable position.  A
-\emph{committer} returns durable acknowledgments to clients once the
-durable condition of a registered transaction is met.  Because the
-worker never calls \texttt{fdatasync} or waits for durability, it keeps
-executing transactions at full concurrency even though every update
-commit must still be made durable; the cost of making the log durable
-is paid by the flusher and committer, not by the worker.  Accordingly,
-we report throughput as the number of durable acknowledgments returned
-to clients, not the number of logical commits.
+The worker then returns to its next transaction; it does not call
+\texttt{fdatasync} and does not wait for a durable acknowledgment.  A
+\emph{flusher} owns one WAL shard, batches the queued records, writes
+them, calls \texttt{fdatasync}, and advances the shard's durable
+position.  A \emph{committer} returns durable acknowledgments to clients
+once the durable condition of a registered transaction is met.  Workers
+therefore do not block on storage synchronization or durable-ack
+waiting, and keep executing transactions at full concurrency even though
+every update commit must still be made durable; the cost of making the
+log durable is paid by the flusher and committer.  The one exception is
+a bounded backpressure limit: to cap memory use and acknowledgment
+latency, a worker stalls only if the number of registered but
+not-yet-acknowledged durable commits reaches a configured maximum.
+Accordingly, we report throughput as the number of durable
+acknowledgments returned to clients, not the number of logical commits.
 
 Algorithm~\ref{alg:ayame-commit} shows the worker-side commit protocol.
 The commit timestamp assigned for SSN validation doubles as the logical
@@ -82,9 +86,14 @@ logical commit.
         \State abort $T$; \Return
     \EndIf
     \If{$T$'s write set is empty} \Comment{read-only}
-        \State \Call{Register}{$T.\dep, T$}; \Return
-               \label{ln:ro-register}
-               \Comment{Algorithm~\ref{alg:ayame-ack}}
+        \If{frontier collection is skipped \textbf{or} $T.\dep = \bot$}
+            \State \Call{Ack}{$T$} \Comment{read-only fast path}
+        \Else
+            \State \Call{Register}{$T.\dep, T$}
+                   \label{ln:ro-register}
+                   \Comment{Algorithm~\ref{alg:ayame-ack}}
+        \EndIf
+        \State \Return logical read-only commit
     \EndIf
     \State $s \gets$ WAL shard assigned to this worker
     \State $r \gets$ \Call{BuildRecord}{$T.c, T.\dep, T.\mathit{write\_set}$}
@@ -217,8 +226,50 @@ advance cannot slip between the durability test and the parking step.
 
 The acknowledgment rule is exactly $F \le D$: a transaction is
 acknowledged once its own record and every record it transitively
-depends on are durable.  This is safe because $F$ is dependency-closed,
-so a crash after the acknowledgment cannot expose a state that contains
-$T$ but not the writes $T$ depends on.  It is also less conservative
-than a global durable prefix: a transaction waits only on the shards
-that appear in its frontier, so an unrelated slow shard never delays it.
+depends on are durable.  We now make the safety of this rule precise.
+For a committed update transaction $U$, let $s_U$ and $U.\lseq$ be the
+shard and position of its log record, so its published closed frontier
+$F_U$ satisfies $F_U[s_U] \ge U.\lseq$.  Let $\mathrm{cl}(T)$ be the set
+of update transactions reachable from $T$ through read-from and
+overwrite dependencies, including $T$ itself.
+
+\begin{lemma}[Dependency-closed durability]
+\label{lem:closure}
+If \textsc{Ack}$(T)$ is invoked, then for every update transaction
+$U \in \mathrm{cl}(T)$ the WAL record of $U$ is durable.
+\end{lemma}
+
+\begin{proof}[Proof sketch]
+Dependency collection (Algorithm~\ref{alg:ayame-dep}) joins each
+accessed version's published frontier into $T.\dep$, and the commit
+protocol sets $F = T.\dep$ with $F[s_T] \ge T.\lseq$
+(line~\ref{ln:closed}).  Because every published $v.\wfr$ and $v.\rfr$
+is itself a closed frontier, an induction over the dependency order
+gives $F \ge F_U$, hence $F[s_U] \ge F_U[s_U] \ge U.\lseq$, for every
+$U \in \mathrm{cl}(T)$.  \textsc{Ack}$(T)$ is invoked only when
+$F \le D$ (Algorithm~\ref{alg:ayame-ack}), so $D[s_U] \ge U.\lseq$.
+Since $D[i]$ is a durable prefix of shard $i$, the record of $U$ is
+durable.
+\end{proof}
+
+\begin{theorem}[Recoverable acknowledgment]
+\label{thm:recover}
+Suppose a crash occurs and recovery replays exactly the durable WAL
+records in logical-LSN order.  If $T$ was acknowledged before the crash,
+recovery never yields a state that contains the effects of $T$ but omits
+the effects of some $U \in \mathrm{cl}(T)$.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+By Lemma~\ref{lem:closure}, every $U \in \mathrm{cl}(T)$ has a durable
+record and is therefore replayed.  Each dependency edge $U \to T$ is a
+serialization edge of SSN, so $U$'s commit timestamp precedes $T$'s;
+because logical LSNs equal commit timestamps, replay in logical-LSN
+order installs every such $U$ before $T$.  Hence whenever $T$'s effects
+are installed, the effects of all $U \in \mathrm{cl}(T)$ are already
+present.
+\end{proof}
+
+The rule is also less conservative than a global durable prefix: a
+transaction waits only on the shards that appear in its frontier, so an
+unrelated slow shard never delays it.
