@@ -1,18 +1,147 @@
 \section{Evaluation}
 \label{sec:evaluation}
 
-We implement Ayame in an ERMIA-style engine and evaluate it using YCSB
-workloads with the transaction worker count on the x-axis.  The comparison uses
-the same ERMIA-PWAL binary for all WAL systems; Single WAL and P-WAL are selected
-by runtime WAL-mode flags, while Ayame additionally runs background
-flusher/logger and committer threads.  At 32 worker threads on YCSB-A, Single
+\subsection{Implementation}
+\label{sec:impl}
+
+We implement all three WAL systems on top of CCBench~\cite{tanabe2020ccbench},
+a concurrency-control benchmarking framework with minimal functionality
+for protocol analysis.  The underlying engine is an ERMIA-style
+multi-version store with snapshot isolation and SSN validation, using
+Masstree as the index and \texttt{mimalloc} as the allocator.  The code
+is written in C++20 and compiled with GCC at the \texttt{-O3}
+optimization level.  Our implementation is publicly
+available.\footnote{The source code is available in our public
+repository for reproduction.}
+
+A key methodological point is that Single WAL, P-WAL, and Ayame are
+implemented in the \emph{same} binary and selected at run time by
+environment flags (\texttt{CCBENCH\_WAL\_MODE} and
+\texttt{CCBENCH\_WAL\_DURABLE\_MODE}).  The concurrency-control engine,
+the index, the workload generator, and the pre-commit path are therefore
+identical across the three systems; only the WAL durability path differs.
+Single WAL appends to one shared log stream under a global latch and
+synchronizes it per commit.  P-WAL gives each worker a private stream
+and synchronizes it per commit, acknowledging through a global durable
+prefix.  Ayame uses the worker/flusher/committer pipeline of
+Section~\ref{sec:design} with dependency-closed acknowledgment.  Each WAL
+record carries the key, value, storage identifier, and operation type of
+a write, terminated by a commit record.  Read-only WAL skipping is
+enabled for all three systems; once a transaction is known to be
+read-only it produces no WAL record, and Ayame additionally takes a
+read-only snapshot-isolation fast path that skips durability-frontier
+collection.
+
+\subsection{Experimental Configuration}
+\label{sec:config}
+
+\subsubsection{Environment}
+\label{sec:env}
+
+Experiments were conducted on a server with two sockets of Intel(R)
+Xeon(R) Gold 5418N CPUs.  Each socket had 24 physical cores with two
+hardware threads per core, for 48 physical and 96 logical cores in
+total, organized as two NUMA nodes.  Each core had a 48\,KiB private L1d
+cache and a 2\,MiB private L2 cache, and each socket shared a 45\,MiB L3
+cache.  The DRAM capacity was 256\,GB.  The machine ran Ubuntu 22.04.5
+LTS (Linux kernel 5.15), and WAL files were placed on a locally attached
+SSD formatted with ext4.  Worker threads were pinned to distinct logical
+cores with \texttt{sched\_setaffinity}.
+
+\subsubsection{Benchmark and Workloads}
+\label{sec:workloads}
+
+All experiments used the Yahoo! Cloud Serving Benchmark
+(YCSB)~\cite{cooper2010ycsb}.  We evaluated three representative workloads:
+YCSB-A (50\% read, 50\% update), YCSB-B (95\% read, 5\% update), and
+YCSB-C (read-only).  These workloads exercise the WAL along a spectrum
+from update-heavy to read-only and are widely used to evaluate
+concurrency-control protocols.  Each transaction issued a fixed number
+of ten operations over a database of 100{,}000 records with 4-byte
+values, and keys were drawn from a uniform distribution.
+
+\begin{table}[tb]
+  \centering
+  \caption{Default parameter settings.}
+  \label{tab:params}
+  \small
+  \begin{tabular}{llr}
+    \hline
+    Type & Parameter & Setting \\
+    \hline
+    DB & \#records & 100{,}000 \\
+       & value size & 4\,B \\
+       & key distribution & uniform \\
+    \hline
+    TX & \#operations & 10 \\
+       & read ratio (YCSB-A/B/C) & 50/95/100\,\% \\
+    \hline
+    Run & worker threads & 1,2,4,8,16,32 \\
+        & measurement time & 5\,s \\
+        & repeats & 5 \\
+    \hline
+    Ayame & group size & 16 \\
+          & flush interval & 50\,$\mu$s \\
+          & max pending acks & 65{,}536 \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\subsubsection{Systems Compared and Threads}
+\label{sec:systems}
+
+The x-axis of every throughput figure is the number of transaction
+\emph{worker} threads.  Single WAL and P-WAL use only worker threads.
+Ayame additionally runs background flusher and committer threads, so we
+also report its total active thread count.  Table~\ref{tab:ayame-threads}
+lists the worker-to-flusher/committer mapping used for Ayame; for
+example, at 32 worker threads Ayame uses 7 flusher threads and one
+committer thread, for 40 active threads.
+
+\begin{table}[tb]
+  \centering
+  \caption{Ayame background-thread mapping.}
+  \label{tab:ayame-threads}
+  \small
+  \begin{tabular}{rrrr}
+    \hline
+    Worker & Flusher & Committer & Total active \\
+    \hline
+    1  & 1 & 1 & 3 \\
+    2  & 1 & 1 & 4 \\
+    4  & 1 & 1 & 6 \\
+    8  & 2 & 1 & 11 \\
+    16 & 4 & 1 & 21 \\
+    32 & 7 & 1 & 40 \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\subsubsection{Metric}
+\label{sec:metric}
+
+The primary metric is \emph{durable-acknowledgment throughput}: the
+number of transactions acknowledged as durable to the client, divided by
+the measurement time.  All systems are measured at the same stop
+barrier, and acknowledgments drained during shutdown are excluded.  For
+the worker-wait systems (Single WAL and P-WAL) a logical commit and a
+durable acknowledgment coincide, so the metric has the same meaning
+across the three systems.  We additionally report the p99 durable
+acknowledgment latency and the number of pending (not-yet-acknowledged)
+durable commits.
+
+\subsection{Results}
+\label{sec:results}
+
+We evaluate Ayame using the worker-thread sweep of
+Table~\ref{tab:params}.  At 32 worker threads on YCSB-A, Single
 WAL achieves 10K durable acknowledgments per second and P-WAL achieves 66K,
-whereas Ayame achieves 298K durable acknowledgments per second.  On YCSB-B,
-Single WAL achieves 28K and P-WAL achieves 238K, whereas Ayame achieves 553K
-durable acknowledgments per second.  These results correspond to 4.5$\times$
-and 2.3$\times$ improvements over P-WAL on YCSB-A and YCSB-B, respectively.
+whereas Ayame achieves 309K durable acknowledgments per second.  On YCSB-B,
+Single WAL achieves 29K and P-WAL achieves 243K, whereas Ayame achieves 579K
+durable acknowledgments per second.  These results correspond to 4.7$\times$
+and 2.4$\times$ improvements over P-WAL on YCSB-A and YCSB-B, respectively.
 Ayame also keeps the number of pending durable commits small at 32 worker
-threads: 703 pending commits on YCSB-A and 58 pending commits on YCSB-B.
+threads: 145 pending commits on YCSB-A and 66 pending commits on YCSB-B.
 
 Figure~\ref{fig:ycsbabc-worker-throughput} shows the worker-thread comparison.
 The results show that Ayame improves update and mixed read-write workloads

@@ -307,35 +307,35 @@ Ayame の logger mapping は次です。
 
 | workload | system | ack tps | p99 us | pending | fdatasync | tx/sync | frontier B/tx | WAL atomic/tx |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| YCSB-A | Single WAL | 9.9K | 4096 | 0 | 39582 | 1.0 | 0.0 | 6.01 |
-| YCSB-A | P-WAL | 65.9K | 512 | 0 | 263401 | 1.0 | 0.0 | 6.00 |
-| YCSB-A | Ayame | 298.1K | 8192 | 703 | 82107 | 14.5 | 56.0 | 0.00 |
-| YCSB-B | Single WAL | 28.0K | 2048 | 0 | 45012 | 2.5 | 0.0 | 0.90 |
-| YCSB-B | P-WAL | 237.6K | 256 | 0 | 381791 | 2.5 | 0.0 | 0.90 |
-| YCSB-B | Ayame | 553.2K | 512 | 58 | 119651 | 18.5 | 56.0 | 0.00 |
-| YCSB-C | Single WAL | 780.9K | 41 | 0 | 0 | 0.0 | 0.0 | 0.00 |
-| YCSB-C | P-WAL | 804.5K | 40 | 0 | 0 | 0.0 | 0.0 | 0.00 |
-| YCSB-C | Ayame | 782.0K | 41 | 0 | 0 | 0.0 | 56.0 | 0.00 |
+| YCSB-A | Single WAL | 10.5K | 4096 | 0 | 42135 | 1.0 | 0.0 | 6.01 |
+| YCSB-A | P-WAL | 65.7K | 512 | 0 | 262491 | 1.0 | 0.0 | 6.00 |
+| YCSB-A | Ayame | 309.5K | 2048 | 145 | 88018 | 14.1 | 56.0 | 0.00 |
+| YCSB-B | Single WAL | 29.4K | 2048 | 0 | 47239 | 2.5 | 0.0 | 0.90 |
+| YCSB-B | P-WAL | 243.4K | 256 | 0 | 390814 | 2.5 | 0.0 | 0.90 |
+| YCSB-B | Ayame | 579.1K | 512 | 66 | 125299 | 18.5 | 56.0 | 0.00 |
+| YCSB-C | Single WAL | 796.4K | 40 | 0 | 0 | 0.0 | 0.0 | 0.00 |
+| YCSB-C | P-WAL | 801.7K | 40 | 0 | 0 | 0.0 | 0.0 | 0.00 |
+| YCSB-C | Ayame | 775.4K | 41 | 0 | 0 | 0.0 | 56.0 | 0.00 |
 
 ### 7.2 P-WAL に対する speedup
 
 | workload | P-WAL tps | Ayame tps | speedup |
 |---|---:|---:|---:|
-| YCSB-A | 65.9K | 298.1K | 4.52x |
-| YCSB-B | 237.6K | 553.2K | 2.33x |
-| YCSB-C | 804.5K | 782.0K | 0.97x |
+| YCSB-A | 65.7K | 309.5K | 4.71x |
+| YCSB-B | 243.4K | 579.1K | 2.38x |
+| YCSB-C | 801.7K | 775.4K | 0.97x |
 
 abstract で使える現在の最大値は次です。
 
 ```text
-Ayame achieves up to a 4.5-fold performance improvement over P-WAL in YCSB-A.
+Ayame achieves up to a 4.7-fold performance improvement over P-WAL in YCSB-A.
 ```
 
 ### 7.3 結果の読み方
 
-YCSB-A は update-heavy なので WAL durability が強く効きます。P-WAL は Single WAL より速いですが、tx/sync は 1.0 で、small flush が多いです。Ayame は tx/sync を 14.5 まで増やし、fdatasync count を減らして throughput を上げています。
+YCSB-A は update-heavy なので WAL durability が強く効きます。P-WAL は Single WAL より速いですが、tx/sync は 1.0 で、small flush が多いです。Ayame は tx/sync を 14.1 まで増やし、fdatasync count を減らして throughput を上げています。
 
-YCSB-B は read-heavy mixed workload です。Ayame は P-WAL より 2.33x 高い throughput を出しつつ、pending は 58 に抑えています。
+YCSB-B は read-heavy mixed workload です。Ayame は P-WAL より 2.38x 高い throughput を出しつつ、pending は 66 に抑えています。
 
 YCSB-C は read-only です。read-only WAL skip により WAL persistence が消えるため、ここで大きな差が出るとむしろ問題です。現在は Single WAL / P-WAL / Ayame がほぼ同等で、sanity check として期待通りです。
 
@@ -347,25 +347,25 @@ YCSB-C は read-only です。read-only WAL skip により WAL persistence が�
 
 | workload | system | ack tps | CPU cores | cycles/tx | instr/tx | IPC | ctx switches | fdatasync | tx/sync | pending | p99 us |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| YCSB-A | Single WAL | 9620 | 1.21 | 316310 | 648780 | 2.055 | 125696 | 38476 | 1.00 | 0 | 4096 |
-| YCSB-A | P-WAL | 65159 | 19.51 | 760326 | 447343 | 0.589 | 1535950 | 260403 | 1.00 | 0 | 512 |
-| YCSB-A | Ayame | 295683 | 25.67 | 216136 | 144297 | 0.667 | 2971234 | 81647 | 14.49 | 1131 | 8192 |
-| YCSB-B | Single WAL | 27107 | 1.07 | 98355 | 157182 | 1.598 | 136108 | 43497 | 2.49 | 0 | 4096 |
-| YCSB-B | P-WAL | 246623 | 18.63 | 191636 | 108816 | 0.569 | 1423509 | 396387 | 2.49 | 0 | 256 |
-| YCSB-B | Ayame | 542500 | 31.15 | 145051 | 63165 | 0.436 | 2462420 | 123765 | 17.53 | 74 | 512 |
-| YCSB-C | Single WAL | 791532 | 39.99 | 131145 | 28270 | 0.216 | 4927 | 0 | 0.00 | 0 | 41 |
-| YCSB-C | P-WAL | 810788 | 40.03 | 128225 | 28264 | 0.221 | 4198 | 0 | 0.00 | 0 | 40 |
-| YCSB-C | Ayame | 772297 | 40.17 | 135099 | 32551 | 0.241 | 35684 | 0 | 0.00 | 0 | 41 |
+| YCSB-A | Single WAL | 9793 | 1.21 | 308526 | 674082 | 2.185 | 128118 | 39162 | 1.00 | 0 | 4096 |
+| YCSB-A | P-WAL | 68484 | 18.97 | 698368 | 415055 | 0.594 | 1537033 | 273702 | 1.00 | 0 | 512 |
+| YCSB-A | Ayame | 310602 | 26.75 | 213987 | 139150 | 0.650 | 3203414 | 84494 | 14.71 | 278 | 8192 |
+| YCSB-B | Single WAL | 27178 | 1.07 | 98314 | 165785 | 1.686 | 136497 | 43622 | 2.49 | 0 | 4096 |
+| YCSB-B | P-WAL | 249511 | 17.99 | 182056 | 103894 | 0.571 | 1417917 | 400741 | 2.49 | 0 | 256 |
+| YCSB-B | Ayame | 571059 | 31.19 | 137447 | 63383 | 0.461 | 2752179 | 121713 | 18.79 | 65 | 512 |
+| YCSB-C | Single WAL | 796029 | 40.06 | 130591 | 28272 | 0.217 | 3817 | 0 | 0.00 | 0 | 40 |
+| YCSB-C | P-WAL | 793143 | 40.07 | 131230 | 28278 | 0.216 | 4033 | 0 | 0.00 | 0 | 40 |
+| YCSB-C | Ayame | 810124 | 40.09 | 128448 | 32517 | 0.253 | 35374 | 0 | 0.00 | 0 | 39 |
 
 ### 8.2 perf top から見える bottleneck
 
-YCSB-A の P-WAL では、`native_queued_spin_lock_slowpath` が 39.07% で top になっています。これは P-WAL が single WAL mutex を外しても、kernel synchronization や flush path の競合が大きいことを示しています。
+YCSB-A の P-WAL では、`native_queued_spin_lock_slowpath` が 39.80% で top になっています。これは P-WAL が single WAL mutex を外しても、kernel synchronization や flush path の競合が大きいことを示しています。
 
-YCSB-A の Ayame では、top は `pthread_mutex_lock` 7.40%、`TxExecutor::mergeVersionFrontier` 6.11%、`TxExecutor::ssn_parallel_commit` 4.46% です。つまり Ayame では storage synchronization だけではなく、frontier metadata / queue / version publish 側に bottleneck が移っています。
+YCSB-A の Ayame では、top は `pthread_mutex_lock` 6.89%、`TxExecutor::mergeVersionFrontier` 6.74%、`TxExecutor::mergeVersionReadFrontier` 3.12% です。つまり Ayame では storage synchronization だけではなく、frontier metadata / queue / version publish 側に bottleneck が移っています。
 
-YCSB-B の P-WAL では、`native_queued_spin_lock_slowpath` 25.30%、`TxExecutor::read` 14.45%、`WalLogger::logPerThread` 6.55% です。
+YCSB-B の P-WAL では、`native_queued_spin_lock_slowpath` 24.22%、`TxExecutor::read` 17.02%、`WalLogger::logPerThread` 6.74% です。
 
-YCSB-B の Ayame では、`TxExecutor::read` 19.42%、`TxExecutor::ssn_parallel_commit` 8.33%、`pthread_mutex_lock` 4.28% です。P-WAL より WAL flush pressure が下がり、read/SSN path と metadata/queue overhead が目立つようになります。
+YCSB-B の Ayame では、`TxExecutor::read` 17.35%、`TxExecutor::ssn_parallel_commit` 8.47%、`TxExecutor::mergeVersionFrontier` 4.52% です。P-WAL より WAL flush pressure が下がり、read/SSN path と metadata/queue overhead が目立つようになります。
 
 YCSB-C は read-only なので、すべての system で `TxExecutor::read` と `TxExecutor::ssn_parallel_commit` が支配的です。WAL persistence の評価ではなく、read-only fast path の sanity check です。
 
@@ -392,9 +392,9 @@ YCSB-C は read-only なので、すべての system で `TxExecutor::read` と 
 
 | system | ack tps | p99 us | fdatasync | pending |
 |---|---:|---:|---:|---:|
-| Single WAL | 780.9K | 41 | 0 | 0 |
-| P-WAL | 804.5K | 40 | 0 | 0 |
-| Ayame | 782.0K | 41 | 0 | 0 |
+| Single WAL | 796.4K | 40 | 0 | 0 |
+| P-WAL | 801.7K | 40 | 0 | 0 |
+| Ayame | 775.4K | 41 | 0 | 0 |
 
 この結果は、read-only workload で WAL persistence が消えていること、また Ayame の read-only overhead が大きくないことを示しています。
 
@@ -404,7 +404,7 @@ YCSB-C は read-only なので、すべての system で `TxExecutor::read` と 
 
 現在の結果から言えることは次です。
 
-- Ayame は YCSB-A で P-WAL より 4.52x、YCSB-B で 2.33x 高い durable-ack throughput を出す。
+- Ayame は YCSB-A で P-WAL より 4.71x、YCSB-B で 2.38x 高い durable-ack throughput を出す。
 - Single WAL は shared log bottleneck によって update workload で大きく遅い。
 - P-WAL は Single WAL より速いが、frequent small flush と kernel synchronization が残る。
 - Ayame は group flushing により commits/fdatasync を増やし、fdatasync pressure を下げる。
@@ -477,25 +477,25 @@ YCSB-C は read-only なので、すべての system で `TxExecutor::read` と 
 現状の abstract で使うなら、次の書き方が妥当です。
 
 ```text
-Ayame achieves up to a 4.5-fold performance improvement over P-WAL in YCSB-A.
+Ayame achieves up to a 4.7-fold performance improvement over P-WAL in YCSB-A.
 ```
 
 根拠は次です。
 
 ```text
 YCSB-A / 32 worker threads:
-P-WAL  = 65.9K durable ack/s
-Ayame  = 298.1K durable ack/s
-speedup = 4.52x
+P-WAL  = 65.7K durable ack/s
+Ayame  = 309.5K durable ack/s
+speedup = 4.71x
 ```
 
 YCSB-B では次です。
 
 ```text
 YCSB-B / 32 worker threads:
-P-WAL  = 237.6K durable ack/s
-Ayame  = 553.2K durable ack/s
-speedup = 2.33x
+P-WAL  = 243.4K durable ack/s
+Ayame  = 579.1K durable ack/s
+speedup = 2.38x
 ```
 
 ## 13. 残っている注意点
@@ -547,9 +547,8 @@ Ayame はこれに対して次を行います。
 2. worker / flusher / committer を分離する。
 3. global prefix ではなく dependency-closed durable frontier で ack する。
 
-現在の実験では、Ayame は YCSB-A で P-WAL 比 4.52x、YCSB-B で 2.33x の durable-ack throughput を達成しています。YCSB-C では read-only WAL skip により3方式がほぼ同等で、これは read-only path の sanity check として妥当です。
+現在の実験では、Ayame は YCSB-A で P-WAL 比 4.71x、YCSB-B で 2.38x の durable-ack throughput を達成しています。YCSB-C では read-only WAL skip により3方式がほぼ同等で、これは read-only path の sanity check として妥当です。
 
 したがって、現在の論文ストーリーは次の形に置くのが最も自然です。
 
 > Single WAL は shared logging bottleneck を作る。P-WAL は log stream を分散するが、small flush と kernel synchronization が残る。Ayame は ERMIA/SSN の commit timestamp を logical LSN として再利用し、dependency-closed durable acknowledgment と async worker/flusher/committer pipeline によって、update/mixed workload の durable-ack throughput を改善する。
-

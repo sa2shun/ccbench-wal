@@ -1,21 +1,140 @@
 \section{Proposal: Ayame}
 \label{sec:design}
 
-A frontier $F$ is a vector of per-shard log positions.  $F \fjoin F'$
-denotes the element-wise maximum, $F \le F'$ holds iff $F[i] \le F'[i]$
-for every shard $i$, and $\bot$ denotes the empty frontier whose
-positions are all zero.  $D$ denotes the durable vector, where $D[i]$ is
-the largest log position of shard $i$ that is known to be durable;
-each $D[i]$ advances monotonically.
+Ayame is a logging method that integrates durable write-ahead logging
+into SSN while avoiding the three problems of P-WAL identified in
+Section~\ref{sec:background}.  It combines three techniques.
+First, it reuses the commit timestamp that SSN already assigns as the
+logical log sequence number, eliminating the separate WAL-side global
+counter (addresses \textbf{P1}).  Second, it splits commit processing
+into worker, flusher, and committer roles so that worker threads never
+block on \texttt{fdatasync} or durable waiting (addresses \textbf{P2}).
+Third, it acknowledges a transaction using a \emph{dependency-closed
+durable frontier} instead of a global durable prefix, so that a
+transaction waits only for the log records it actually depends on
+(addresses \textbf{P3}).
 
-Ayame consists of worker-side functions that collect dependencies
-during execution (Algorithm~\ref{alg:ayame-dep}), a worker-side commit
-function that appends the log record and publishes the closed frontier
-(Algorithm~\ref{alg:ayame-commit}), and committer-side functions that
-return durable acknowledgments (Algorithm~\ref{alg:ayame-ack}).
+We use the following notation.  A frontier $F$ is a vector of per-shard
+log positions.  $F \fjoin F'$ denotes the element-wise maximum,
+$F \le F'$ holds iff $F[i] \le F'[i]$ for every shard $i$, and $\bot$
+denotes the empty frontier whose positions are all zero.  $D$ denotes
+the durable vector, where $D[i]$ is the largest log position of shard
+$i$ that is known to be durable; each $D[i]$ advances monotonically.
+
+\subsection{Commit Timestamp as Logical LSN}
+\label{sec:cstamp}
+
+In SSN, a committing transaction $T$ is assigned a commit timestamp
+$T.c$ that fixes its position in the serialization order.  A separate
+WAL-side global LSN, as used by P-WAL, would redundantly re-encode the
+same logical order and add a second global-counter access to every
+commit.  Ayame instead reuses $T.c$ directly as the logical LSN that
+orders recovery replay.  No WAL-side global sequence number is
+allocated; in our evaluation the per-transaction WAL-side global-counter
+access drops to zero.
+
+Removing the global \emph{logical} LSN does not remove physical log
+addressing.  Each WAL shard keeps a local position (a per-shard
+sequence number and byte offset) that locates a record within its log
+file.  What Ayame eliminates is the duplicated global ordering counter,
+not the per-shard physical position.
+
+\subsection{Worker, Flusher, and Committer Separation}
+\label{sec:pipeline}
+
+Ayame divides commit processing into three roles.  A \emph{worker}
+executes the transaction, validates it with SSN, assigns the commit
+timestamp, appends the log record to its own WAL shard, publishes
+durability metadata, and registers a durable-acknowledgment request.
+The worker then returns to its next transaction; it never calls
+\texttt{fdatasync} and never waits for durability.  A \emph{flusher}
+owns one WAL shard, batches the queued records, writes them, calls
+\texttt{fdatasync}, and advances the shard's durable position.  A
+\emph{committer} returns durable acknowledgments to clients once the
+durable condition of a registered transaction is met.  Because the
+worker is decoupled from storage synchronization, the concurrency of
+the SSN engine is preserved even while logging is on the critical path.
+Accordingly, we report throughput as the number of durable
+acknowledgments returned to clients, not the number of logical commits.
+
+Algorithm~\ref{alg:ayame-commit} shows the worker-side commit protocol.
+The commit timestamp assigned for SSN validation doubles as the logical
+LSN (line~\ref{ln:cstamp}).  After validation, the worker enqueues the
+record to its shard without flushing or waiting
+(line~\ref{ln:enqueue}).  It then forms the closed frontier $F$ by
+extending its dependency frontier $T.\dep$ with its own log position
+(line~\ref{ln:closed}), publishes $F$ to the versions it wrote and read
+(lines~\ref{ln:pub-w} and~\ref{ln:pub-r}), and registers $F$ for
+durable acknowledgment (line~\ref{ln:register}) before returning a
+logical commit.
 
 \begin{algorithm}[t]
-\caption{\bfseries Worker-Side Dependency Collection (Ayame)}
+\caption{\bfseries Worker-Side Commit Protocol (Ayame)}
+\label{alg:ayame-commit}
+\begin{algorithmic}[1]
+\Function{Commit}{$T$}
+    \State $T.c \gets$ commit timestamp assigned by SSN
+           \label{ln:cstamp}
+           \Comment{logical LSN}
+    \If{\Call{SsnValidate}{$T$} fails}
+        \State abort $T$; \Return
+    \EndIf
+    \If{$T$'s write set is empty} \Comment{read-only}
+        \State \Call{Register}{$T.\dep, T$}; \Return
+               \label{ln:ro-register}
+               \Comment{Algorithm~\ref{alg:ayame-ack}}
+    \EndIf
+    \State $s \gets$ WAL shard assigned to this worker
+    \State $r \gets$ \Call{BuildRecord}{$T.c, T.\dep, T.\mathit{write\_set}$}
+    \State $T.\lseq \gets$ \Call{Enqueue}{$\mathit{wal}[s], r$}
+           \label{ln:enqueue}
+           \Comment{append only; no flush, no wait}
+    \State $F \gets T.\dep$; \quad $F[s] \gets \max(F[s], T.\lseq)$
+           \label{ln:closed}
+           \Comment{closed frontier}
+    \ForAll{versions $v$ created by $T$}
+        \State $v.\wfr \gets F$ \label{ln:pub-w}
+    \EndFor
+    \ForAll{versions $v$ read by $T$}
+        \State $v.\rfr \gets v.\rfr \fjoin F$ \label{ln:pub-r}
+               \Comment{monotone merge}
+    \EndFor
+    \State \Call{Register}{$F, T$}
+           \label{ln:register}
+           \Comment{durable ack deferred to the committer}
+    \State \Return logical commit
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+The flusher does not require an algorithm of its own.  Each flusher owns
+one WAL shard, repeatedly collects the records queued by workers, writes
+them as a single batch, calls \texttt{fdatasync} once for the batch, and
+then advances the shard's durable position by invoking
+\textsc{OnDurableAdvance} (Algorithm~\ref{alg:ayame-ack}).  Batching many
+records per \texttt{fdatasync} is what raises the number of commits made
+durable per synchronization and reduces flush pressure relative to
+P-WAL's per-transaction synchronization.
+
+\subsection{Dependency-Closed Durable Acknowledgment}
+\label{sec:depack}
+
+The remaining question is when a logically committed transaction may be
+acknowledged as durable.  Ayame answers this with a frontier attached to
+each version.  A version carries a \emph{write frontier} $\wfr$, the
+closed frontier of the transaction that created it, and a \emph{read
+frontier} $\rfr$, which conservatively accumulates the closed frontiers
+of read-write transactions that read it.  During execution, a
+transaction accumulates these frontiers into its dependency frontier
+$T.\dep$, as shown in Algorithm~\ref{alg:ayame-dep}: reading a version
+makes $T$ depend on the writer of that version
+(line~\ref{ln:dep-read}), and overwriting a version makes $T$
+additionally depend on the readers of the overwritten version
+(line~\ref{ln:dep-write}).  Transactions known to be read-only skip
+collection entirely and take the snapshot-isolation fast path.
+
+\begin{algorithm}[t]
+\caption{\bfseries Dependency Collection (Ayame)}
 \label{alg:ayame-dep}
 \begin{algorithmic}[1]
 \Function{Begin}{$T$}
@@ -40,47 +159,28 @@ return durable acknowledgments (Algorithm~\ref{alg:ayame-ack}).
 \end{algorithmic}
 \end{algorithm}
 
-\begin{algorithm}[t]
-\caption{\bfseries Worker-Side Commit Protocol (Ayame)}
-\label{alg:ayame-commit}
-\begin{algorithmic}[1]
-\Function{Commit}{$T$}
-    \State $T.c \gets$ commit timestamp assigned by SSN
-           \label{ln:cstamp}
-           \Comment{logical LSN}
-    \If{\Call{SsnValidate}{$T$} fails}
-        \State abort $T$; \Return
-    \EndIf
-    \If{$T$'s write set is empty} \Comment{read-only}
-        \State \Call{Register}{$T.\dep, T$}; \Return
-               \label{ln:ro-register}
-               \Comment{Algorithm~\ref{alg:ayame-ack}}
-    \EndIf
-    \State $s \gets$ WAL shard owned by this worker
-    \State $r \gets$ \Call{BuildRecord}{$T.c, T.\dep, T.\mathit{write\_set}$}
-    \State $T.\lseq \gets$ \Call{Enqueue}{$\mathit{wal}[s], r$}
-           \label{ln:enqueue}
-           \Comment{append only; no flush, no wait}
-    \State $F \gets T.\dep$; \quad $F[s] \gets \max(F[s], T.\lseq)$
-           \label{ln:closed}
-           \Comment{closed frontier}
-    \ForAll{versions $v$ created by $T$}
-        \State $v.\wfr \gets F$ \label{ln:pub-w}
-    \EndFor
-    \ForAll{versions $v$ read by $T$}
-        \State $v.\rfr \gets v.\rfr \fjoin F$ \label{ln:pub-r}
-               \Comment{monotone merge}
-    \EndFor
-    \State \Call{Register}{$F, T$}
-           \label{ln:register}
-           \Comment{durable ack deferred to the committer}
-    \State \Return logical commit
-\EndFunction
-\end{algorithmic}
-\end{algorithm}
+At commit, the closed frontier $F$ (line~\ref{ln:closed} of
+Algorithm~\ref{alg:ayame-commit}) extends $T.\dep$ with $T$'s own log
+position.  By induction over the dependency order, $F$ therefore
+contains the log positions of the transitive closure of the read-from
+and overwrite dependencies of $T$.  Publishing $F$ to the versions $T$
+wrote and read lets future transactions inherit it through
+Algorithm~\ref{alg:ayame-dep}.
+
+Algorithm~\ref{alg:ayame-ack} shows the committer side.
+\textsc{Register} parks $T$ on each shard whose durable position has not
+yet reached the requirement of $F$ (line~\ref{ln:park}); if no shard is
+behind, $T$ is acknowledged immediately (line~\ref{ln:dur-check}).
+\textsc{OnDurableAdvance}, invoked by a flusher after \texttt{fdatasync},
+advances the durable position of one shard and wakes the parked
+transactions whose requirement on that shard is now satisfied, releasing
+the acknowledgment once a transaction's last outstanding shard becomes
+durable (line~\ref{ln:ack-ready}).  \textsc{Register} and
+\textsc{OnDurableAdvance} execute under a single lock so that a durable
+advance cannot slip between the durability test and the parking step.
 
 \begin{algorithm}[t]
-\caption{\bfseries Committer-Side Durable Acknowledgment (Ayame)}
+\caption{\bfseries Durable Acknowledgment (Ayame)}
 \label{alg:ayame-ack}
 \begin{algorithmic}[1]
 \Statex \textbf{State:} durable vector $D$; per-shard waitlists $W[i]$
@@ -113,31 +213,10 @@ return durable acknowledgments (Algorithm~\ref{alg:ayame-ack}).
 \end{algorithmic}
 \end{algorithm}
 
-Algorithm~\ref{alg:ayame-dep} accumulates into $T.\dep$ the log
-positions that must be durable before $T$ may be acknowledged: reading
-a version makes $T$ depend on its writer
-(line~\ref{ln:dep-read}), and overwriting a version makes $T$
-additionally depend on the readers of the overwritten version
-(line~\ref{ln:dep-write}).  Transactions known to be read-only skip
-collection entirely.
-
-In Algorithm~\ref{alg:ayame-commit}, the commit timestamp $T.c$ that
-SSN assigns for validation doubles as the logical LSN of the log
-record (line~\ref{ln:cstamp}); Ayame allocates no WAL-side global
-sequence number.  The worker only enqueues the record to its own shard
-(line~\ref{ln:enqueue}) and never calls \texttt{fdatasync} or waits
-for durability.  The closed frontier $F$ extends $T.\dep$ with $T$'s
-own log position (line~\ref{ln:closed}) and is published to the
-versions $T$ wrote and read
-(lines~\ref{ln:pub-w} and~\ref{ln:pub-r}), so that future transactions
-inherit it through Algorithm~\ref{alg:ayame-dep}.
-
-Algorithm~\ref{alg:ayame-ack} acknowledges $T$ once $F \le D$, i.e.,
-once $T$'s own record and every record $T$ depends on are durable.
-A transaction waits only on the shards whose durable position has not
-yet reached its requirement (line~\ref{ln:park}); shards unrelated to
-$T$ never delay its acknowledgment, unlike a global durable prefix.
-Flushers require no algorithm of their own: each flusher owns one WAL
-shard, writes the queued records as a single batch, calls
-\texttt{fdatasync}, and invokes \textsc{OnDurableAdvance} with the new
-durable position.
+The acknowledgment rule is exactly $F \le D$: a transaction is
+acknowledged once its own record and every record it transitively
+depends on are durable.  This is safe because $F$ is dependency-closed,
+so a crash after the acknowledgment cannot expose a state that contains
+$T$ but not the writes $T$ depends on.  It is also less conservative
+than a global durable prefix: a transaction waits only on the shards
+that appear in its frontier, so an unrelated slow shard never delays it.

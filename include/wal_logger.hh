@@ -1103,17 +1103,7 @@ class WalLogger {
           dep_for_ack->nonzeroEntries(shardCount()),
           std::memory_order_relaxed);
     }
-    uint64_t enqueue_ns = 0;
-    if (!worker_wait) {
-      enqueue_ns = nowNs();
-      if (dep_mode) {
-        registerDepAck(log_id, local_seq, *dep_for_ack, enqueue_ns);
-      } else {
-        registerAsyncAck(commit_lsn, enqueue_ns);
-      }
-    } else {
-      enqueue_ns = nowNs();
-    }
+    const uint64_t enqueue_ns = nowNs();
     {
       const uint64_t enqueue_start = nowNs();
       AsyncQueue& q = *async_queues_[log_id];
@@ -1124,6 +1114,16 @@ class WalLogger {
                                       std::memory_order_relaxed);
     }
     async_queues_[log_id]->cv.notify_one();
+    // Register for the durable ack only after the record is enqueued, so the
+    // registration can never observe durable_local_seq_ covering a record
+    // that does not exist in the WAL queue yet (Enqueue -> Register order).
+    if (!worker_wait) {
+      if (dep_mode) {
+        registerDepAck(log_id, local_seq, *dep_for_ack, enqueue_ns);
+      } else {
+        registerAsyncAck(commit_lsn, enqueue_ns);
+      }
+    }
     if (worker_wait) {
       const uint64_t notify_start = nowNs();
       waitForCommit(log_id, commit_lsn);
@@ -1248,9 +1248,13 @@ class WalLogger {
       ++prefix;
     }
     durable_prefix_lsn_.store(prefix, std::memory_order_release);
-    durable_local_seq_[logger_id].store(local_seq, std::memory_order_release);
+    // durable_local_seq_ must be monotone (prefix semantics); guard against
+    // any reordered durable event regressing it.
+    const uint64_t durable_seq = std::max(
+        local_seq, durable_local_seq_[logger_id].load(std::memory_order_relaxed));
+    durable_local_seq_[logger_id].store(durable_seq, std::memory_order_release);
     drainAsyncAcksLocked();
-    drainDepAcksLocked(logger_id, local_seq);
+    drainDepAcksLocked(logger_id, durable_seq);
   }
 
   void drainAsyncAcksLocked() {
@@ -1389,6 +1393,14 @@ class WalLogger {
 
   void asyncFlusherLoop(uint32_t thid) {
     const uint64_t cpu_start = threadCpuNs();
+    // Workers allocate local_seq before pushing to the queue, so entries can
+    // arrive out of local_seq order. durable_local_seq_[i] = d promises that
+    // every seq <= d is durable, so advance it only over the contiguous
+    // flushed prefix; taking the batch max could cover a not-yet-enqueued
+    // record and let its ack be returned before the record is durable.
+    uint64_t next_contig_seq = 1;
+    std::priority_queue<uint64_t, std::vector<uint64_t>, std::greater<uint64_t>>
+        flushed_ahead;
     for (;;) {
       std::vector<AsyncLogEntry> batch;
       {
@@ -1416,7 +1428,6 @@ class WalLogger {
       std::vector<uint64_t> durable_lsns;
       durable_lsns.reserve(batch.size() * 2);
       uint64_t bytes = 0;
-      uint64_t durable_local_seq = 0;
       stats_.flusher_batches.fetch_add(1, std::memory_order_relaxed);
       stats_.flushed_commits.fetch_add(batch.size(), std::memory_order_relaxed);
       const uint64_t write_start = nowNs();
@@ -1424,7 +1435,15 @@ class WalLogger {
         writeAll(worker_fds_[thid], entry.payload);
         bytes += entry.payload.size();
         durable_lsns.insert(durable_lsns.end(), entry.lsns.begin(), entry.lsns.end());
-        durable_local_seq = std::max(durable_local_seq, entry.local_seq);
+        if (entry.local_seq == next_contig_seq) {
+          ++next_contig_seq;
+          while (!flushed_ahead.empty() && flushed_ahead.top() == next_contig_seq) {
+            flushed_ahead.pop();
+            ++next_contig_seq;
+          }
+        } else {
+          flushed_ahead.push(entry.local_seq);
+        }
       }
       stats_.write_ns.fetch_add(nowNs() - write_start, std::memory_order_relaxed);
       stats_.bytes.fetch_add(bytes, std::memory_order_relaxed);
@@ -1439,7 +1458,7 @@ class WalLogger {
         stats_.fdatasync_ns.fetch_add(nowNs() - fsync_start, std::memory_order_relaxed);
         stats_.fdatasync_count.fetch_add(1, std::memory_order_relaxed);
       }
-      enqueueDurableEvent(thid, durable_local_seq, std::move(durable_lsns));
+      enqueueDurableEvent(thid, next_contig_seq - 1, std::move(durable_lsns));
     }
     const uint64_t cpu_end = threadCpuNs();
     if (cpu_end >= cpu_start) {
