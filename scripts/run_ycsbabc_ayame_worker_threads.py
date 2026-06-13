@@ -208,6 +208,7 @@ def run_case(out_dir, workload, mode, repeat, worker, args):
         str(PWAL_YCSB_EXE),
         f"--thread_num={worker}",
         f"--extime={args.seconds}",
+        f"--clocks_per_us={args.clocks_per_us}",
         "--ycsb_tuple_num=100000",
         f"--ycsb_max_ope={preset['ycsb_max_ope']}",
         f"--ycsb_rratio={preset['ycsb_rratio']}",
@@ -639,7 +640,11 @@ def main():
     parser.add_argument("--workloads", default="ycsb_a,ycsb_b,ycsb_c")
     parser.add_argument("--workers", default="1,2,4,8,16,32")
     parser.add_argument("--seconds", type=int, default=5)
-    parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--clocks-per-us", dest="clocks_per_us", type=int, default=1800,
+                        help="TSC rate in MHz for tsc->time conversion; must match the host "
+                             "(Xeon Gold 5418N invariant TSC = 1800 MHz). The binary default "
+                             "(2100) overstates throughput on this host.")
     parser.add_argument("--group-size", type=int, default=16)
     parser.add_argument("--flush-us", type=int, default=50)
     parser.add_argument("--max-pending", type=int, default=65536)

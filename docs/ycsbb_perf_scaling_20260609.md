@@ -1,6 +1,6 @@
 # YCSB-B perf stat worker scaling
 
-date: 2026-06-13T15:01:56
+date: 2026-06-13T17:37:35
 
 `perf stat` was used to collect `task-clock` and `context-switches`.
 CPU cores are computed as `task-clock-ms / elapsed-ms`.
@@ -19,7 +19,7 @@ CPU cores are computed as `task-clock-ms / elapsed-ms`.
 | Ayame max_pending | 65536 |
 
 summary csv: `paper/tables/ycsbb_perf_scaling_20260609.csv`
-raw csv: `results/ycsbb_perf_scaling_20260611_212006/ycsbb_perf_scaling_raw_20260611_212006.csv`
+raw csv: `results/ycsbb_perf_scaling_20260613_173257/ycsbb_perf_scaling_raw_20260613_173257.csv`
 
 ## Figures
 
@@ -32,21 +32,21 @@ raw csv: `results/ycsbb_perf_scaling_20260611_212006/ycsbb_perf_scaling_raw_2026
 
 | system | workers | ack tps | CPU cores | context switches |
 |---|---:|---:|---:|---:|
-| Single WAL | 1 | 27942 | 0.46 | 94694 |
-| Single WAL | 2 | 32264 | 0.58 | 160320 |
-| Single WAL | 4 | 32051 | 0.58 | 159699 |
-| Single WAL | 8 | 32048 | 0.60 | 159757 |
-| Single WAL | 16 | 28915 | 0.75 | 144492 |
-| Single WAL | 32 | 29051 | 1.00 | 145715 |
-| P-WAL | 1 | 28835 | 0.45 | 97439 |
-| P-WAL | 2 | 53738 | 0.88 | 209558 |
-| P-WAL | 4 | 94214 | 1.79 | 398584 |
-| P-WAL | 8 | 160428 | 3.84 | 727988 |
-| P-WAL | 16 | 208906 | 8.72 | 1078449 |
-| P-WAL | 32 | 245453 | 17.99 | 1448247 |
-| Ayame | 1 | 121326 | 1.59 | 185827 |
-| Ayame | 2 | 198496 | 2.92 | 198256 |
-| Ayame | 4 | 324530 | 5.51 | 182321 |
-| Ayame | 8 | 434886 | 10.53 | 528245 |
-| Ayame | 16 | 505032 | 19.72 | 1267782 |
-| Ayame | 32 | 573000 | 32.06 | 3283394 |
+| Single WAL | 1 | 23606 | 0.60 | 99173 |
+| Single WAL | 2 | 27678 | 0.64 | 171495 |
+| Single WAL | 4 | 26953 | 0.64 | 166854 |
+| Single WAL | 8 | 27184 | 0.68 | 169416 |
+| Single WAL | 16 | 24294 | 0.82 | 150998 |
+| Single WAL | 32 | 24527 | 1.01 | 152950 |
+| P-WAL | 1 | 24388 | 0.54 | 102351 |
+| P-WAL | 2 | 44193 | 0.89 | 215631 |
+| P-WAL | 4 | 78930 | 1.64 | 419543 |
+| P-WAL | 8 | 124633 | 3.12 | 727773 |
+| P-WAL | 16 | 163130 | 6.87 | 1090971 |
+| P-WAL | 32 | 194634 | 14.38 | 1464114 |
+| Ayame | 1 | 95804 | 1.43 | 191936 |
+| Ayame | 2 | 139484 | 2.49 | 202422 |
+| Ayame | 4 | 244655 | 4.57 | 189397 |
+| Ayame | 8 | 353118 | 8.61 | 517611 |
+| Ayame | 16 | 407646 | 15.97 | 1331543 |
+| Ayame | 32 | 463621 | 25.77 | 3495385 |

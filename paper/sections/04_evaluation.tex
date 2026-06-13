@@ -135,13 +135,13 @@ durable commits.
 
 We evaluate Ayame using the worker-thread sweep of
 Table~\ref{tab:params}.  At 32 worker threads on YCSB-A, Single
-WAL achieves 10K durable acknowledgments per second and P-WAL achieves 66K,
-whereas Ayame achieves 309K durable acknowledgments per second.  On YCSB-B,
-Single WAL achieves 29K and P-WAL achieves 243K, whereas Ayame achieves 579K
+WAL achieves 9K durable acknowledgments per second and P-WAL achieves 54K,
+whereas Ayame achieves 253K durable acknowledgments per second.  On YCSB-B,
+Single WAL achieves 24K and P-WAL achieves 195K, whereas Ayame achieves 470K
 durable acknowledgments per second.  These results correspond to 4.7$\times$
 and 2.4$\times$ improvements over P-WAL on YCSB-A and YCSB-B, respectively.
 Ayame also keeps the number of pending durable commits small at 32 worker
-threads: 145 pending commits on YCSB-A and 66 pending commits on YCSB-B.
+threads: 201 pending commits on YCSB-A and 68 pending commits on YCSB-B.
 
 Figure~\ref{fig:ycsbabc-worker-throughput} shows the worker-thread comparison.
 The results show that Ayame improves update and mixed read-write workloads,

@@ -76,6 +76,7 @@ def ycsb_cmd(worker, seconds):
         str(PWAL_YCSB_EXE),
         f"--thread_num={worker}",
         f"--extime={seconds}",
+        "--clocks_per_us=1800",  # host Xeon Gold 5418N invariant TSC; binary default 2100 is wrong here
         "--ycsb_tuple_num=100000",
         f"--ycsb_max_ope={preset['ycsb_max_ope']}",
         f"--ycsb_rratio={preset['ycsb_rratio']}",

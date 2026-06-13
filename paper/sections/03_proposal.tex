@@ -133,16 +133,22 @@ P-WAL's per-transaction synchronization.
 The remaining question is when a logically committed transaction may be
 acknowledged as durable.  Ayame answers this with a frontier attached to
 each version.  A version carries a \emph{write frontier} $\wfr$, the
-closed frontier of the transaction that created it, and a \emph{read
-frontier} $\rfr$, which conservatively accumulates the closed frontiers
-of read-write transactions that read it.  During execution, a
-transaction accumulates these frontiers into its dependency frontier
-$T.\dep$, as shown in Algorithm~\ref{alg:ayame-dep}: reading a version
-makes $T$ depend on the writer of that version
-(line~\ref{ln:dep-read}), and overwriting a version makes $T$
-additionally depend on the readers of the overwritten version
-(line~\ref{ln:dep-write}).  Transactions known to be read-only skip
-collection entirely and take the snapshot-isolation fast path.
+closed frontier of the transaction that created it.  A writer publishes
+$\wfr$ before its version becomes visible, so any transaction that later
+reads or overwrites the version observes the complete write frontier of
+its producer.  During execution, a transaction joins these write
+frontiers into its dependency frontier $T.\dep$, as shown in
+Algorithm~\ref{alg:ayame-dep}: reading a version makes $T$ depend on the
+writer of that version (line~\ref{ln:dep-read}), and overwriting a
+version makes $T$ depend on the writer of the version it supersedes
+(line~\ref{ln:dep-write}).  A version also carries a \emph{read frontier}
+$\rfr$, into which readers monotonically merge their closed frontiers;
+\textsc{OverwriteVersion} additionally joins $\rfr$ so that an overwriter
+conservatively tracks the readers of the version it supersedes.  As
+discussed below, this last term is an anti-dependency over-approximation
+that the safety argument does not rely on.  Transactions known to be
+read-only skip collection entirely and take the snapshot-isolation fast
+path.
 
 \begin{algorithm}[t]
 \caption{\bfseries Dependency Collection (Ayame)}
@@ -174,7 +180,8 @@ At commit, the closed frontier $F$ (line~\ref{ln:closed} of
 Algorithm~\ref{alg:ayame-commit}) extends $T.\dep$ with $T$'s own log
 position.  By induction over the dependency order, $F$ therefore
 contains the log positions of the transitive closure of the read-from
-and overwrite dependencies of $T$.  Publishing $F$ to the versions $T$
+and version-order (write-write) dependencies of $T$, all of which are
+recorded through write frontiers.  Publishing $F$ to the versions $T$
 wrote and read lets future transactions inherit it through
 Algorithm~\ref{alg:ayame-dep}.
 
@@ -230,8 +237,11 @@ depends on are durable.  We now make the safety of this rule precise.
 For a committed update transaction $U$, let $s_U$ and $U.\lseq$ be the
 shard and position of its log record, so its published closed frontier
 $F_U$ satisfies $F_U[s_U] \ge U.\lseq$.  Let $\mathrm{cl}(T)$ be the set
-of update transactions reachable from $T$ through read-from and
-overwrite dependencies, including $T$ itself.
+of update transactions reachable from $T$ through read-from dependencies
+($T$ reads a version written by $U$) and version-order dependencies ($T$
+overwrites a version written by $U$), including $T$ itself.  Both kinds
+of dependency are recorded by joining the relevant version's write
+frontier, which its writer publishes before the version becomes visible.
 
 \begin{lemma}[Dependency-closed durability]
 \label{lem:closure}
@@ -240,16 +250,17 @@ $U \in \mathrm{cl}(T)$ the WAL record of $U$ is durable.
 \end{lemma}
 
 \begin{proof}[Proof sketch]
-Dependency collection (Algorithm~\ref{alg:ayame-dep}) joins each
-accessed version's published frontier into $T.\dep$, and the commit
-protocol sets $F = T.\dep$ with $F[s_T] \ge T.\lseq$
-(line~\ref{ln:closed}).  Because every published $v.\wfr$ and $v.\rfr$
-is itself a closed frontier, an induction over the dependency order
-gives $F \ge F_U$, hence $F[s_U] \ge F_U[s_U] \ge U.\lseq$, for every
-$U \in \mathrm{cl}(T)$.  \textsc{Ack}$(T)$ is invoked only when
-$F \le D$ (Algorithm~\ref{alg:ayame-ack}), so $D[s_U] \ge U.\lseq$.
-Since $D[i]$ is a durable prefix of shard $i$, the record of $U$ is
-durable.
+Dependency collection (Algorithm~\ref{alg:ayame-dep}) joins the write
+frontier of each version $T$ reads or overwrites into $T.\dep$, and the
+commit protocol sets $F = T.\dep$ with $F[s_T] \ge T.\lseq$
+(line~\ref{ln:closed}).  A writer publishes its write frontier before
+its version becomes visible, so $T$ observes the complete frontier
+$F_U$ of every $U$ it directly depends on; since each $F_U$ is itself
+closed, induction over the dependency order gives $F \ge F_U$, hence
+$F[s_U] \ge F_U[s_U] \ge U.\lseq$, for every $U \in \mathrm{cl}(T)$.
+\textsc{Ack}$(T)$ is invoked only when $F \le D$
+(Algorithm~\ref{alg:ayame-ack}), so $D[s_U] \ge U.\lseq$.  Since $D[i]$
+is a durable prefix of shard $i$, the record of $U$ is durable.
 \end{proof}
 
 \begin{theorem}[Recoverable acknowledgment]
@@ -269,6 +280,18 @@ order installs every such $U$ before $T$.  Hence whenever $T$'s effects
 are installed, the effects of all $U \in \mathrm{cl}(T)$ are already
 present.
 \end{proof}
+
+The lemma and theorem rest only on write frontiers, which are published
+before a version is visible and are therefore observed completely by
+every reader and overwriter.  The read-frontier term that
+\textsc{OverwriteVersion} joins (the $\rfr$ of an overwritten version)
+makes acknowledgment additionally wait for the readers of that version,
+an anti-dependency.  This term is a conservative over-approximation: it
+can only delay an acknowledgment, never release one early, and the
+safety argument above does not use it.  Because readers publish $\rfr$
+concurrently with overwriters, it is a best-effort addition rather than
+a guaranteed bound, which is why we keep the proof over write frontiers
+alone.
 
 The rule is also less conservative than a global durable prefix: a
 transaction waits only on the shards that appear in its frontier, so an
