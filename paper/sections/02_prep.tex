@@ -10,26 +10,6 @@
 \subsection{Logging}
 \subsubsection{P-WAL}
 
-P-WAL~\cite{kamiya2017pwal} removes the single insertion point of a
-shared write-ahead log by giving each worker thread its own log stream.
-Algorithm~\ref{alg:pwal} shows the commit procedure.  A transaction first obtains its log
-sequence numbers from a single monotonically increasing global counter
-$L$ (lines~\ref{ln:pwal-rec} and~\ref{ln:pwal-clsn}); these numbers
-define the global order in which records must be replayed during
-recovery.  The worker then appends its redo records and a commit record
-to its own stream, writes the stream, and makes it durable with
-\texttt{fdatasync} (line~\ref{ln:pwal-sync}).  Because streams are
-private, the writes of different workers proceed in parallel and never
-contend on a shared log latch.
-
-Acknowledgment, however, is governed by the \emph{global durable
-prefix} $P$, defined as the largest $\ell$ such that every record whose
-LSN is at most $\ell$ is durable.  A transaction $T$ may be acknowledged
-only once $P$ reaches $T$'s commit LSN
-(line~\ref{ln:pwal-wait}), which guarantees that every record ordered
-before $T$ --- including records written by \emph{other} workers on
-\emph{other} streams --- is already durable.
-
 \begin{algorithm}[t]
 \caption{\bfseries Per-Thread WAL Commit (P-WAL)}
 \label{alg:pwal}
@@ -41,21 +21,17 @@ before $T$ --- including records written by \emph{other} workers on
     \For{each write $e \in T.\mathit{write\_set}$}
         \State append $\langle \textsc{FetchInc}(L),\, e \rangle$ to
                $\mathit{stream}[w]$
-               \label{ln:pwal-rec}
                \Comment{global counter}
     \EndFor
     \State $T.\ell \gets \textsc{FetchInc}(L)$
-           \label{ln:pwal-clsn}
            \Comment{commit LSN, global counter}
     \State append commit record $\langle T.\ell \rangle$ to
            $\mathit{stream}[w]$
     \State \Call{Write}{$\mathit{stream}[w]$};
            \Call{Fdatasync}{$\mathit{stream}[w]$}
-           \label{ln:pwal-sync}
            \Comment{worker blocks on storage}
     \State \Call{AdvanceDurablePrefix}{} \Comment{recompute $P$}
     \While{$P < T.\ell$}
-           \label{ln:pwal-wait}
            \Comment{global-prefix acknowledgment}
         \State \Call{AdvanceDurablePrefix}{}
     \EndWhile
@@ -63,6 +39,7 @@ before $T$ --- including records written by \emph{other} workers on
 \EndFunction
 \end{algorithmic}
 \end{algorithm}
+
 
 % Problem of P-WAL
 P-WAL is attractive because it removes the single-WAL insertion bottleneck by assigning transactions to multiple log streams.  However, combining P-WAL with SSN exposes three

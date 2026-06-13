@@ -144,8 +144,8 @@ Ayame also keeps the number of pending durable commits small at 32 worker
 threads: 145 pending commits on YCSB-A and 66 pending commits on YCSB-B.
 
 Figure~\ref{fig:ycsbabc-worker-throughput} shows the worker-thread comparison.
-The results show that Ayame improves update and mixed read-write workloads
-where durable logging remains on the critical path.  We also evaluate YCSB-C,
+The results show that Ayame improves update and mixed read-write workloads,
+where durable logging is still required on every update commit.  We also evaluate YCSB-C,
 where all transactions are read-only and WAL records are skipped.  In this case,
 durability work largely disappears; after using the same binary and a read-only
 empty-frontier fast path, Single WAL, P-WAL, and Ayame perform similarly at 32

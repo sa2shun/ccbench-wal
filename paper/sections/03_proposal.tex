@@ -52,10 +52,12 @@ owns one WAL shard, batches the queued records, writes them, calls
 \texttt{fdatasync}, and advances the shard's durable position.  A
 \emph{committer} returns durable acknowledgments to clients once the
 durable condition of a registered transaction is met.  Because the
-worker is decoupled from storage synchronization, the concurrency of
-the SSN engine is preserved even while logging is on the critical path.
-Accordingly, we report throughput as the number of durable
-acknowledgments returned to clients, not the number of logical commits.
+worker never calls \texttt{fdatasync} or waits for durability, it keeps
+executing transactions at full concurrency even though every update
+commit must still be made durable; the cost of making the log durable
+is paid by the flusher and committer, not by the worker.  Accordingly,
+we report throughput as the number of durable acknowledgments returned
+to clients, not the number of logical commits.
 
 Algorithm~\ref{alg:ayame-commit} shows the worker-side commit protocol.
 The commit timestamp assigned for SSN validation doubles as the logical

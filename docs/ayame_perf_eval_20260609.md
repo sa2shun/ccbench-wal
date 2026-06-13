@@ -1,6 +1,6 @@
 # Ayame perf evaluation
 
-date: 2026-06-11T21:19:58
+date: 2026-06-13T15:01:55
 
 This perf run uses only the three paper systems: Single WAL, P-WAL, and Ayame.
 It is internal analysis, not a component ablation.
