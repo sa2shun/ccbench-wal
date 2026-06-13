@@ -14,26 +14,27 @@
 \caption{\bfseries Per-Thread WAL Commit (P-WAL)}
 \label{alg:pwal}
 \begin{algorithmic}[1]
-\State \textbf{Shared:} global LSN counter $L$; durable prefix $P$,
-       the largest $\ell$ such that every record with $\mathrm{LSN}\le\ell$
-       is durable
+\State \textbf{Shared:} global LSN counter $L$; per-stream durable LSN
+       $f[i]$; global durable prefix $P = \min_i f[i]$
 \Function{PwalCommit}{$T$, worker $w$}
-    \For{each write $e \in T.\mathit{write\_set}$}
-        \State append $\langle \textsc{FetchInc}(L),\, e \rangle$ to
-               $\mathit{stream}[w]$
-               \Comment{global counter}
+    \State $\mathit{records} \gets$ \Call{BuildLogRecords}{$T$}
+           \Comment{writes and commit record}
+    \ForAll{$r \in \mathit{records}$}
+        \State $r.\mathit{lsn} \gets$ \Call{FetchInc}{$L$}
+               \Comment{global LSN allocation}
+        \State \Call{Append}{$\mathit{stream}[w],\, r$}
+               \Comment{worker-private WAL stream}
     \EndFor
-    \State $T.\ell \gets \textsc{FetchInc}(L)$
-           \Comment{commit LSN, global counter}
-    \State append commit record $\langle T.\ell \rangle$ to
-           $\mathit{stream}[w]$
+    \State $T.\ell \gets \max \{\, r.\mathit{lsn} \mid r \in \mathit{records} \,\}$
+           \Comment{commit LSN}
     \State \Call{Write}{$\mathit{stream}[w]$};
            \Call{Fdatasync}{$\mathit{stream}[w]$}
-           \Comment{worker blocks on storage}
-    \State \Call{AdvanceDurablePrefix}{} \Comment{recompute $P$}
+           \Comment{worker waits for persistence}
+    \State $f[w] \gets \max(f[w],\, T.\ell)$
+    \State $P \gets \min_i f[i]$
+           \Comment{global durable prefix}
     \While{$P < T.\ell$}
-           \Comment{global-prefix acknowledgment}
-        \State \Call{AdvanceDurablePrefix}{}
+        \State $P \gets \min_i f[i]$
     \EndWhile
     \State \Call{Acknowledge}{$T$}
 \EndFunction
