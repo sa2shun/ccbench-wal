@@ -32,6 +32,14 @@ read-only it produces no WAL record, and Ayame additionally takes a
 read-only snapshot-isolation fast path that skips durability-frontier
 collection.
 
+Following the worker/flusher/committer separation of
+Section~\ref{sec:design}, Ayame offloads durability to background
+threads: it uses 1, 1, 1, 2, 4, and 7 flusher threads for 1, 2, 4, 8,
+16, and 32 worker threads, respectively, and one committer thread in all
+configurations.  The x-axis of our worker-scaling experiments is the
+number of transaction worker threads; at 32 workers Ayame therefore runs
+40 active threads (32 workers, 7 flushers, and one committer).
+
 \subsection{Experimental Configuration}
 \label{sec:config}
 
@@ -74,45 +82,15 @@ values, and keys were drawn from a uniform distribution.
        & key distribution & uniform \\
     \hline
     TX & \#operations & 10 \\
-       & read ratio (YCSB-A/B/C) & 50/95/100\,\% \\
+       & read ratio & 50 / 95 / 100\,\% \\
     \hline
     Run & worker threads & 1,2,4,8,16,32 \\
         & measurement time & 5\,s \\
         & repeats & 5 \\
     \hline
-    Ayame & group size & 16 \\
+    Ayame & flush group size [commits] & 16 \\
           & flush interval & 50\,$\mu$s \\
           & max pending acks & 65{,}536 \\
-    \hline
-  \end{tabular}
-\end{table}
-
-\subsubsection{Systems Compared and Threads}
-\label{sec:systems}
-
-The x-axis of every throughput figure is the number of transaction
-\emph{worker} threads.  Single WAL and P-WAL use only worker threads.
-Ayame additionally runs background flusher and committer threads, so we
-also report its total active thread count.  Table~\ref{tab:ayame-threads}
-lists the worker-to-flusher/committer mapping used for Ayame; for
-example, at 32 worker threads Ayame uses 7 flusher threads and one
-committer thread, for 40 active threads.
-
-\begin{table}[tb]
-  \centering
-  \caption{Ayame background-thread mapping.}
-  \label{tab:ayame-threads}
-  \small
-  \begin{tabular}{rrrr}
-    \hline
-    Worker & Flusher & Committer & Total active \\
-    \hline
-    1  & 1 & 1 & 3 \\
-    2  & 1 & 1 & 4 \\
-    4  & 1 & 1 & 6 \\
-    8  & 2 & 1 & 11 \\
-    16 & 4 & 1 & 21 \\
-    32 & 7 & 1 & 40 \\
     \hline
   \end{tabular}
 \end{table}
@@ -157,9 +135,9 @@ empty-frontier fast path, Single WAL, P-WAL, and Ayame perform similarly at 32
 worker threads.  We therefore use YCSB-C as a sanity check for read-only
 bookkeeping overhead rather than as evidence of WAL persistence performance.
 
-\begin{figure}[!tbp]
+\begin{figure*}[!tbp]
   \centering
-  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbabc_worker_threads_throughput.pdf}
+  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_throughput.pdf}
   \caption{
   Durable-acknowledgment throughput by transaction worker threads.
   Ayame improves update and mixed read-write workloads by combining parallel
@@ -167,7 +145,7 @@ bookkeeping overhead rather than as evidence of WAL persistence performance.
   logical ordering.
   }
   \label{fig:ycsbabc-worker-throughput}
-\end{figure}
+\end{figure*}
 
 Ayame's timestamp integration is primarily a design simplification: it removes
 duplicated logical ordering between concurrency control and WAL durability by
@@ -176,32 +154,32 @@ on timestamp integration alone as a direct throughput optimization; the main
 performance effect comes from parallel logging, dependency-closed durable
 acknowledgment, and separating workers from durable-wait processing.
 
-\begin{figure}[!tbp]
+\begin{figure*}[!tbp]
   \centering
-  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbabc_worker_threads_latency.pdf}
+  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_latency.pdf}
   \caption{
   P99 durable-acknowledgment latency by transaction worker threads.
   }
   \label{fig:ycsbabc-worker-latency}
-\end{figure}
+\end{figure*}
 
-\begin{figure}[!tbp]
+\begin{figure*}[!tbp]
   \centering
-  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbabc_worker_threads_pending.pdf}
+  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_pending.pdf}
   \caption{
   Pending durable commits by transaction worker threads.
   }
   \label{fig:ycsbabc-worker-pending}
-\end{figure}
+\end{figure*}
 
-\begin{figure}[!tbp]
+\begin{figure*}[!tbp]
   \centering
-  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbabc_worker_threads_ayame_speedup_vs_pwal.pdf}
+  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_ayame_speedup_vs_pwal.pdf}
   \caption{
   Ayame throughput relative to P-WAL by transaction worker threads.
   }
   \label{fig:ycsbabc-worker-speedup}
-\end{figure}
+\end{figure*}
 
 Table~\ref{tab:ycsbabc-32worker-summary} summarizes the main 32-worker
 end-to-end results used in the figures.  Table~\ref{tab:ayame-speedup-32worker}
@@ -210,6 +188,60 @@ extracts the Ayame-vs-P-WAL speedups from the same measurements.
 \input{tables/table_ycsbabc_32worker_summary}
 
 \input{tables/table_ayame_speedup_32worker}
+
+\subsection{Why Dependency-Closed Acknowledgment Helps}
+\label{sec:why-dep}
+
+The results above reflect several mechanisms at once.  To isolate the
+contribution of the dependency-closed acknowledgment rule
+(\textbf{A3}) from batching and from the synchronous-versus-asynchronous
+distinction, we run an ablation in which both variants use the
+\emph{same} asynchronous pipeline---identical per-shard flushers and one
+committer---and differ only in the acknowledgment condition.  One variant
+acknowledges a transaction once the global durable prefix passes its LSN
+(the global-prefix rule used by P-WAL); the other acknowledges once the
+shard positions in the transaction's dependency frontier are durable
+(Ayame's rule).
+
+Figure~\ref{fig:ack-policy-ablation} and Table~\ref{tab:ack-policy}
+report the result.  With only one or two flusher threads (4 and 8
+workers) both rules saturate the backpressure bound, because the pipeline
+itself cannot drain.  Once enough flusher threads are provisioned (16 and
+32 workers), the dependency-frontier rule drains the backlog and keeps
+the pending count and tail latency low, whereas the global-prefix rule
+stays saturated at every worker count.  At 32 workers on YCSB-A the
+global-prefix rule holds about 65{,}000 pending commits with a 131\,ms
+p99 acknowledgment latency, while the dependency-frontier rule holds
+about 800 pending commits with a 2\,ms p99---about two orders of
+magnitude lower on both metrics, at comparable throughput.
+
+The cause is the over-waiting of the global prefix described in
+Section~\ref{sec:background}.  The global durable prefix advances only as
+fast as the momentarily slowest shard, so with several shards there is
+almost always one shard holding the prefix back and the backlog never
+drains.  No injected straggler is required; the natural variation in
+flush timing across shards is enough.  The dependency-frontier rule
+acknowledges a transaction as soon as the specific shards in its frontier
+are durable, so an unrelated lagging shard does not delay it.  This is
+the concrete benefit of dependency-closed acknowledgment.
+
+\begin{figure*}[!tbp]
+  \centering
+  \includegraphics[width=\linewidth]{figures/fig_ack_policy_ablation.pdf}
+  \caption{
+  Acknowledgment-policy ablation.  Both variants use the same asynchronous
+  WAL pipeline and differ only in the acknowledgment condition.  The
+  global-prefix rule keeps the pending count and p99 acknowledgment
+  latency saturated, while the dependency-frontier rule drains them once
+  enough flusher threads are provisioned.
+  }
+  \label{fig:ack-policy-ablation}
+\end{figure*}
+
+\input{tables/table_ack_policy_ablation}
+
+\subsection{Hardware Counters and Overhead}
+\label{sec:overhead}
 
 Table~\ref{tab:perf-stat-32worker} summarizes the 32-worker perf-stat analysis.
 Table~\ref{tab:ycsbb-perf-scaling} shows the worker-scaling perf-stat data for
@@ -246,14 +278,14 @@ YCSB-B, where Ayame's throughput improvement is most visible.
   \label{fig:ycsbb-perf-scaling-context-switches}
 \end{figure}
 
-\begin{figure}[!tbp]
+\begin{figure*}[!tbp]
   \centering
-  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbb_perf_scaling_perf_stat.pdf}
+  \includegraphics[width=\linewidth]{figures/fig_ycsbb_perf_scaling_perf_stat.pdf}
   \caption{
   Perf-stat summary for YCSB-B worker scaling.
   }
   \label{fig:ycsbb-perf-scaling-perf-stat}
-\end{figure}
+\end{figure*}
 
 Finally, Table~\ref{tab:ycsbc-perf-top} reports the top self-time symbols for
 YCSB-C.  Since YCSB-C is read-only, this table is used as a sanity check that
@@ -261,11 +293,11 @@ the remaining cost is read-path bookkeeping rather than WAL persistence.
 
 \input{tables/table_ycsbc_perf_top}
 
-\begin{figure}[!tbp]
+\begin{figure*}[!tbp]
   \centering
-  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbc_perf_top_symbols_horizontal.pdf}
+  \includegraphics[width=\linewidth]{figures/fig_ycsbc_perf_top_symbols_horizontal.pdf}
   \caption{
   Top self-time symbols for YCSB-C at 32 transaction worker threads.
   }
   \label{fig:ycsbc-perf-top-symbols}
-\end{figure}
+\end{figure*}

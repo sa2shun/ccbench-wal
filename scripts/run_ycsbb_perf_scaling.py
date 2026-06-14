@@ -215,9 +215,14 @@ def setup_style():
     sns.set_theme(
         context="paper",
         style="whitegrid",
-        font_scale=1.15,
+        font_scale=1.5,
         rc={
             "font.family": "DejaVu Sans",
+            "axes.labelsize": 15,
+            "axes.titlesize": 16,
+            "xtick.labelsize": 13,
+            "ytick.labelsize": 13,
+            "legend.fontsize": 14,
             "axes.edgecolor": "#d1d5db",
             "axes.linewidth": 0.9,
             "grid.color": "#e5e7eb",
@@ -234,7 +239,7 @@ def draw_metric(rows, metric, ylabel, output, title):
     df = pd.DataFrame(rows)
     df["system"] = pd.Categorical(df["system"], SYSTEM_ORDER, ordered=True)
     workers = sorted(df["worker_threads"].unique())
-    fig, ax = plt.subplots(figsize=(6.8, 4.1), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(4.7, 3.6), constrained_layout=True)
     for system in SYSTEM_ORDER:
         sub = df[df["system"] == system].sort_values("worker_threads")
         if sub.empty:
@@ -251,7 +256,7 @@ def draw_metric(rows, metric, ylabel, output, title):
             solid_capstyle="round",
             label=system,
         )
-    ax.set_title(title, loc="left", fontsize=12.0, fontweight="bold", pad=10)
+    ax.set_title(title, loc="left", fontsize=16, fontweight="bold", pad=10)
     ax.set_xlabel("Worker threads")
     ax.set_ylabel(ylabel)
     ax.set_xticks(workers)
@@ -293,7 +298,7 @@ def draw_combined(rows, output):
                 solid_capstyle="round",
                 label=system,
             )
-        ax.set_title(title, fontsize=11.5, fontweight="bold")
+        ax.set_title(title, fontsize=16, fontweight="bold")
         ax.set_xlabel("Worker threads")
         ax.set_ylabel(ylabel)
         ax.set_xticks(workers)
@@ -305,7 +310,7 @@ def draw_combined(rows, output):
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, ncols=3, frameon=False, loc="upper right", bbox_to_anchor=(0.99, 1.08))
     fig.text(0.01, 1.03, "YCSB-B perf stat worker-thread scaling", ha="left", va="bottom",
-             fontsize=11.0, color="#374151")
+             fontsize=13, color="#374151")
     fig.savefig(output, bbox_inches="tight")
     plt.close(fig)
 

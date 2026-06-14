@@ -45,7 +45,7 @@ def k_tps(v):
 
 
 def whole(v):
-    return f"{v:.0f}"
+    return f"{v:,.0f}"
 
 
 def one(v):
@@ -56,20 +56,24 @@ def two(v):
     return f"{v:.2f}"
 
 
-def tex_table(path, caption, label, headers, rows, align=None, footnote=None):
+def tex_table(path, caption, label, headers, rows, align=None, footnote=None, wide=False):
     if align is None:
         align = "l" + "r" * (len(headers) - 1)
+    env = "table*" if wide else "table"
     lines = [
-        "\\begin{table}[t]",
+        "\\begin{" + env + "}[t]",
         "  \\centering",
         "  \\caption{" + caption + "}",
         "  \\label{" + label + "}",
         "  \\small",
-        "  \\begin{tabular}{" + align + "}",
-        "    \\hline",
-        "    " + " & ".join(headers) + " \\\\",
-        "    \\hline",
     ]
+    if wide:
+        # Span both columns and tighten spacing so wide tables are not clipped.
+        lines.append("  \\setlength{\\tabcolsep}{6pt}")
+    lines.append("  \\begin{tabular}{" + align + "}")
+    lines.append("    \\hline")
+    lines.append("    " + " & ".join(headers) + " \\\\")
+    lines.append("    \\hline")
     for row in rows:
         lines.append("    " + " & ".join(row) + " \\\\")
     lines.extend([
@@ -79,7 +83,7 @@ def tex_table(path, caption, label, headers, rows, align=None, footnote=None):
     if footnote:
         lines.append("  \\\\[-1mm]")
         lines.append("  {\\footnotesize " + footnote + "}")
-    lines.append("\\end{table}")
+    lines.append("\\end{" + env + "}")
     path.write_text("\n".join(lines) + "\n")
 
 
@@ -125,6 +129,7 @@ def main():
             "Ack tps is durable-acknowledgment throughput. "
             "Ayame uses 7 flusher threads and 1 committer thread at 32 workers."
         ),
+        wide=True,
     )
 
     rows = []
@@ -170,6 +175,7 @@ def main():
         ["Workload", "System", "Ack tps", "CPU cores", "Cycles/tx", "Instr/tx", "IPC", "Ctx sw.", "Tx/sync"],
         rows,
         align="llrrrrrrr",
+        wide=True,
     )
 
     scaling = read_csv(TABLE_DIR / "ycsbb_perf_scaling_20260609.csv")
@@ -193,6 +199,7 @@ def main():
         ["Workers", "Single tps", "P-WAL tps", "Ayame tps", "Single CPU", "P-WAL CPU", "Ayame CPU"],
         rows,
         align="rrrrrrr",
+        wide=True,
     )
 
     top = read_csv(TABLE_DIR / "ayame_perf_top_20260609.csv")
@@ -209,7 +216,37 @@ def main():
         rows,
         align="llrl",
         footnote="YCSB-C is read-only; WAL bytes and fdatasync counts are zero for all systems.",
+        wide=True,
     )
+
+    abl_path = TABLE_DIR / "ack_policy_ablation_20260614.csv"
+    if abl_path.exists():
+        abl = read_csv(abl_path)
+        abl32 = [r for r in abl if int(r["worker_threads"]) == 32]
+        pol_order = {"Global-prefix": 0, "Ayame": 1}
+        abl32.sort(key=lambda r: (order_workloads[r["workload"]],
+                                  pol_order.get(r["policy"], 9)))
+        pol_label = {"Global-prefix": "Global-prefix",
+                     "Ayame": "Dep.\\ frontier (Ayame)"}
+        rows = []
+        for r in abl32:
+            rows.append([
+                str(r["workload"]),
+                pol_label.get(r["policy"], str(r["policy"])),
+                k_tps(r["ack_tps"]),
+                whole(r["p99_us"]),
+                whole(r["pending"]),
+            ])
+        tex_table(
+            TABLE_DIR / "table_ack_policy_ablation.tex",
+            "Acknowledgment-policy ablation at 32 worker threads.  Both policies "
+            "use the same asynchronous pipeline and differ only in the "
+            "acknowledgment condition.",
+            "tab:ack-policy",
+            ["Workload", "Ack policy", "Ack tps", "p99 $\\mu$s", "Pending"],
+            rows,
+            align="llrrr",
+        )
 
     print(TABLE_DIR / "table_ycsbabc_32worker_summary.tex")
     print(TABLE_DIR / "table_ayame_speedup_32worker.tex")

@@ -80,12 +80,10 @@ transactions it depends on are durable.
   \centering
   \includegraphics[width=\linewidth]{figures/fig1_ayame_ack_policies.pdf}
   \caption{
-  Durable acknowledgment policies in parallel WAL.  Global-prefix acknowledgment
-  is safe but can delay transactions whose dependencies are already durable
-  because it waits for unrelated slow shards.  Local-only acknowledgment avoids
-  this delay but is unsafe.  Ayame uses dependency-closed acknowledgment,
-  acknowledging a transaction only after its own log record and dependency
-  frontier are durable.
+  Durable acknowledgment in parallel WAL.  Global-prefix acknowledgment waits
+  for the slowest shard even when a transaction does not depend on it.  Ayame
+  instead waits only for the shard positions in the transaction's dependency
+  frontier.
   }
   \label{fig:ack-policies}
 \end{figure}

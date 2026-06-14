@@ -23,9 +23,13 @@ def setup_style():
     sns.set_theme(
         context="paper",
         style="whitegrid",
-        font_scale=1.08,
+        font_scale=1.5,
         rc={
             "font.family": "DejaVu Sans",
+            "axes.labelsize": 15,
+            "axes.titlesize": 16,
+            "xtick.labelsize": 13,
+            "ytick.labelsize": 13,
             "axes.edgecolor": "#d1d5db",
             "axes.linewidth": 0.9,
             "grid.color": "#e5e7eb",
@@ -83,10 +87,10 @@ def draw(input_csv, top_n):
                 f"{value:.2f}%",
                 va="center",
                 ha="left",
-                fontsize=9.5,
+                fontsize=11,
                 color="#111827",
             )
-        ax.set_title(system, fontsize=12.5, fontweight="bold", pad=8)
+        ax.set_title(system, fontsize=15, fontweight="bold", pad=8)
         ax.set_xlabel("Self samples [%]")
         xmax = max(10.0, df["self_pct"].max() * 1.18)
         ax.set_xlim(0, xmax)
@@ -103,7 +107,7 @@ def draw(input_csv, top_n):
         "YCSB-C perf top symbols at 32 worker threads",
         ha="left",
         va="bottom",
-        fontsize=11.0,
+        fontsize=13,
         color="#374151",
     )
     FIG_DIR.mkdir(parents=True, exist_ok=True)

@@ -1022,6 +1022,11 @@ class WalLogger {
       writeAll(worker_fds_[thid], buffers_[thid]);
       stats_.write_ns.fetch_add(nowNs() - write_start, std::memory_order_relaxed);
       buffers_[thid].clear();
+      // Optional injected straggler on one stream (used by the straggler
+      // sensitivity experiment); no-op unless the env vars are set.
+      if (straggler_logger_ == static_cast<int>(thid) && straggler_sleep_us_ > 0) {
+        std::this_thread::sleep_for(std::chrono::microseconds(straggler_sleep_us_));
+      }
       const uint64_t fsync_start = nowNs();
       if (!skip_fdatasync_) {
         fdatasync(worker_fds_[thid]);

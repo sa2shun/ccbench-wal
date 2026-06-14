@@ -431,10 +431,15 @@ def setup_style():
     sns.set_theme(
         context="paper",
         style="white",
-        font_scale=1.08,
+        font_scale=1.55,
         rc={
             "font.family": "DejaVu Sans",
             "axes.labelcolor": "#111827",
+            "axes.labelsize": 15,
+            "axes.titlesize": 16,
+            "xtick.labelsize": 13,
+            "ytick.labelsize": 13,
+            "legend.fontsize": 14,
             "xtick.color": "#374151",
             "ytick.color": "#374151",
             "axes.edgecolor": "#9ca3af",
@@ -476,7 +481,7 @@ def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear"):
                 markeredgewidth=1.8,
                 solid_capstyle="round",
             )
-        ax.set_title(workload, fontsize=11.5, fontweight="bold", pad=8)
+        ax.set_title(workload, fontsize=16, fontweight="bold", pad=8)
         ax.set_xlabel("Worker threads")
         ax.set_xticks(workers)
         ax.set_xticklabels([str(int(x)) for x in workers], rotation=0)
@@ -500,7 +505,7 @@ def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear"):
     fig.legend(handles=handles, ncols=3, frameon=False, loc="upper right",
                bbox_to_anchor=(0.985, 1.08))
     fig.text(0.01, 1.03, caption, ha="left", va="bottom",
-             fontsize=10.5, color="#374151")
+             fontsize=13, color="#374151")
     fig.savefig(output, bbox_inches="tight")
     plt.close(fig)
 
@@ -568,7 +573,7 @@ def draw_speedup(rows, output):
         transform=ax.transAxes,
         ha="left",
         va="bottom",
-        fontsize=10.5,
+        fontsize=13,
         color="#374151",
     )
     fig.savefig(output, bbox_inches="tight")

@@ -1,6 +1,6 @@
 # YCSB-B perf stat worker scaling
 
-date: 2026-06-13T17:37:35
+date: 2026-06-14T13:57:00
 
 `perf stat` was used to collect `task-clock` and `context-switches`.
 CPU cores are computed as `task-clock-ms / elapsed-ms`.

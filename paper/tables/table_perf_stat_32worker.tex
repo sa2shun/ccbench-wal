@@ -1,21 +1,22 @@
-\begin{table}[t]
+\begin{table*}[t]
   \centering
   \caption{Perf-stat summary at 32 transaction worker threads.}
   \label{tab:perf-stat-32worker}
   \small
+  \setlength{\tabcolsep}{6pt}
   \begin{tabular}{llrrrrrrr}
     \hline
     Workload & System & Ack tps & CPU cores & Cycles/tx & Instr/tx & IPC & Ctx sw. & Tx/sync \\
     \hline
-    YCSB-A & Single WAL & 8.1K & 1.1 & 352610 & 667554 & 1.89 & 132392 & 1.0 \\
-    YCSB-A & P-WAL & 54.3K & 15.3 & 709234 & 411314 & 0.58 & 1546359 & 1.0 \\
-    YCSB-A & Ayame & 247.3K & 20.9 & 209634 & 139134 & 0.66 & 3356701 & 14.5 \\
-    YCSB-B & Single WAL & 22.2K & 1.0 & 116358 & 161957 & 1.39 & 138839 & 2.5 \\
-    YCSB-B & P-WAL & 201.7K & 14.6 & 183159 & 102454 & 0.56 & 1471140 & 2.5 \\
-    YCSB-B & Ayame & 464.9K & 25.4 & 137440 & 63130 & 0.46 & 2877998 & 18.4 \\
-    YCSB-C & Single WAL & 658.2K & 32.3 & 127166 & 29550 & 0.23 & 3297 & 0.0 \\
-    YCSB-C & P-WAL & 657.8K & 32.3 & 127261 & 29959 & 0.24 & 3242 & 0.0 \\
-    YCSB-C & Ayame & 640.8K & 32.3 & 130724 & 33253 & 0.25 & 34545 & 0.0 \\
+    YCSB-A & Single WAL & 8.1K & 1.1 & 352,610 & 667,554 & 1.89 & 132,392 & 1.0 \\
+    YCSB-A & P-WAL & 54.3K & 15.3 & 709,234 & 411,314 & 0.58 & 1,546,359 & 1.0 \\
+    YCSB-A & Ayame & 247.3K & 20.9 & 209,634 & 139,134 & 0.66 & 3,356,701 & 14.5 \\
+    YCSB-B & Single WAL & 22.2K & 1.0 & 116,358 & 161,957 & 1.39 & 138,839 & 2.5 \\
+    YCSB-B & P-WAL & 201.7K & 14.6 & 183,159 & 102,454 & 0.56 & 1,471,140 & 2.5 \\
+    YCSB-B & Ayame & 464.9K & 25.4 & 137,440 & 63,130 & 0.46 & 2,877,998 & 18.4 \\
+    YCSB-C & Single WAL & 658.2K & 32.3 & 127,166 & 29,550 & 0.23 & 3,297 & 0.0 \\
+    YCSB-C & P-WAL & 657.8K & 32.3 & 127,261 & 29,959 & 0.24 & 3,242 & 0.0 \\
+    YCSB-C & Ayame & 640.8K & 32.3 & 130,724 & 33,253 & 0.25 & 34,545 & 0.0 \\
     \hline
   \end{tabular}
-\end{table}
+\end{table*}
