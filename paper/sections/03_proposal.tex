@@ -89,13 +89,8 @@ logical commit.
         \State abort $T$; \Return
     \EndIf
     \If{$T$'s write set is empty} \Comment{read-only}
-        \If{frontier collection is skipped \textbf{or} $T.\dep = \bot$}
-            \State \Call{Ack}{$T$} \Comment{read-only fast path}
-        \Else
-            \State \Call{Register}{$T.\dep, T$}
-                   \label{ln:ro-register}
-                   \Comment{Algorithm~\ref{alg:ayame-ack}}
-        \EndIf
+        \State \Call{Ack}{$T$}
+               \Comment{read-only has no recoverable effect}
         \State \Return logical read-only commit
     \EndIf
     \State $s \gets$ WAL shard assigned to this worker
@@ -187,9 +182,12 @@ Algorithm~\ref{alg:ayame-commit}) extends $T.\dep$ with $T$'s own log
 position.  By induction over the dependency order, $F$ therefore
 contains the log positions of the transitive closure of the read-from
 and version-order (write-write) dependencies of $T$, all of which are
-recorded through write frontiers.  Publishing $F$ to the versions $T$
-wrote and read lets future transactions inherit it through
-Algorithm~\ref{alg:ayame-dep}.
+recorded through write frontiers.  Publishing $F$ as the write frontier
+of the versions written by $T$ lets future readers and overwriters
+inherit $T$'s closed frontier through Algorithm~\ref{alg:ayame-dep}.
+Merging $F$ into the read frontier of the versions read by $T$
+conservatively delays future overwriters of those versions, but this
+read-frontier term is not required for the safety proof.
 
 Algorithm~\ref{alg:ayame-ack} shows the committer side.
 \textsc{Register} parks $T$ on each shard whose durable position has not
@@ -270,12 +268,14 @@ is a durable prefix of shard $i$, the record of $U$ is durable.
 \end{proof}
 
 During recovery, Ayame reconstructs each WAL shard's durable prefix by
-scanning its log sequentially and stopping at the first incomplete
-record, that is, a torn final write; records beyond that point are
-ignored.  It then collects the transactions whose commit records lie
-within these durable prefixes, discards incomplete transactions, and
-replays the collected transactions in increasing logical-LSN order, where
-the logical LSN is the SSN commit timestamp (cstamp).
+parsing its records in order and stopping at the first record that does
+not parse as a complete, well-formed entry, which indicates a torn final
+write; records beyond that point are ignored.  A distinguished commit
+marker identifies each transaction's commit record.  Ayame then collects
+the transactions whose commit records lie within these durable prefixes,
+discards incomplete transactions, and replays the collected transactions
+in increasing logical-LSN order, where the logical LSN is the SSN commit
+timestamp (cstamp).
 
 \begin{theorem}[Recoverable acknowledgment]
 \label{thm:recover}

@@ -6,11 +6,10 @@
 
 We implement Single WAL, P-WAL, and Ayame on
 CCBench~\cite{tanabe2020ccbench}, a concurrency-control benchmarking
-framework with minimal functionality for protocol analysis.  All three
-systems share the same CCBench SI+SSN protocol implementation, Masstree
-index, and \texttt{mimalloc} allocator; only the WAL durability path
-differs.  The code is written in C++20 and compiled with GCC at the
-\texttt{-O3} optimization level.  Our implementation is publicly
+framework with minimal functionality for protocol analysis, using
+Masstree as the index and \texttt{mimalloc} as the allocator.  The code
+is written in C++20 and compiled with GCC at the \texttt{-O3}
+optimization level.  Our implementation is publicly
 available.\footnote{The source code is available in our public
 repository for reproduction.}
 
@@ -109,7 +108,8 @@ durable acknowledgment coincide, so the metric has the same meaning
 across the three systems.  We additionally report the p99 durable
 acknowledgment latency and the number of pending (not-yet-acknowledged)
 durable commits.  Unless otherwise stated, each reported value is the
-mean over five runs.
+mean of the corresponding per-run metric over five runs; reported p99
+latencies are means of the per-run p99 values.
 
 \subsection{Results}
 \label{sec:results}
@@ -152,10 +152,12 @@ bookkeeping overhead rather than as evidence of WAL persistence performance.
 
 Ayame's timestamp integration is primarily a design simplification: it removes
 duplicated logical ordering between concurrency control and WAL durability by
-reusing ERMIA's commit timestamp as the logical recovery order.  We do not rely
-on timestamp integration alone as a direct throughput optimization; the main
-performance effect comes from parallel logging, dependency-closed durable
-acknowledgment, and separating workers from durable-wait processing.
+reusing SSN's commit timestamp (cstamp) as the logical recovery order.  We do
+not rely on timestamp integration alone as a direct throughput optimization.
+The main throughput effect comes from parallel log streams, batching, and
+separating workers from durable-wait processing; dependency-closed
+acknowledgment primarily prevents the pending-ack backlog and tail-latency
+blowups caused by global-prefix waiting (Section~\ref{sec:why-dep}).
 
 \begin{figure*}[!tbp]
   \centering
@@ -200,9 +202,9 @@ extracts the Ayame-vs-P-WAL speedups from the same measurements.
 The main end-to-end comparison combines several changes:
 timestamp-integrated ordering, asynchronous flushing, and
 dependency-closed acknowledgment.  To isolate the effect of the
-acknowledgment rule itself, we run an ablation that uses the same
-worker/flusher/committer pipeline as Ayame and changes only the
-condition for returning durable acknowledgments.  The \emph{global-prefix}
+acknowledgment rule itself, we run an acknowledgment-policy comparison
+that uses the same worker/flusher/committer pipeline as Ayame and changes
+only the condition for returning durable acknowledgments.  The \emph{global-prefix}
 variant acknowledges a transaction only after a single global durable
 prefix covers its logical commit position; the \emph{dependency-frontier}
 variant acknowledges a transaction once the shard positions in its
@@ -232,7 +234,7 @@ whereas Ayame keeps them to 803 pending commits and 2\,ms.  On YCSB-B the
 corresponding numbers are 47{,}689 pending commits and 66\,ms for the
 global-prefix variant, versus 433 pending commits and 0.5\,ms for Ayame.
 Dependency-closed acknowledgment does not primarily improve short-window
-throughput in this ablation: the global-prefix variant even reaches
+throughput in this comparison: the global-prefix variant even reaches
 slightly higher throughput on YCSB-A (283.1K versus 253.5K durable
 acknowledgments per second), while the dependency-frontier variant is
 slightly higher on YCSB-B (457.2K versus 417.3K).  Its benefit is not
@@ -246,7 +248,7 @@ rather than the asynchronous batching.
   \centering
   \includegraphics[width=\linewidth]{figures/fig_ack_policy_ablation.pdf}
   \caption{
-  Acknowledgment-policy ablation.  Both variants use the same asynchronous
+  Acknowledgment-policy comparison.  Both variants use the same asynchronous
   WAL pipeline and differ only in the acknowledgment condition.  The
   global-prefix rule keeps the pending count and p99 acknowledgment
   latency saturated, while the dependency-frontier rule drains them once
@@ -276,7 +278,7 @@ global durable prefix regardless of what a transaction actually depends
 on.  The
 dependency-frontier rule keeps the pending count to roughly
 500--1{,}400 commits and the p99 to a few milliseconds across the whole
-range; its throughput is again slightly lower, as in the ablation.
+range; its throughput is again slightly lower, as in the comparison.
 Crucially, even when each transaction depends on a single shard
 (nz/tx\,$=1$), the dependency-frontier rule still reduces pending durable
 commits and tail latency by about two orders of magnitude.  The value of

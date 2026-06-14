@@ -127,7 +127,7 @@ def main():
             "Ack tps",
             "p99 $\\mu$s",
             "Pending",
-            "fdatasync",
+            "fdatasync calls",
             "Tx/sync",
             "Frontier B/tx",
             "WAL atomic/tx",
@@ -249,7 +249,7 @@ def main():
             ])
         tex_table(
             TABLE_DIR / "table_ack_policy_ablation.tex",
-            "Acknowledgment-policy ablation at 32 worker threads.  Both policies "
+            "Acknowledgment-policy comparison at 32 worker threads.  Both policies "
             "use the same asynchronous pipeline and differ only in the "
             "acknowledgment condition.",
             "tab:ack-policy",
