@@ -26,7 +26,10 @@ $i$ that is known to be durable; each $D[i]$ advances monotonically.
 \label{sec:cstamp}
 
 In SSN, a committing transaction $T$ is assigned a commit timestamp
-$T.c$ that fixes its position in the serialization order.  A separate
+$T.c$ that fixes its position in the serialization order.  We assume that
+SSN assigns a unique commit timestamp to each committed update
+transaction, so these timestamps form a total order that recovery uses
+as the replay order.  A separate
 WAL-side global LSN, as used by P-WAL, would redundantly re-encode the
 same logical order and add a second global-counter access to every
 commit.  Ayame instead reuses $T.c$ directly as the logical LSN that
@@ -69,13 +72,14 @@ LSN (line~\ref{ln:cstamp}).  After validation, the worker enqueues the
 record to its shard without flushing or waiting
 (line~\ref{ln:enqueue}).  It then forms the closed frontier $F$ by
 extending its dependency frontier $T.\dep$ with its own log position
-(line~\ref{ln:closed}) and publishes $F$ to the versions it wrote and
-read (lines~\ref{ln:pub-w} and~\ref{ln:pub-r}).  A version that $T$
-created becomes visible only after its write frontier is installed
-(line~\ref{ln:publish}), so any later reader or overwriter observes the
-writer's complete frontier.  Finally, the worker registers $F$ for
-durable acknowledgment (line~\ref{ln:register}) before returning a
-logical commit.
+(line~\ref{ln:closed}).  Ayame installs $F$ as the write frontier of the
+versions $T$ created (line~\ref{ln:pub-w}) and publishes those versions
+(line~\ref{ln:publish}); a version becomes visible only after its write
+frontier is installed, so any later reader or overwriter observes the
+writer's complete frontier.  It also merges $F$ into the read frontiers
+of the versions $T$ read (line~\ref{ln:pub-r}).  Finally, the worker
+registers $F$ for durable acknowledgment (line~\ref{ln:register}) before
+returning a logical commit.
 
 \begin{algorithm}[t]
 \caption{\bfseries Worker-Side Commit Protocol (Ayame)}
@@ -148,8 +152,10 @@ $\rfr$, into which readers monotonically merge their closed frontiers;
 conservatively tracks the readers of the version it supersedes.  As
 discussed below, this last term is an anti-dependency over-approximation
 that the safety argument does not rely on.  Transactions known to be
-read-only skip collection entirely and take the snapshot-isolation fast
-path.
+read-only skip WAL generation and durable-acknowledgment registration.
+When the read-only fast path applies, they also avoid dependency-frontier
+collection; otherwise, only lightweight read-path frontier bookkeeping
+may remain.
 
 \begin{algorithm}[t]
 \caption{\bfseries Dependency Collection (Ayame)}

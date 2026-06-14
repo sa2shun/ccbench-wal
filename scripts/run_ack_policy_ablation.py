@@ -88,7 +88,9 @@ def run_case(out_dir, policy, mode_value, workload, rratio, worker, repeat, args
         "repeat": repeat,
         "ack_tps": acked / ext if ext else 0.0,
         "p99_us": float(m.get("wal_stats_ack_latency_p99_us", 0) or 0),
-        "pending": float(m.get("wal_stats_max_pending_commits", 0) or 0),
+        # Snapshot pending at the measurement stop, matching the main summary
+        # table (not the transient peak max_pending_commits).
+        "pending": float(m.get("wal_stats_measurement_pending_commits", 0) or 0),
     }
 
 
