@@ -222,8 +222,13 @@ def run_record_case(out_dir, workload, mode, args):
     data_path = logs / f"{case}.perf.data"
     report_path = logs / f"{case}.report.nochildren.txt"
     report_err_path = logs / f"{case}.report.err"
+    # Start sampling only after the parallel DB build (makeDB/partTableInit,
+    # ~40 ms for 100k tuples) so the symbol profile reflects steady state.
+    # Without this delay the multi-core init burst is over-sampled and shows up
+    # as ~8% YcsbWorkload::partTableInit in the read-only profile.
     cmd = [
         "perf", "record", "-F", str(args.freq), "-g", "--call-graph", args.call_graph,
+        "-D", str(args.record_delay_ms),
         "-o", str(data_path), "--", *ycsb_cmd(workload, worker, args.record_seconds)
     ]
     with out_path.open("w") as out, err_path.open("w") as err:
@@ -394,6 +399,9 @@ def main():
     parser.add_argument("--max-pending", type=int, default=65536)
     parser.add_argument("--freq", type=int, default=99)
     parser.add_argument("--call-graph", default="dwarf")
+    parser.add_argument("--record-delay-ms", dest="record_delay_ms", type=int, default=500,
+                        help="Delay perf record start by this many ms to skip the DB "
+                             "build phase and profile only steady state.")
     parser.add_argument("--top-limit", type=int, default=12)
     parser.add_argument("--skip-record", action="store_true")
     parser.add_argument("--keep-perf-data", action="store_true")

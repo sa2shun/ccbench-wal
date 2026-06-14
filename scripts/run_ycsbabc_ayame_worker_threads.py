@@ -708,6 +708,7 @@ def main():
         "Pending durable commits",
         outputs[2],
         "Worker-thread pending durable commits",
+        yscale="symlog",
     )
     draw_speedup(rows, outputs[3])
     report = write_report(rows, raw_csv, outputs, args)
