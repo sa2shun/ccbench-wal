@@ -1,0 +1,20 @@
+\begin{table}[t]
+  \centering
+  \caption{Dependency-density experiment at 32 worker threads on an abort-free partitioned workload.  The remote-access probability sets the frontier width (nz/tx is the mean number of shards per dependency frontier).}
+  \label{tab:dep-density}
+  \small
+  \begin{tabular}{rrlrrr}
+    \hline
+    Remote & nz/tx & Ack policy & Ack tps & p99 $\mu$s & Pending \\
+    \hline
+    0\% & 1.0 & Global-prefix & 286.4K & 131,072 & 65,565 \\
+    0\% & 1.0 & Dep.\ frontier (Ayame) & 263.9K & 4,096 & 1,119 \\
+    1\% & 6.9 & Global-prefix & 289.8K & 131,072 & 65,567 \\
+    1\% & 6.9 & Dep.\ frontier (Ayame) & 262.4K & 4,096 & 1,365 \\
+    10\% & 7.0 & Global-prefix & 286.8K & 131,072 & 65,565 \\
+    10\% & 7.0 & Dep.\ frontier (Ayame) & 256.5K & 1,024 & 835 \\
+    100\% & 7.0 & Global-prefix & 286.8K & 131,072 & 65,563 \\
+    100\% & 7.0 & Dep.\ frontier (Ayame) & 247.5K & 1,024 & 515 \\
+    \hline
+  \end{tabular}
+\end{table}

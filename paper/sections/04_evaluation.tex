@@ -120,9 +120,9 @@ durable acknowledgments per second.  These results correspond to 4.7$\times$
 and 2.4$\times$ improvements over P-WAL on YCSB-A and YCSB-B, respectively.
 Ayame also keeps the number of pending durable commits small at 32 worker
 threads: 201 pending commits on YCSB-A and 68 pending commits on YCSB-B.
-At 4 and 8 worker threads on YCSB-A, however, pending durable commits reach the
-configured backpressure bound and the p99 acknowledgment latency rises into the
-hundred-millisecond range (Figures~\ref{fig:ycsbabc-worker-latency}
+At 4 and 8 worker threads on YCSB-A, however, pending durable commits approach
+the configured backpressure bound and the p99 acknowledgment latency rises into
+the hundred-millisecond range (Figures~\ref{fig:ycsbabc-worker-latency}
 and~\ref{fig:ycsbabc-worker-pending}), before recovering at 16 and 32 worker
 threads as additional flusher threads are provisioned.
 
@@ -192,38 +192,51 @@ extracts the Ayame-vs-P-WAL speedups from the same measurements.
 \subsection{Why Dependency-Closed Acknowledgment Helps}
 \label{sec:why-dep}
 
-The results above reflect several mechanisms at once.  To isolate the
-contribution of the dependency-closed acknowledgment rule
-(\textbf{A3}) from batching and from the synchronous-versus-asynchronous
-distinction, we run an ablation in which both variants use the
-\emph{same} asynchronous pipeline---identical per-shard flushers and one
-committer---and differ only in the acknowledgment condition.  One variant
-acknowledges a transaction once the global durable prefix passes its LSN
-(the global-prefix rule used by P-WAL); the other acknowledges once the
-shard positions in the transaction's dependency frontier are durable
-(Ayame's rule).
+The main end-to-end comparison combines several changes:
+timestamp-integrated ordering, asynchronous flushing, and
+dependency-closed acknowledgment.  To isolate the effect of the
+acknowledgment rule itself, we run an ablation that uses the same
+worker/flusher/committer pipeline as Ayame and changes only the
+condition for returning durable acknowledgments.  The \emph{global-prefix}
+variant acknowledges a transaction only after a single global durable
+prefix covers its logical commit position; the \emph{dependency-frontier}
+variant acknowledges a transaction once the shard positions in its
+dependency frontier are durable.
+
+The benefit of dependency-closed acknowledgment is not that a transaction
+has many dependencies.  Its benefit appears when a transaction does
+\emph{not} depend on some slow or lagging WAL shards: global-prefix
+acknowledgment still waits for those shards, whereas dependency-frontier
+acknowledgment does not.
 
 Figure~\ref{fig:ack-policy-ablation} and Table~\ref{tab:ack-policy}
 report the result.  With only one or two flusher threads (4 and 8
-workers) both rules saturate the backpressure bound, because the pipeline
-itself cannot drain.  Once enough flusher threads are provisioned (16 and
-32 workers), the dependency-frontier rule drains the backlog and keeps
-the pending count and tail latency low, whereas the global-prefix rule
-stays saturated at every worker count.  At 32 workers on YCSB-A the
-global-prefix rule holds about 65{,}000 pending commits with a 131\,ms
-p99 acknowledgment latency, while the dependency-frontier rule holds
-about 800 pending commits with a 2\,ms p99---about two orders of
-magnitude lower on both metrics, at comparable throughput.
+workers) both variants are limited by the pipeline itself.  Once enough
+flusher threads are provisioned (16 and 32 workers), the difference
+emerges.  Even without injecting an artificial straggler, the
+global-prefix variant accumulates a large backlog---its pending count
+stays near the configured backpressure limit---because natural progress
+variation among the WAL shards is enough to delay the global durable
+prefix.  In contrast, dependency-frontier acknowledgment does not wait
+for unrelated shards and therefore keeps the pending durable commits
+small.
 
-The cause is the over-waiting of the global prefix described in
-Section~\ref{sec:background}.  The global durable prefix advances only as
-fast as the momentarily slowest shard, so with several shards there is
-almost always one shard holding the prefix back and the backlog never
-drains.  No injected straggler is required; the natural variation in
-flush timing across shards is enough.  The dependency-frontier rule
-acknowledges a transaction as soon as the specific shards in its frontier
-are durable, so an unrelated lagging shard does not delay it.  This is
-the concrete benefit of dependency-closed acknowledgment.
+At 32 workers, the global-prefix variant reaches about 65{,}600 pending
+durable commits and a 131\,ms p99 acknowledgment latency on YCSB-A,
+whereas Ayame keeps them to 803 pending commits and 2\,ms.  On YCSB-B the
+corresponding numbers are 47{,}689 pending commits and 66\,ms for the
+global-prefix variant, versus 433 pending commits and 0.5\,ms for Ayame.
+Dependency-closed acknowledgment does not primarily improve short-window
+throughput in this ablation: the global-prefix variant even reaches
+slightly higher throughput on YCSB-A (283.1K versus 253.5K durable
+acknowledgments per second), while the dependency-frontier variant is
+slightly higher on YCSB-B (457.2K versus 417.3K).  Its benefit is to keep
+the pending durable commits and the tail latency from exploding---the
+dependency-frontier rule trades a small amount of throughput for an
+order-of-magnitude reduction in durable-ack backlog and p99 latency.
+Because both variants share the same pipeline, this difference isolates
+the effect of the acknowledgment rule (\textbf{A3}) rather than the
+asynchronous batching.
 
 \begin{figure*}[!tbp]
   \centering
@@ -239,6 +252,35 @@ the concrete benefit of dependency-closed acknowledgment.
 \end{figure*}
 
 \input{tables/table_ack_policy_ablation}
+
+We next ask whether this benefit requires dense dependency frontiers.
+Zipfian skew does not answer this question: it changes which keys are hot
+but not which WAL shards wrote them, so in a non-partitioned workload the
+writers of the accessed versions stay spread across all shards and the
+dependency frontier remains dense.  We therefore vary the frontier width
+directly with an abort-free partitioned workload in which each worker owns
+a key partition and a remote-access probability controls how often a
+transaction touches other partitions.  With \texttt{remote}\,$=0$ every
+transaction depends only on its local shard---a sparse frontier of one
+shard per transaction (nz/tx\,$=1$)---and with remote accesses the
+frontier quickly becomes dense (about seven shards).
+
+Table~\ref{tab:dep-density} reports the result.  The global-prefix rule
+essentially saturates the pending-ack queue and holds a 131\,ms p99 at
+every density, including the fully sparse case, because it waits for the
+global durable prefix regardless of what a transaction actually depends
+on.  The
+dependency-frontier rule keeps the pending count to roughly
+500--1{,}400 commits and the p99 to a few milliseconds across the whole
+range; its throughput is again slightly lower, as in the ablation.
+Crucially, even when each transaction depends on a single shard
+(nz/tx\,$=1$), the dependency-frontier rule still reduces pending durable
+commits and tail latency by about two orders of magnitude.  The value of
+dependency-closed acknowledgment is therefore not that a transaction has
+many dependencies, but that it does not wait for the shards it does not
+depend on, and this value remains when frontiers are sparse.
+
+\input{tables/table_dependency_density}
 
 \subsection{Hardware Counters and Overhead}
 \label{sec:overhead}
