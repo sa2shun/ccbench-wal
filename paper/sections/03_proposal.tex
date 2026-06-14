@@ -69,8 +69,11 @@ LSN (line~\ref{ln:cstamp}).  After validation, the worker enqueues the
 record to its shard without flushing or waiting
 (line~\ref{ln:enqueue}).  It then forms the closed frontier $F$ by
 extending its dependency frontier $T.\dep$ with its own log position
-(line~\ref{ln:closed}), publishes $F$ to the versions it wrote and read
-(lines~\ref{ln:pub-w} and~\ref{ln:pub-r}), and registers $F$ for
+(line~\ref{ln:closed}) and publishes $F$ to the versions it wrote and
+read (lines~\ref{ln:pub-w} and~\ref{ln:pub-r}).  A version that $T$
+created becomes visible only after its write frontier is installed
+(line~\ref{ln:publish}), so any later reader or overwriter observes the
+writer's complete frontier.  Finally, the worker registers $F$ for
 durable acknowledgment (line~\ref{ln:register}) before returning a
 logical commit.
 
@@ -96,7 +99,7 @@ logical commit.
         \State \Return logical read-only commit
     \EndIf
     \State $s \gets$ WAL shard assigned to this worker
-    \State $r \gets$ \Call{BuildRecord}{$T.c, T.\dep, T.\mathit{write\_set}$}
+    \State $r \gets$ \Call{BuildRecord}{$T.c, T.\mathit{write\_set}$}
     \State $T.\lseq \gets$ \Call{Enqueue}{$\mathit{wal}[s], r$}
            \label{ln:enqueue}
            \Comment{append only; no flush, no wait}
@@ -106,6 +109,9 @@ logical commit.
     \ForAll{versions $v$ created by $T$}
         \State $v.\wfr \gets F$ \label{ln:pub-w}
     \EndFor
+    \State \Call{PublishVersions}{$T.\mathit{write\_set}$}
+           \label{ln:publish}
+           \Comment{visible only after $\wfr$ is installed}
     \ForAll{versions $v$ read by $T$}
         \State $v.\rfr \gets v.\rfr \fjoin F$ \label{ln:pub-r}
                \Comment{monotone merge}
@@ -263,11 +269,13 @@ $F[s_U] \ge F_U[s_U] \ge U.\lseq$, for every $U \in \mathrm{cl}(T)$.
 is a durable prefix of shard $i$, the record of $U$ is durable.
 \end{proof}
 
-During recovery, Ayame scans each WAL shard up to its durable prefix and
-collects the transactions whose commit records are durable.  It discards
-incomplete transactions and replays the collected transactions in
-increasing logical-LSN order, where the logical LSN is the SSN/ERMIA
-commit timestamp.
+During recovery, Ayame reconstructs each WAL shard's durable prefix by
+scanning its log sequentially and stopping at the first incomplete
+record, that is, a torn final write; records beyond that point are
+ignored.  It then collects the transactions whose commit records lie
+within these durable prefixes, discards incomplete transactions, and
+replays the collected transactions in increasing logical-LSN order, where
+the logical LSN is the SSN commit timestamp (cstamp).
 
 \begin{theorem}[Recoverable acknowledgment]
 \label{thm:recover}

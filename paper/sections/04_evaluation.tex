@@ -4,22 +4,23 @@
 \subsection{Implementation}
 \label{sec:impl}
 
-We implement all three WAL systems on top of CCBench~\cite{tanabe2020ccbench},
-a concurrency-control benchmarking framework with minimal functionality
-for protocol analysis.  The underlying engine is an ERMIA-style
-multi-version store with snapshot isolation and SSN validation, using
-Masstree as the index and \texttt{mimalloc} as the allocator.  The code
-is written in C++20 and compiled with GCC at the \texttt{-O3}
-optimization level.  Our implementation is publicly
+We implement Single WAL, P-WAL, and Ayame on
+CCBench~\cite{tanabe2020ccbench}, a concurrency-control benchmarking
+framework with minimal functionality for protocol analysis.  All three
+systems share the same CCBench SI+SSN protocol implementation, Masstree
+index, and \texttt{mimalloc} allocator; only the WAL durability path
+differs.  The code is written in C++20 and compiled with GCC at the
+\texttt{-O3} optimization level.  Our implementation is publicly
 available.\footnote{The source code is available in our public
 repository for reproduction.}
 
 A key methodological point is that Single WAL, P-WAL, and Ayame are
 implemented in the \emph{same} binary and selected at run time by
 environment flags (\texttt{CCBENCH\_WAL\_MODE} and
-\texttt{CCBENCH\_WAL\_DURABLE\_MODE}).  The concurrency-control engine,
-the index, the workload generator, and the pre-commit path are therefore
-identical across the three systems; only the WAL durability path differs.
+\texttt{CCBENCH\_WAL\_DURABLE\_MODE}).  The CCBench SI+SSN protocol
+implementation, the index, the workload generator, and the pre-commit
+path are therefore identical across the three systems; only the WAL
+durability path differs.
 Single WAL appends to one shared log stream under a global latch and
 synchronizes it per commit.  P-WAL gives each worker a private stream
 and synchronizes it per commit, acknowledging through a global durable
@@ -28,9 +29,10 @@ Section~\ref{sec:design} with dependency-closed acknowledgment.  Each WAL
 record carries the key, value, storage identifier, and operation type of
 a write, terminated by a commit record.  Read-only WAL skipping is
 enabled for all three systems; once a transaction is known to be
-read-only it produces no WAL record, and Ayame additionally takes a
-read-only snapshot-isolation fast path that skips durability-frontier
-collection.
+read-only it produces no WAL record.  For read-only transactions Ayame
+also skips durable-acknowledgment registration, but depending on the
+read path it may still execute lightweight frontier bookkeeping; YCSB-C
+quantifies this residual overhead.
 
 Following the worker/flusher/committer separation of
 Section~\ref{sec:design}, Ayame offloads durability to background
@@ -106,7 +108,8 @@ the worker-wait systems (Single WAL and P-WAL) a logical commit and a
 durable acknowledgment coincide, so the metric has the same meaning
 across the three systems.  We additionally report the p99 durable
 acknowledgment latency and the number of pending (not-yet-acknowledged)
-durable commits.
+durable commits.  Unless otherwise stated, each reported value is the
+mean over five runs.
 
 \subsection{Results}
 \label{sec:results}
@@ -191,7 +194,7 @@ extracts the Ayame-vs-P-WAL speedups from the same measurements.
 
 \input{tables/table_ayame_speedup_32worker}
 
-\subsection{Why Dependency-Closed Acknowledgment Helps}
+\subsection{Acknowledgment-Policy Comparison}
 \label{sec:why-dep}
 
 The main end-to-end comparison combines several changes:
@@ -288,7 +291,9 @@ depend on, and this value remains when frontiers are sparse.
 
 Table~\ref{tab:perf-stat-32worker} summarizes the 32-worker perf-stat analysis.
 Table~\ref{tab:ycsbb-perf-scaling} shows the worker-scaling perf-stat data for
-YCSB-B, where Ayame's throughput improvement is most visible.
+YCSB-B, where Ayame's throughput improvement is most visible.  The perf-stat
+runs are separate from the main throughput runs; their absolute throughputs
+therefore differ slightly due to profiling overhead and run-to-run variation.
 
 \input{tables/table_perf_stat_32worker}
 

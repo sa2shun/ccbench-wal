@@ -11,7 +11,7 @@
 \subsubsection{P-WAL}
 
 \begin{algorithm}[t]
-\caption{\bfseries Per-Thread WAL Commit (P-WAL)}
+\caption{\bfseries Per-Thread WAL Commit for Update Transactions (P-WAL)}
 \label{alg:pwal}
 \begin{algorithmic}[1]
 \State \textbf{Shared:} global LSN counter $L$; per-stream durable LSN
@@ -52,5 +52,5 @@ layer already assigns a commit timestamp for SSN validation and serialization, t
 \textbf{P2. Waiting for Data Transfer:~} Second, workers can spend a long time waiting around \texttt{fdatasync}.  P-WAL parallelizes log streams, but a transaction cannot be acknowledged until the corresponding durable condition is satisfied.  If worker threads wait directly
 for log flushes or durable-prefix updates, storage synchronization and notification latency reduce the effective scalability of the CC protocol.
 
-\textbf{P3. Total History:~} Third, global-prefix acknowledgment waits for log records that are unrelated to the transaction being acknowledged.  This rule is safe, but overly conservative:
+\textbf{P3. Global-prefix over-waiting:~} Third, global-prefix acknowledgment waits for log records that are unrelated to the transaction being acknowledged.  This rule is safe, but overly conservative:
 if one WAL shard is slow, transactions on other shards may be delayed even when they have no dependency on transactions logged by the slow shard.  The opposite design point, local-only acknowledgment, avoids this delay but is unsafe.  If transaction $T$ reads a value written by transaction $U$, acknowledging $T$ before $U$ is recoverable may allow a crash recovery state that contains $T$ without the state on which $T$ depends.

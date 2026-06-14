@@ -11,7 +11,7 @@ transaction processing system must provide both correct concurrent execution and
 crash recovery; in this sense, transaction processing consists of concurrency
 control (CC) and recovery~\cite{bernstein1987ccr}.  A large body of work has
 studied scalable CC for multicore main-memory databases, including Silo, ERMIA,
-TicToc, SI, SSI, and SSN-style protocols~\cite{tu2013silo,kim2016ermia,yu2016tictoc,ports2012ssi,wang2017ssn,tanabe2020ccbench}.
+TicToc, SI, SSI, and SSN~\cite{tu2013silo,kim2016ermia,yu2016tictoc,ports2012ssi,wang2017ssn,tanabe2020ccbench}.
 These protocols improve isolation and scalability by reducing centralized
 validation, timestamp, and version-management bottlenecks.  In contrast, the
 recovery side of modern CC protocols has been explored less systematically:
@@ -30,16 +30,16 @@ parallel is essential for making durability compatible with multicore
 transaction processing.  At the same time, strong multiversion protocols such
 as SI, SSI, and SSN introduce timestamp and dependency structures that are not
 fully reflected in conventional parallel logging designs.  The motivation of
-this work is therefore to clarify how P-WAL-style parallel logging should be
-combined with such timestamp-based CC protocols, especially SSN, without
+this work is therefore to clarify how P-WAL can be
+combined with timestamp-based CC protocols, especially SSN, without
 unnecessarily reintroducing global ordering and durable-prefix bottlenecks.
 
 \subsection{Problem}
 \label{sec:introduction-problem}
 
 We target SSN because it is the most complex of the SI-family protocols we
-consider: it certifies serializability using dependency metadata, while the
-underlying engine still uses timestamped multiversion execution.  As the
+consider: it certifies serializability using dependency metadata, while it
+still uses timestamped multiversion execution.  As the
 baseline recovery protocol, we start from P-WAL, which is also used as a
 foundation of Shirakami, the transaction processing mechanism of
 Tsurugi~\cite{kamiya2017pwal,kawashima2025tsurugi}. 
@@ -60,7 +60,7 @@ parallelizes log streams, but a transaction cannot be acknowledged until the cor
 for log flushes or durable-prefix updates, storage synchronization and
 notification latency reduce the effective scalability of the CC protocol.
 
-\textbf{P3. Total History:~} Third, global-prefix acknowledgment waits for log records that are unrelated to
+\textbf{P3. Global-prefix over-waiting:~} Third, global-prefix acknowledgment waits for log records that are unrelated to
 the transaction being acknowledged.  This rule is safe, but overly conservative:
 if one WAL shard is slow, transactions on other shards may be delayed even when
 they have no dependency on transactions logged by the slow shard.  The opposite
@@ -100,15 +100,15 @@ reports it together with pending durable commits and tail latency.
 
 This paper proposes \emph{Ayame}, a timestamp-integrated,
 dependency-closed parallel WAL protocol for main-memory transaction processing.
-Ayame targets timestamp-based engines such as ERMIA, where the transaction
-engine already computes a logical commit order.  Its goal is not merely to
+Ayame targets timestamp-based concurrency control such as SSN, which
+already computes a logical commit order.  Its goal is not merely to
 maximize raw logical commit throughput, but to return durable commit
 acknowledgments safely without unnecessary global-prefix waiting.
 
 Ayame addresses the three problems above with three corresponding techniques.
 
 \noindent\textbf{A1. Commit timestamps as logical LSNs.}
-Ayame reuses the SSN/ERMIA commit timestamp as the logical LSN for recovery.
+Ayame reuses SSN's commit timestamp (cstamp) as the logical LSN for recovery.
 WAL shards still maintain local physical positions, but the WAL layer does not
 allocate an additional global logical order.  This removes duplicated global
 ordering between CC and recovery and eliminates WAL-side separate global LSN
@@ -130,7 +130,7 @@ transaction can be acknowledged.  A transaction is acknowledged only when its ow
 log record and this dependency frontier are durable.  This preserves recovery
 safety while avoiding waits for unrelated WAL shards.
 
-We implement Ayame in an ERMIA-style engine and evaluate it against P-WAL
+We implement Ayame on CCBench and evaluate it against P-WAL
 using SSN and YCSB workloads.  The detailed experimental methodology, figures,
 and tables are presented in Section~\ref{sec:evaluation}.
 

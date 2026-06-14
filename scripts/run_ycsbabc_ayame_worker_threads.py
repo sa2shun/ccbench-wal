@@ -573,7 +573,7 @@ def draw_speedup(rows, output):
     ax.text(
         0.0,
         1.04,
-        "Worker-thread scaling; all modes use the same ERMIA-PWAL binary",
+        "Worker-thread scaling; all modes use the same CCBench binary",
         transform=ax.transAxes,
         ha="left",
         va="bottom",
@@ -701,7 +701,7 @@ def main():
         "ack_tps",
         "Ack throughput [tx/s]",
         outputs[0],
-        "Worker-thread comparison with a common ERMIA-PWAL binary",
+        "Worker-thread comparison with a common CCBench binary",
     )
     draw_faceted_lines(
         rows,
