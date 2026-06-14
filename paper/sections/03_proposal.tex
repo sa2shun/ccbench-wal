@@ -249,7 +249,7 @@ If \textsc{Ack}$(T)$ is invoked, then for every update transaction
 $U \in \mathrm{cl}(T)$ the WAL record of $U$ is durable.
 \end{lemma}
 
-\begin{proof}[Proof sketch]
+\begin{proof}
 Dependency collection (Algorithm~\ref{alg:ayame-dep}) joins the write
 frontier of each version $T$ reads or overwrites into $T.\dep$, and the
 commit protocol sets $F = T.\dep$ with $F[s_T] \ge T.\lseq$
@@ -263,6 +263,12 @@ $F[s_U] \ge F_U[s_U] \ge U.\lseq$, for every $U \in \mathrm{cl}(T)$.
 is a durable prefix of shard $i$, the record of $U$ is durable.
 \end{proof}
 
+During recovery, Ayame scans each WAL shard up to its durable prefix and
+collects the transactions whose commit records are durable.  It discards
+incomplete transactions and replays the collected transactions in
+increasing logical-LSN order, where the logical LSN is the SSN/ERMIA
+commit timestamp.
+
 \begin{theorem}[Recoverable acknowledgment]
 \label{thm:recover}
 Suppose a crash occurs and recovery replays exactly the durable WAL
@@ -271,7 +277,7 @@ recovery never yields a state that contains the effects of $T$ but omits
 the effects of some $U \in \mathrm{cl}(T)$.
 \end{theorem}
 
-\begin{proof}[Proof sketch]
+\begin{proof}
 By Lemma~\ref{lem:closure}, every $U \in \mathrm{cl}(T)$ has a durable
 record and is therefore replayed.  Each dependency edge $U \to T$ is a
 serialization edge of SSN, so $U$'s commit timestamp precedes $T$'s;

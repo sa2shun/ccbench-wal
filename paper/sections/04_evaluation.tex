@@ -167,7 +167,9 @@ acknowledgment, and separating workers from durable-wait processing.
   \centering
   \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_pending.pdf}
   \caption{
-  Pending durable commits by transaction worker threads.
+  Pending durable commits by transaction worker threads (log scale).
+  Single WAL and P-WAL are synchronous and keep no pending durable
+  commits; they are drawn at the axis floor.
   }
   \label{fig:ycsbabc-worker-pending}
 \end{figure*}
@@ -230,13 +232,12 @@ Dependency-closed acknowledgment does not primarily improve short-window
 throughput in this ablation: the global-prefix variant even reaches
 slightly higher throughput on YCSB-A (283.1K versus 253.5K durable
 acknowledgments per second), while the dependency-frontier variant is
-slightly higher on YCSB-B (457.2K versus 417.3K).  Its benefit is to keep
-the pending durable commits and the tail latency from exploding---the
-dependency-frontier rule trades a small amount of throughput for an
-order-of-magnitude reduction in durable-ack backlog and p99 latency.
-Because both variants share the same pipeline, this difference isolates
-the effect of the acknowledgment rule (\textbf{A3}) rather than the
-asynchronous batching.
+slightly higher on YCSB-B (457.2K versus 417.3K).  Its benefit is not
+primarily throughput; rather, it keeps the pending durable commits and
+the tail latency from exploding, while throughput remains comparable and
+sometimes lower.  Because both variants share the same pipeline, this
+difference isolates the effect of the acknowledgment rule (\textbf{A3})
+rather than the asynchronous batching.
 
 \begin{figure*}[!tbp]
   \centering

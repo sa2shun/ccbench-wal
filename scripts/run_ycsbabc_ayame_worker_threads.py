@@ -457,7 +457,8 @@ def setup_style():
     })
 
 
-def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear"):
+def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear",
+                       clamp_min=None):
     setup_style()
     df = pd.DataFrame(rows)
     df["workload"] = pd.Categorical(df["workload"], WORKLOAD_ORDER)
@@ -470,9 +471,12 @@ def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear"):
             sub = sub_w[sub_w["system"] == system].sort_values("worker_threads")
             if sub.empty:
                 continue
+            yvals = sub[metric]
+            if clamp_min is not None:
+                yvals = yvals.clip(lower=clamp_min)
             ax.plot(
                 sub["worker_threads"],
-                sub[metric],
+                yvals,
                 color=COLORS[system],
                 marker=MARKERS[system],
                 linewidth=2.6 if system == "Ayame" else 2.2,
@@ -713,7 +717,8 @@ def main():
         "Pending durable commits",
         outputs[2],
         "Worker-thread pending durable commits",
-        yscale="symlog",
+        yscale="log",
+        clamp_min=1,
     )
     draw_speedup(rows, outputs[3])
     report = write_report(rows, raw_csv, outputs, args)

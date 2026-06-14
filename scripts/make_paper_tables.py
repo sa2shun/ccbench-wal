@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 import csv
+import re
 from collections import defaultdict
 from pathlib import Path
+
+
+def fmt_symbol(sym):
+    # Render C++ symbols in a monospace font with escaped underscores, and drop
+    # template arguments (<Tuple>) so that < > do not become inverted marks
+    # under the default font encoding.
+    sym = re.sub(r"<[^>]*>", "", str(sym))
+    return "\\texttt{" + sym.replace("_", "\\_") + "}"
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -151,6 +160,7 @@ def main():
         ["Workload", "P-WAL tps", "Ayame tps", "Speedup", "Ayame p99 $\\mu$s", "Ayame pending"],
         rows,
         align="lrrrrr",
+        wide=True,
     )
 
     perf = read_csv(TABLE_DIR / "ayame_perf_stat_20260609.csv")
@@ -207,7 +217,7 @@ def main():
     for system in ["Single WAL", "P-WAL", "Ayame"]:
         for r in top:
             if r["workload"] == "YCSB-C" and r["system"] == system and int(r["rank"]) <= 5:
-                rows.append([system, str(int(r["rank"])), f"{r['self_pct']:.2f}", str(r["symbol"]).replace("_", "\\_")])
+                rows.append([system, str(int(r["rank"])), f"{r['self_pct']:.2f}", fmt_symbol(r["symbol"])])
     tex_table(
         TABLE_DIR / "table_ycsbc_perf_top.tex",
         "Top self-time symbols for YCSB-C at 32 transaction worker threads.",
