@@ -153,10 +153,10 @@ def draw(rows, workers, out_path):
             if yscale != "linear":
                 ax.set_yscale(yscale)
             ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: compact(v)))
-            ax.set_xscale("log", base=2)
-            ax.set_xticks(workers)
+            ax.set_xscale("linear")
+            ax.set_xticks([4, 16, 32, 48, 96])
             ax.minorticks_off()
-            ax.set_xticklabels([str(w) for w in workers])
+            ax.set_xticklabels(["4", "16", "32", "48", "96"])
             if row_i == 0:
                 ax.set_title(workload, fontsize=16, fontweight="bold")
             if row_i == 1:
@@ -182,8 +182,25 @@ def main():
     ap.add_argument("--group-size", type=int, default=16)
     ap.add_argument("--flush-us", type=int, default=50)
     ap.add_argument("--max-pending", type=int, default=65536)
+    ap.add_argument("--input-csv", default="",
+                    help="re-draw the figure from an existing CSV without re-measuring")
     args = ap.parse_args()
     workers = [int(x) for x in args.workers.split(",") if x]
+
+    if args.input_csv:
+        agg = []
+        with open(args.input_csv, newline="") as f:
+            for r in csv.DictReader(f):
+                agg.append({"policy": r["policy"], "workload": r["workload"],
+                            "worker_threads": int(r["worker_threads"]),
+                            "ack_tps": float(r["ack_tps"]), "p99_us": float(r["p99_us"]),
+                            "pending": float(r["pending"])})
+        workers = sorted({a["worker_threads"] for a in agg})
+        fig_path = FIG_DIR / "fig_ack_policy_ablation.pdf"
+        draw(agg, workers, fig_path)
+        print("FIG (replot):", fig_path)
+        return
+
     out_dir = RESULTS / "ack_policy_ablation"
     out_dir.mkdir(parents=True, exist_ok=True)
 

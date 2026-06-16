@@ -491,9 +491,9 @@ def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear",
             )
         ax.set_title(workload, fontsize=16, fontweight="bold", pad=8)
         ax.set_xlabel("Worker threads")
-        ax.set_xscale("log", base=2)
-        ax.set_xticks(workers)
-        ax.set_xticklabels([str(int(x)) for x in workers], rotation=0)
+        ax.set_xscale("linear")
+        ax.set_xticks([1, 16, 32, 48, 96])
+        ax.set_xticklabels(["1", "16", "32", "48", "96"], rotation=0)
         ax.minorticks_off()
         if yscale != "linear":
             ax.set_yscale(yscale)
@@ -567,9 +567,9 @@ def draw_speedup(rows, output):
     ax.axhline(1.0, color="#9ca3af", linewidth=1.0, linestyle="--")
     ax.set_xlabel("Worker threads", labelpad=8)
     ax.set_ylabel("Ayame / P-WAL ack throughput", labelpad=8)
-    ax.set_xscale("log", base=2)
-    ax.set_xticks(sorted(df["worker_threads"].unique()))
-    ax.set_xticklabels([str(int(x)) for x in sorted(df["worker_threads"].unique())])
+    ax.set_xscale("linear")
+    ax.set_xticks([1, 16, 32, 48, 96])
+    ax.set_xticklabels(["1", "16", "32", "48", "96"])
     ax.minorticks_off()
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.1f}x"))
     ax.grid(True, axis="y", color="#e5e7eb", linewidth=0.9)
@@ -676,7 +676,42 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if args.input_csv:
-        raw_rows = read_rows(ROOT / args.input_csv if not Path(args.input_csv).is_absolute() else args.input_csv)
+        in_path = ROOT / args.input_csv if not Path(args.input_csv).is_absolute() else Path(args.input_csv)
+        loaded = read_rows(in_path)
+        if loaded and "ack_tps" in loaded[0] and "durable_ack_tps" not in loaded[0]:
+            # Already-aggregated summary CSV: re-draw figures only.  Never
+            # re-aggregate or overwrite a summary CSV here -- doing so would
+            # zero out every metric (aggregate expects raw per-run columns).
+            rows = []
+            for r in loaded:
+                d = dict(r)
+                d["worker_threads"] = int(float(r["worker_threads"]))
+                for k in ("ack_tps", "p99_us", "p50_us", "p95_us", "pending"):
+                    if d.get(k, "") != "":
+                        try:
+                            d[k] = float(r[k])
+                        except ValueError:
+                            pass
+                rows.append(d)
+            FIG_DIR.mkdir(parents=True, exist_ok=True)
+            outs = [
+                FIG_DIR / "fig_ycsbabc_worker_threads_throughput.pdf",
+                FIG_DIR / "fig_ycsbabc_worker_threads_latency.pdf",
+                FIG_DIR / "fig_ycsbabc_worker_threads_pending.pdf",
+                FIG_DIR / "fig_ycsbabc_worker_threads_ayame_speedup_vs_pwal.pdf",
+            ]
+            draw_faceted_lines(rows, "ack_tps", "Ack throughput [tx/s]", outs[0],
+                               "Worker-thread comparison with a common CCBench binary")
+            draw_faceted_lines(rows, "p99_us", "p99 latency [us]", outs[1],
+                               "Worker-thread p99 durable-ack latency", yscale="log")
+            draw_faceted_lines(rows, "pending", "Pending durable commits", outs[2],
+                               "Worker-thread pending durable commits", yscale="log",
+                               clamp_min=1)
+            draw_speedup(rows, outs[3])
+            for o in outs:
+                print(o)
+            return
+        raw_rows = loaded
     else:
         raw_rows = []
         for repeat in range(args.repeats):
