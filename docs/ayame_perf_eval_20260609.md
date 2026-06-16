@@ -1,6 +1,6 @@
 # Ayame perf evaluation
 
-date: 2026-06-14T12:50:51
+date: 2026-06-16T16:54:02
 
 This perf run uses only the three paper systems: Single WAL, P-WAL, and Ayame.
 It is internal analysis, not a component ablation.
@@ -15,22 +15,22 @@ It is internal analysis, not a component ablation.
 | perf stat seconds | 5 |
 | perf record seconds | 5 |
 | events | task-clock,context-switches,cpu-migrations,page-faults,cycles,instructions,cache-references,cache-misses,LLC-loads,LLC-load-misses |
-| stat csv | `results/ayame_perf_eval_20260614_124642/ayame_perf_stat_raw_20260614_124642.csv` |
+| stat csv | `results/ayame_perf_eval_20260616_164948/ayame_perf_stat_raw_20260616_164948.csv` |
 | top csv | `paper/tables/ayame_perf_top_20260609.csv` |
 
 ## perf stat summary
 
 | workload | system | ack tps | CPU cores | cycles/tx | instr/tx | IPC | ctx switches | fdatasync | commits/fdatasync | pending | p99 us |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| YCSB-A | Single WAL | 8109 | 1.14 | 352610 | 667554 | 1.893 | 132392 | 40532 | 1.00 | 0 | 4096 |
-| YCSB-A | P-WAL | 54266 | 15.26 | 709234 | 411314 | 0.580 | 1546359 | 271090 | 1.00 | 0 | 512 |
-| YCSB-A | Ayame | 247254 | 20.94 | 209634 | 139134 | 0.664 | 3356701 | 85167 | 14.53 | 773 | 4096 |
-| YCSB-B | Single WAL | 22158 | 1.03 | 116358 | 161957 | 1.392 | 138839 | 44507 | 2.49 | 0 | 4096 |
-| YCSB-B | P-WAL | 201666 | 14.62 | 183159 | 102454 | 0.559 | 1471140 | 404544 | 2.49 | 0 | 256 |
-| YCSB-B | Ayame | 464925 | 25.39 | 137440 | 63130 | 0.460 | 2877998 | 126235 | 18.42 | 72 | 512 |
-| YCSB-C | Single WAL | 658225 | 32.26 | 127166 | 29550 | 0.232 | 3297 | 0 | 0.00 | 0 | 49 |
-| YCSB-C | P-WAL | 657812 | 32.26 | 127261 | 29959 | 0.235 | 3242 | 0 | 0.00 | 0 | 49 |
-| YCSB-C | Ayame | 640848 | 32.28 | 130724 | 33253 | 0.255 | 34545 | 0 | 0.00 | 0 | 50 |
+| YCSB-A | Single WAL | 7467 | 1.33 | 472527 | 755683 | 1.621 | 125815 | 37332 | 1.00 | 0 | 4096 |
+| YCSB-A | P-WAL | 42643 | 10.22 | 609702 | 517618 | 0.853 | 1119845 | 213049 | 1.00 | 0 | 1024 |
+| YCSB-A | Ayame | 147570 | 18.58 | 315832 | 374322 | 1.171 | 1431732 | 52175 | 15.40 | 65512 | 262144 |
+| YCSB-B | Single WAL | 18406 | 1.29 | 254884 | 207058 | 1.004 | 118337 | 36802 | 2.50 | 0 | 2048 |
+| YCSB-B | P-WAL | 124350 | 8.99 | 213495 | 158618 | 0.786 | 956930 | 249403 | 2.49 | 0 | 512 |
+| YCSB-B | Ayame | 507746 | 23.30 | 138704 | 121004 | 0.782 | 2377111 | 72627 | 34.79 | 6376 | 32768 |
+| YCSB-C | Single WAL | 654653 | 32.36 | 128525 | 29586 | 0.231 | 3126 | 0 | 0.00 | 0 | 50 |
+| YCSB-C | P-WAL | 629131 | 32.46 | 133945 | 30034 | 0.224 | 3405 | 0 | 0.00 | 0 | 51 |
+| YCSB-C | Ayame | 659972 | 32.47 | 127754 | 33304 | 0.261 | 34728 | 0 | 0.00 | 0 | 49 |
 
 ## perf top symbols
 
@@ -38,59 +38,59 @@ It is internal analysis, not a component ablation.
 
 | system | rank | self % | symbol |
 |---|---:|---:|---|
-| Single WAL | 1 | 32.69 | `TxExecutor::ssn_parallel_commit` |
-| Single WAL | 2 | 7.78 | `TxExecutor::install_version` |
-| Single WAL | 3 | 6.04 | `do_syscall_64` |
-| Single WAL | 4 | 5.80 | `TxExecutor::abort` |
-| Single WAL | 5 | 5.58 | `__find_get_block` |
-| P-WAL | 1 | 40.91 | `native_queued_spin_lock_slowpath.part.0` |
-| P-WAL | 2 | 8.58 | `ccbench::WalLogger::logPerThread<std::vector<SetElement<Tuple>, std::allocator<SetElement<Tuple> > > >` |
-| P-WAL | 3 | 3.81 | `pthread_mutex_lock@@GLIBC_2.2.5` |
-| P-WAL | 4 | 3.71 | `TxExecutor::ssn_parallel_commit` |
-| P-WAL | 5 | 2.76 | `pthread_mutex_unlock@@GLIBC_2.2.5` |
-| Ayame | 1 | 8.88 | `pthread_mutex_lock@@GLIBC_2.2.5` |
-| Ayame | 2 | 6.16 | `TxExecutor::mergeVersionFrontier` |
-| Ayame | 3 | 3.38 | `TxExecutor::install_version` |
-| Ayame | 4 | 3.18 | `TxExecutor::update` |
-| Ayame | 5 | 3.00 | `TxExecutor::ssn_parallel_commit` |
+| Single WAL | 1 | 18.60 | `TxExecutor::ssn_parallel_commit` |
+| Single WAL | 2 | 15.85 | `TxExecutor::install_version` |
+| Single WAL | 3 | 6.18 | `slab_free_freelist_hook.constprop.0` |
+| Single WAL | 4 | 5.60 | `ttwu_queue_wakelist` |
+| Single WAL | 5 | 5.34 | `ext4_sync_file` |
+| P-WAL | 1 | 37.85 | `native_queued_spin_lock_slowpath.part.0` |
+| P-WAL | 2 | 12.08 | `ccbench::WalLogger::logPerThread<std::vector<SetElement<Tuple>, std::allocator<SetElement<Tuple> > > >` |
+| P-WAL | 3 | 5.41 | `pthread_mutex_lock@@GLIBC_2.2.5` |
+| P-WAL | 4 | 3.36 | `TxExecutor::ssn_parallel_commit` |
+| P-WAL | 5 | 2.48 | `pthread_mutex_unlock@@GLIBC_2.2.5` |
+| Ayame | 1 | 5.68 | `pthread_mutex_lock@@GLIBC_2.2.5` |
+| Ayame | 2 | 5.05 | `TxExecutor::mergeVersionFrontier` |
+| Ayame | 3 | 3.76 | `TxExecutor::ssn_parallel_commit` |
+| Ayame | 4 | 3.19 | `TxExecutor::install_version` |
+| Ayame | 5 | 2.88 | `TxExecutor::publishReadFrontier` |
 
 ### YCSB-B
 
 | system | rank | self % | symbol |
 |---|---:|---:|---|
-| Single WAL | 1 | 26.92 | `TxExecutor::ssn_parallel_commit` |
-| Single WAL | 2 | 6.53 | `update_sg_lb_stats` |
-| Single WAL | 3 | 5.27 | `sd_setup_read_write_cmnd` |
-| Single WAL | 4 | 5.25 | `idle_cpu` |
-| Single WAL | 5 | 4.93 | `TxExecutor::read_internal` |
-| P-WAL | 1 | 31.77 | `native_queued_spin_lock_slowpath.part.0` |
-| P-WAL | 2 | 14.58 | `TxExecutor::read` |
-| P-WAL | 3 | 7.46 | `ccbench::WalLogger::logPerThread<std::vector<SetElement<Tuple>, std::allocator<SetElement<Tuple> > > >` |
-| P-WAL | 4 | 7.04 | `TxExecutor::ssn_parallel_commit` |
-| P-WAL | 5 | 4.01 | `MasstreeWrapper<Tuple>::get_value` |
-| Ayame | 1 | 20.85 | `TxExecutor::read` |
-| Ayame | 2 | 9.83 | `TxExecutor::ssn_parallel_commit` |
-| Ayame | 3 | 5.01 | `pthread_mutex_lock@@GLIBC_2.2.5` |
-| Ayame | 4 | 4.93 | `TxExecutor::mergeVersionFrontier` |
-| Ayame | 5 | 3.91 | `MasstreeWrapper<Tuple>::get_value` |
+| Single WAL | 1 | 34.38 | `TxExecutor::ssn_parallel_commit` |
+| Single WAL | 2 | 8.89 | `MasstreeWrapper<Tuple>::get_value` |
+| Single WAL | 3 | 5.19 | `std::chrono::_V2::steady_clock::now` |
+| Single WAL | 4 | 4.14 | `TxExecutor::read_internal` |
+| Single WAL | 5 | 3.87 | `crc32c_pcl_intel_update` |
+| P-WAL | 1 | 22.34 | `native_queued_spin_lock_slowpath.part.0` |
+| P-WAL | 2 | 7.62 | `TxExecutor::read` |
+| P-WAL | 3 | 7.59 | `ccbench::WalLogger::logPerThread<std::vector<SetElement<Tuple>, std::allocator<SetElement<Tuple> > > >` |
+| P-WAL | 4 | 7.53 | `TxExecutor::ssn_parallel_commit` |
+| P-WAL | 5 | 6.63 | `pthread_mutex_lock@@GLIBC_2.2.5` |
+| Ayame | 1 | 9.82 | `TxExecutor::read` |
+| Ayame | 2 | 5.30 | `TxExecutor::ssn_parallel_commit` |
+| Ayame | 3 | 3.99 | `MasstreeWrapper<Tuple>::get_value` |
+| Ayame | 4 | 3.42 | `TxExecutor::mergeVersionFrontier` |
+| Ayame | 5 | 3.30 | `TxExecutor::read_internal` |
 
 ### YCSB-C
 
 | system | rank | self % | symbol |
 |---|---:|---:|---|
-| Single WAL | 1 | 58.74 | `TxExecutor::read` |
-| Single WAL | 2 | 24.08 | `TxExecutor::ssn_parallel_commit` |
-| Single WAL | 3 | 4.46 | `MasstreeWrapper<Tuple>::get_value` |
-| Single WAL | 4 | 3.11 | `TxExecutor::read_internal` |
-| Single WAL | 5 | 2.85 | `TxExecutor::mainte` |
-| P-WAL | 1 | 60.25 | `TxExecutor::read` |
-| P-WAL | 2 | 23.10 | `TxExecutor::ssn_parallel_commit` |
-| P-WAL | 3 | 4.71 | `MasstreeWrapper<Tuple>::get_value` |
-| P-WAL | 4 | 2.85 | `TxExecutor::mainte` |
-| P-WAL | 5 | 2.55 | `TxExecutor::read_internal` |
-| Ayame | 1 | 56.72 | `TxExecutor::read` |
-| Ayame | 2 | 22.62 | `TxExecutor::ssn_parallel_commit` |
-| Ayame | 3 | 4.30 | `MasstreeWrapper<Tuple>::get_value` |
-| Ayame | 4 | 3.07 | `TxExecutor::mergeVersionFrontier` |
-| Ayame | 5 | 2.65 | `TxExecutor::read_internal` |
+| Single WAL | 1 | 58.81 | `TxExecutor::read` |
+| Single WAL | 2 | 24.00 | `TxExecutor::ssn_parallel_commit` |
+| Single WAL | 3 | 4.41 | `MasstreeWrapper<Tuple>::get_value` |
+| Single WAL | 4 | 3.31 | `TxExecutor::mainte` |
+| Single WAL | 5 | 3.02 | `TxExecutor::read_internal` |
+| P-WAL | 1 | 58.62 | `TxExecutor::read` |
+| P-WAL | 2 | 23.52 | `TxExecutor::ssn_parallel_commit` |
+| P-WAL | 3 | 4.39 | `MasstreeWrapper<Tuple>::get_value` |
+| P-WAL | 4 | 3.54 | `TxExecutor::mainte` |
+| P-WAL | 5 | 3.37 | `TxExecutor::read_internal` |
+| Ayame | 1 | 57.20 | `TxExecutor::read` |
+| Ayame | 2 | 22.58 | `TxExecutor::ssn_parallel_commit` |
+| Ayame | 3 | 3.87 | `MasstreeWrapper<Tuple>::get_value` |
+| Ayame | 4 | 3.13 | `TxExecutor::mainte` |
+| Ayame | 5 | 3.06 | `TxExecutor::read_internal` |
 

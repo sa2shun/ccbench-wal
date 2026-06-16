@@ -3,6 +3,7 @@ import argparse
 import csv
 import os
 import re
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -94,6 +95,7 @@ def run_env(mode, worker, args, out_dir, case_name):
 def ycsb_cmd(workload, worker, seconds):
     preset = WORKLOAD_PRESETS[workload]
     return [
+        "numactl", "--interleave=all",
         str(PWAL_YCSB_EXE),
         f"--thread_num={worker}",
         f"--extime={seconds}",
@@ -182,6 +184,7 @@ def run_stat_case(out_dir, workload, mode, repeat, args):
     ]
     with out_path.open("w") as out, err_path.open("w") as err:
         proc = subprocess.run(cmd, cwd=ROOT, env=env, stdout=out, stderr=err)
+    shutil.rmtree(out_dir / "wal" / case, ignore_errors=True)
     metrics = parse_metrics(out_path.read_text(errors="replace"))
     row = perf_row(workload, mode, repeat, worker, alloc, metrics,
                    parse_perf_stat(stat_path), args.seconds)
@@ -233,6 +236,7 @@ def run_record_case(out_dir, workload, mode, args):
     ]
     with out_path.open("w") as out, err_path.open("w") as err:
         proc = subprocess.run(cmd, cwd=ROOT, env=env, stdout=out, stderr=err)
+    shutil.rmtree(out_dir / "wal" / f"record_{case}", ignore_errors=True)
     if proc.returncode == 0:
         with report_path.open("w") as out, report_err_path.open("w") as err:
             subprocess.run([

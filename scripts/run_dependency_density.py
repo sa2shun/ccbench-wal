@@ -19,6 +19,7 @@ import argparse
 import csv
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -48,6 +49,10 @@ def parse_metrics(text):
 
 def run_case(out_dir, mode_value, remote_ppm, repeat, args):
     wal_dir = out_dir / "wal"
+    # The WAL dir is shared across all runs; clear it before each run so the
+    # log files do not accumulate (high-throughput runs write ~1 GB each and
+    # would otherwise fill the disk over the full sweep).
+    shutil.rmtree(wal_dir, ignore_errors=True)
     wal_dir.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env.update({
@@ -62,6 +67,7 @@ def run_case(out_dir, mode_value, remote_ppm, repeat, args):
         "CCBENCH_WAL_MAX_PENDING": str(args.max_pending),
     })
     cmd = [
+        "numactl", "--interleave=all",
         str(EXE), f"--thread_num={args.workers}", f"--extime={args.seconds}",
         "--clocks_per_us=1800", "--ycsb_tuple_num=100000", "--ycsb_max_ope=10",
         f"--ycsb_remote_read_prob_ppm={remote_ppm}",
@@ -108,7 +114,16 @@ def main():
     ap.add_argument("--workers", type=int, default=32)
     ap.add_argument("--seconds", type=int, default=5)
     ap.add_argument("--repeats", type=int, default=5)
-    ap.add_argument("--group-size", type=int, default=16)
+    # The abort-free workload commits (and logs) on every transaction, so its
+    # per-second WAL volume is roughly twice that of the mixed YCSB workloads
+    # (which skip read-only transactions).  With the default group of 16 the
+    # fdatasync-bound flush pipeline saturates for *both* acknowledgment
+    # policies, hiding the effect we want to isolate.  A flush group of 64
+    # keeps the pipeline unsaturated for both policies, so the remaining
+    # difference reflects only the acknowledgment rule.  The result is robust
+    # to the exact value (64-1024 all drain the dependency-frontier rule while
+    # global-prefix stays saturated).
+    ap.add_argument("--group-size", type=int, default=64)
     ap.add_argument("--flush-us", type=int, default=50)
     ap.add_argument("--max-pending", type=int, default=65536)
     args = ap.parse_args()

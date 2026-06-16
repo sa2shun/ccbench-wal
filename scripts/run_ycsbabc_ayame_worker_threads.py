@@ -3,6 +3,7 @@ import argparse
 import csv
 import os
 import re
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -180,6 +181,8 @@ def run_case(out_dir, workload, mode, repeat, worker, args):
     logs = out_dir / "logs"
     logs.mkdir(parents=True, exist_ok=True)
     wal_dir = out_dir / "wal"
+    # Shared across all runs; clear before each so WAL files do not accumulate.
+    shutil.rmtree(wal_dir, ignore_errors=True)
     preset = WORKLOAD_PRESETS[workload]
 
     env = os.environ.copy()
@@ -205,6 +208,7 @@ def run_case(out_dir, workload, mode, repeat, worker, args):
         env["CCBENCH_WAL_COMMITTER_NUM"] = str(committer)
 
     cmd = [
+        "numactl", "--interleave=all",
         str(PWAL_YCSB_EXE),
         f"--thread_num={worker}",
         f"--extime={args.seconds}",
@@ -487,8 +491,10 @@ def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear",
             )
         ax.set_title(workload, fontsize=16, fontweight="bold", pad=8)
         ax.set_xlabel("Worker threads")
+        ax.set_xscale("log", base=2)
         ax.set_xticks(workers)
         ax.set_xticklabels([str(int(x)) for x in workers], rotation=0)
+        ax.minorticks_off()
         if yscale != "linear":
             ax.set_yscale(yscale)
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: compact_number(v)))
@@ -561,7 +567,10 @@ def draw_speedup(rows, output):
     ax.axhline(1.0, color="#9ca3af", linewidth=1.0, linestyle="--")
     ax.set_xlabel("Worker threads", labelpad=8)
     ax.set_ylabel("Ayame / P-WAL ack throughput", labelpad=8)
+    ax.set_xscale("log", base=2)
     ax.set_xticks(sorted(df["worker_threads"].unique()))
+    ax.set_xticklabels([str(int(x)) for x in sorted(df["worker_threads"].unique())])
+    ax.minorticks_off()
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.1f}x"))
     ax.grid(True, axis="y", color="#e5e7eb", linewidth=0.9)
     ax.grid(False, axis="x")
@@ -647,7 +656,7 @@ def write_report(rows, raw_csv, outputs, args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workloads", default="ycsb_a,ycsb_b,ycsb_c")
-    parser.add_argument("--workers", default="1,2,4,8,16,32")
+    parser.add_argument("--workers", default="1,2,4,8,16,32,48,96")
     parser.add_argument("--seconds", type=int, default=5)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--clocks-per-us", dest="clocks_per_us", type=int, default=1800,

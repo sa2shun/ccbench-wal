@@ -43,7 +43,7 @@
 
 
 % Problem of P-WAL
-P-WAL is attractive because it removes the single-WAL insertion bottleneck by assigning transactions to multiple log streams.  However, combining P-WAL with SSN exposes three
+P-WAL is attractive because it removes the single-WAL insertion bottleneck by assigning transactions to multiple log streams, which we hereafter call \emph{WAL shards}.  However, combining P-WAL with SSN exposes three
 problems.
 
 \textbf{P1. Multiple Global Counter Accesses:~} First, P-WAL can introduce frequent global-counter accesses.  Even if the CC

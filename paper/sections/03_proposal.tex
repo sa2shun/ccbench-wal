@@ -26,7 +26,8 @@ $i$ that is known to be durable; each $D[i]$ advances monotonically.
 \label{sec:cstamp}
 
 In SSN, a committing transaction $T$ is assigned a commit timestamp
-$T.c$ that fixes its position in the serialization order.  We assume that
+$T.c$ (its \emph{cstamp}) that fixes its position in the serialization
+order.  We assume that
 SSN assigns a unique commit timestamp to each committed update
 transaction, so these timestamps form a total order that recovery uses
 as the replay order.  A separate
@@ -67,13 +68,15 @@ Accordingly, we report throughput as the number of durable
 acknowledgments returned to clients, not the number of logical commits.
 
 Algorithm~\ref{alg:ayame-commit} shows the worker-side commit protocol.
-The commit timestamp assigned for SSN validation doubles as the logical
-LSN (line~\ref{ln:cstamp}).  After validation, the worker enqueues the
-record to its shard without flushing or waiting
-(line~\ref{ln:enqueue}).  It then forms the closed frontier $F$ by
-extending its dependency frontier $T.\dep$ with its own log position
-(line~\ref{ln:closed}).  Ayame installs $F$ as the write frontier of the
-versions $T$ created (line~\ref{ln:pub-w}) and publishes those versions
+The commit timestamp $T.c$ assigned for SSN validation doubles as the
+logical LSN (line~\ref{ln:cstamp}).  After validation, the worker
+reserves its log position on its shard (line~\ref{ln:reserve}) and forms
+the closed frontier $F$ by extending its dependency frontier $T.\dep$
+with that position (line~\ref{ln:closed}).  It then builds the log
+record, whose commit record carries $F$ (line~\ref{ln:build}), and
+enqueues it without flushing or waiting (line~\ref{ln:enqueue}).  Ayame
+installs $F$ as the write frontier of the versions $T$ created
+(line~\ref{ln:pub-w}) and publishes those versions
 (line~\ref{ln:publish}); a version becomes visible only after its write
 frontier is installed, so any later reader or overwriter observes the
 writer's complete frontier.  It also merges $F$ into the read frontiers
@@ -86,7 +89,7 @@ returning a logical commit.
 \label{alg:ayame-commit}
 \begin{algorithmic}[1]
 \Function{Commit}{$T$}
-    \State $T.c \gets$ commit timestamp assigned by SSN
+    \State $T.c \gets$ commit timestamp (cstamp) assigned by SSN
            \label{ln:cstamp}
            \Comment{logical LSN}
     \If{\Call{SsnValidate}{$T$} fails}
@@ -98,13 +101,18 @@ returning a logical commit.
         \State \Return logical read-only commit
     \EndIf
     \State $s \gets$ WAL shard assigned to this worker
-    \State $r \gets$ \Call{BuildRecord}{$T.c, T.\mathit{write\_set}$}
-    \State $T.\lseq \gets$ \Call{Enqueue}{$\mathit{wal}[s], r$}
-           \label{ln:enqueue}
-           \Comment{append only; no flush, no wait}
+    \State $T.\lseq \gets$ \Call{ReserveSeq}{$\mathit{wal}[s]$}
+           \label{ln:reserve}
+           \Comment{reserve this transaction's log position}
     \State $F \gets T.\dep$; \quad $F[s] \gets \max(F[s], T.\lseq)$
            \label{ln:closed}
            \Comment{closed frontier}
+    \State $r \gets$ \Call{BuildRecord}{$T.c, F, T.\mathit{write\_set}$}
+           \label{ln:build}
+           \Comment{commit record carries $F$}
+    \State \Call{Enqueue}{$\mathit{wal}[s], r$}
+           \label{ln:enqueue}
+           \Comment{append only; no flush, no wait}
     \ForAll{versions $v$ created by $T$}
         \State $v.\wfr \gets F$ \label{ln:pub-w}
     \EndFor
@@ -273,15 +281,20 @@ $F[s_U] \ge F_U[s_U] \ge U.\lseq$, for every $U \in \mathrm{cl}(T)$.
 is a durable prefix of shard $i$, the record of $U$ is durable.
 \end{proof}
 
-During recovery, Ayame reconstructs each WAL shard's durable prefix by
-parsing its records in order and stopping at the first record that does
-not parse as a complete, well-formed entry, which indicates a torn final
-write; records beyond that point are ignored.  A distinguished commit
-marker identifies each transaction's commit record.  Ayame then collects
-the transactions whose commit records lie within these durable prefixes,
-discards incomplete transactions, and replays the collected transactions
-in increasing logical-LSN order, where the logical LSN is the SSN commit
-timestamp (cstamp).
+Each commit record stores the transaction's commit timestamp $T.c$ and
+its closed dependency frontier $F$, alongside the redo records that carry
+the write set.  During recovery, Ayame reconstructs the durable vector
+$D$ by parsing each shard's records in order and advancing $D[i]$ until
+the first record that does not parse as a complete, well-formed entry,
+which indicates a torn final write; records beyond that point are
+ignored.  A distinguished commit marker identifies each transaction's
+commit record.  Ayame then collects the committed transactions whose
+commit records lie within $D$, keeps only those whose stored frontier is
+covered by the durable vector (that is, $F \le D$), and replays this
+dependency-closed set in increasing cstamp order.  Because the replayed
+set is closed under $F \le D$, a recovered transaction never appears
+without the transactions it depends on, even if its own commit record
+happened to be durable while a dependency's was not.
 
 \begin{theorem}[Recoverable acknowledgment]
 \label{thm:recover}

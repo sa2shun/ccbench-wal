@@ -1,0 +1,49 @@
+system,condition,workers,tps_mean
+Single WAL,default,1,150719
+Single WAL,default,2,257974
+Single WAL,default,4,427950
+Single WAL,default,8,557991
+Single WAL,default,16,571643
+Single WAL,default,32,753488
+Single WAL,default,48,832771
+Single WAL,default,96,972374
+Single WAL,interleave,1,154169
+Single WAL,interleave,2,252310
+Single WAL,interleave,4,453778
+Single WAL,interleave,8,622601
+Single WAL,interleave,16,655214
+Single WAL,interleave,32,665870
+Single WAL,interleave,48,777480
+Single WAL,interleave,96,952244
+P-WAL,default,1,162574
+P-WAL,default,2,269630
+P-WAL,default,4,465711
+P-WAL,default,8,665123
+P-WAL,default,16,585366
+P-WAL,default,32,677719
+P-WAL,default,48,796625
+P-WAL,default,96,949662
+P-WAL,interleave,1,156322
+P-WAL,interleave,2,259923
+P-WAL,interleave,4,463654
+P-WAL,interleave,8,548205
+P-WAL,interleave,16,549717
+P-WAL,interleave,32,775200
+P-WAL,interleave,48,829474
+P-WAL,interleave,96,976687
+Ayame,default,1,138686
+Ayame,default,2,222227
+Ayame,default,4,380532
+Ayame,default,8,529095
+Ayame,default,16,522440
+Ayame,default,32,669473
+Ayame,default,48,756315
+Ayame,default,96,947923
+Ayame,interleave,1,138887
+Ayame,interleave,2,234837
+Ayame,interleave,4,411938
+Ayame,interleave,8,475107
+Ayame,interleave,16,573570
+Ayame,interleave,32,654296
+Ayame,interleave,48,832270
+Ayame,interleave,96,980608

@@ -17,6 +17,7 @@ import argparse
 import csv
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -59,6 +60,8 @@ def parse_metrics(text):
 
 def run_case(out_dir, policy, mode_value, workload, rratio, worker, repeat, args):
     wal_dir = out_dir / "wal"
+    # Shared across all runs; clear before each so WAL files do not accumulate.
+    shutil.rmtree(wal_dir, ignore_errors=True)
     wal_dir.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env.update({
@@ -73,6 +76,7 @@ def run_case(out_dir, policy, mode_value, workload, rratio, worker, repeat, args
         "CCBENCH_WAL_MAX_PENDING": str(args.max_pending),
     })
     cmd = [
+        "numactl", "--interleave=all",
         str(EXE), f"--thread_num={worker}", f"--extime={args.seconds}",
         "--clocks_per_us=1800", "--ycsb_tuple_num=100000",
         "--ycsb_max_ope=10", f"--ycsb_rratio={rratio}",
@@ -149,7 +153,9 @@ def draw(rows, workers, out_path):
             if yscale != "linear":
                 ax.set_yscale(yscale)
             ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: compact(v)))
+            ax.set_xscale("log", base=2)
             ax.set_xticks(workers)
+            ax.minorticks_off()
             ax.set_xticklabels([str(w) for w in workers])
             if row_i == 0:
                 ax.set_title(workload, fontsize=16, fontweight="bold")
@@ -170,7 +176,7 @@ def draw(rows, workers, out_path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--workers", default="4,8,16,32")
+    ap.add_argument("--workers", default="4,8,16,32,48,96")
     ap.add_argument("--seconds", type=int, default=5)
     ap.add_argument("--repeats", type=int, default=5)
     ap.add_argument("--group-size", type=int, default=16)

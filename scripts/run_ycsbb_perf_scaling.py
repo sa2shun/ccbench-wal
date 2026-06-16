@@ -2,6 +2,7 @@
 import argparse
 import csv
 import os
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -73,6 +74,7 @@ def workspace_path(path):
 def ycsb_cmd(worker, seconds):
     preset = WORKLOAD_PRESETS["ycsb_b"]
     return [
+        "numactl", "--interleave=all",
         str(PWAL_YCSB_EXE),
         f"--thread_num={worker}",
         f"--extime={seconds}",
@@ -132,6 +134,9 @@ def run_case(out_dir, mode, worker, repeat, args):
     ]
     with out_path.open("w") as out, err_path.open("w") as err:
         proc = subprocess.run(cmd, cwd=ROOT, env=env, stdout=out, stderr=err)
+    # WAL is write-only here (durability path, never replayed); drop it right
+    # after the run so per-run log files do not accumulate over the sweep.
+    shutil.rmtree(wal_dir, ignore_errors=True)
 
     row = parse_metrics(out_path.read_text(errors="replace"))
     row.update(
@@ -259,7 +264,9 @@ def draw_metric(rows, metric, ylabel, output, title):
     ax.set_title(title, loc="left", fontsize=16, fontweight="bold", pad=10)
     ax.set_xlabel("Worker threads")
     ax.set_ylabel(ylabel)
+    ax.set_xscale("log", base=2)
     ax.set_xticks(workers)
+    ax.minorticks_off()
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: compact_number(v)))
     ax.grid(True, axis="y")
     ax.grid(False, axis="x")
@@ -301,7 +308,9 @@ def draw_combined(rows, output):
         ax.set_title(title, fontsize=16, fontweight="bold")
         ax.set_xlabel("Worker threads")
         ax.set_ylabel(ylabel)
+        ax.set_xscale("log", base=2)
         ax.set_xticks(workers)
+        ax.minorticks_off()
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: compact_number(v)))
         ax.grid(True, axis="y")
         ax.grid(False, axis="x")
@@ -360,7 +369,7 @@ def write_report(summary, raw_csv, outputs, args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--workers", default="1,2,4,8,16,32")
+    parser.add_argument("--workers", default="1,2,4,8,16,32,48,96")
     parser.add_argument("--seconds", type=int, default=5)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--group-size", type=int, default=16)
