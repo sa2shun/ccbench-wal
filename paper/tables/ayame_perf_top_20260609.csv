@@ -1,98 +1,93 @@
 dso,mode,rank,report_log,self_pct,symbol,system,worker_threads,workload,workload_mode
-ycsb_ermia_pwal.exe,single_wal,1,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,18.60,TxExecutor::ssn_parallel_commit,Single WAL,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,single_wal,2,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,15.85,TxExecutor::install_version,Single WAL,32,YCSB-A,ycsb_a
-[kernel.kallsyms],single_wal,3,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,6.18,slab_free_freelist_hook.constprop.0,Single WAL,32,YCSB-A,ycsb_a
-[kernel.kallsyms],single_wal,4,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,5.60,ttwu_queue_wakelist,Single WAL,32,YCSB-A,ycsb_a
-[kernel.kallsyms],single_wal,5,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,5.34,ext4_sync_file,Single WAL,32,YCSB-A,ycsb_a
-[megaraid_sas],single_wal,6,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,4.62,megasas_build_and_issue_cmd_fusion,Single WAL,32,YCSB-A,ycsb_a
-[kernel.kallsyms],single_wal,7,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,4.50,zap_pte_range,Single WAL,32,YCSB-A,ycsb_a
-[kernel.kallsyms],single_wal,8,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,2.25,update_sg_lb_stats,Single WAL,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,single_wal,9,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,1.93,TxExecutor::abort,Single WAL,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,single_wal,10,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,1.88,MasstreeWrapper<Tuple>::get_value,Single WAL,32,YCSB-A,ycsb_a
-libstdc++.so.6.0.30,single_wal,11,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,1.11,0x000000000009eb14,Single WAL,32,YCSB-A,ycsb_a
-[kernel.kallsyms],single_wal,12,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,1.06,_raw_spin_lock_irqsave,Single WAL,32,YCSB-A,ycsb_a
-[kernel.kallsyms],pwal,1,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,37.85,native_queued_spin_lock_slowpath.part.0,P-WAL,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,pwal,2,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,12.08,"ccbench::WalLogger::logPerThread<std::vector<SetElement<Tuple>, std::allocator<SetElement<Tuple> > > >",P-WAL,32,YCSB-A,ycsb_a
-libc.so.6,pwal,3,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,5.41,pthread_mutex_lock@@GLIBC_2.2.5,P-WAL,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,pwal,4,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,3.36,TxExecutor::ssn_parallel_commit,P-WAL,32,YCSB-A,ycsb_a
-libc.so.6,pwal,5,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,2.48,pthread_mutex_unlock@@GLIBC_2.2.5,P-WAL,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,pwal,6,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,2.10,TxExecutor::read,P-WAL,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,pwal,7,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,2.07,TxExecutor::update,P-WAL,32,YCSB-A,ycsb_a
-[kernel.kallsyms],pwal,8,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,1.19,syscall_return_via_sysret,P-WAL,32,YCSB-A,ycsb_a
-[kernel.kallsyms],pwal,9,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,1.16,update_curr,P-WAL,32,YCSB-A,ycsb_a
-[kernel.kallsyms],pwal,10,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,1.04,exit_to_user_mode_prepare,P-WAL,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,pwal,11,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,1.03,TxExecutor::install_version,P-WAL,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,pwal,12,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,1.02,TxExecutor::read_internal,P-WAL,32,YCSB-A,ycsb_a
-libc.so.6,tidewal,1,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,5.68,pthread_mutex_lock@@GLIBC_2.2.5,Ayame,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,tidewal,2,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,5.05,TxExecutor::mergeVersionFrontier,Ayame,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,tidewal,3,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,3.76,TxExecutor::ssn_parallel_commit,Ayame,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,tidewal,4,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,3.19,TxExecutor::install_version,Ayame,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,tidewal,5,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,2.88,TxExecutor::publishReadFrontier,Ayame,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,tidewal,6,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,2.72,TxExecutor::read,Ayame,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,tidewal,7,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,2.57,MasstreeWrapper<Tuple>::get_value,Ayame,32,YCSB-A,ycsb_a
-[kernel.kallsyms],tidewal,8,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,2.47,native_queued_spin_lock_slowpath.part.0,Ayame,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,tidewal,9,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,2.24,TxExecutor::update,Ayame,32,YCSB-A,ycsb_a
-libc.so.6,tidewal,10,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,2.23,pthread_mutex_unlock@@GLIBC_2.2.5,Ayame,32,YCSB-A,ycsb_a
-[kernel.kallsyms],tidewal,11,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,2.06,copy_user_enhanced_fast_string,Ayame,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,tidewal,12,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,1.82,"ccbench::WalLogger::logPerThreadQueued<std::vector<SetElement<Tuple>, std::allocator<SetElement<Tuple> > > >",Ayame,32,YCSB-A,ycsb_a
-ycsb_ermia_pwal.exe,single_wal,1,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,34.38,TxExecutor::ssn_parallel_commit,Single WAL,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,single_wal,2,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,8.89,MasstreeWrapper<Tuple>::get_value,Single WAL,32,YCSB-B,ycsb_b
-libstdc++.so.6.0.30,single_wal,3,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,5.19,std::chrono::_V2::steady_clock::now,Single WAL,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,single_wal,4,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,4.14,TxExecutor::read_internal,Single WAL,32,YCSB-B,ycsb_b
-[kernel.kallsyms],single_wal,5,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,3.87,crc32c_pcl_intel_update,Single WAL,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,single_wal,6,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,3.69,TxExecutor::read,Single WAL,32,YCSB-B,ycsb_b
-libc.so.6,single_wal,7,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,3.52,__GI___pthread_disable_asynccancel,Single WAL,32,YCSB-B,ycsb_b
-[kernel.kallsyms],single_wal,8,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,3.52,perf_pmu_nop_void,Single WAL,32,YCSB-B,ycsb_b
-[kernel.kallsyms],single_wal,9,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,2.95,elv_rb_add,Single WAL,32,YCSB-B,ycsb_b
-[kernel.kallsyms],single_wal,10,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,2.66,update_sg_lb_stats,Single WAL,32,YCSB-B,ycsb_b
-[kernel.kallsyms],single_wal,11,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,2.42,_raw_spin_lock,Single WAL,32,YCSB-B,ycsb_b
-[kernel.kallsyms],single_wal,12,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,2.11,unlock_buffer,Single WAL,32,YCSB-B,ycsb_b
-[kernel.kallsyms],pwal,1,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,22.34,native_queued_spin_lock_slowpath.part.0,P-WAL,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,pwal,2,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,7.62,TxExecutor::read,P-WAL,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,pwal,3,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,7.59,"ccbench::WalLogger::logPerThread<std::vector<SetElement<Tuple>, std::allocator<SetElement<Tuple> > > >",P-WAL,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,pwal,4,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,7.53,TxExecutor::ssn_parallel_commit,P-WAL,32,YCSB-B,ycsb_b
-libc.so.6,pwal,5,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,6.63,pthread_mutex_lock@@GLIBC_2.2.5,P-WAL,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,pwal,6,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,2.83,MasstreeWrapper<Tuple>::get_value,P-WAL,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,pwal,7,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,2.61,TxExecutor::read_internal,P-WAL,32,YCSB-B,ycsb_b
-libc.so.6,pwal,8,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,2.53,pthread_mutex_unlock@@GLIBC_2.2.5,P-WAL,32,YCSB-B,ycsb_b
-[kernel.kallsyms],pwal,9,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,2.09,_raw_spin_lock,P-WAL,32,YCSB-B,ycsb_b
-[kernel.kallsyms],pwal,10,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,1.80,__schedule,P-WAL,32,YCSB-B,ycsb_b
-[kernel.kallsyms],pwal,11,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,1.76,do_sched_yield,P-WAL,32,YCSB-B,ycsb_b
-[kernel.kallsyms],pwal,12,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,1.71,update_curr,P-WAL,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,tidewal,1,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,9.82,TxExecutor::read,Ayame,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,tidewal,2,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,5.30,TxExecutor::ssn_parallel_commit,Ayame,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,tidewal,3,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,3.99,MasstreeWrapper<Tuple>::get_value,Ayame,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,tidewal,4,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,3.42,TxExecutor::mergeVersionFrontier,Ayame,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,tidewal,5,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,3.30,TxExecutor::read_internal,Ayame,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,tidewal,6,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,3.04,ccbench::WalLogger::committerLoop,Ayame,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,tidewal,7,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,3.00,TxExecutor::publishReadFrontier,Ayame,32,YCSB-B,ycsb_b
-libc.so.6,tidewal,8,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,2.78,pthread_mutex_lock@@GLIBC_2.2.5,Ayame,32,YCSB-B,ycsb_b
-[kernel.kallsyms],tidewal,9,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,2.73,syscall_return_via_sysret,Ayame,32,YCSB-B,ycsb_b
-[kernel.kallsyms],tidewal,10,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,2.63,native_queued_spin_lock_slowpath.part.0,Ayame,32,YCSB-B,ycsb_b
-[kernel.kallsyms],tidewal,11,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,2.33,__schedule,Ayame,32,YCSB-B,ycsb_b
-[kernel.kallsyms],tidewal,12,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,2.12,_raw_spin_lock,Ayame,32,YCSB-B,ycsb_b
-ycsb_ermia_pwal.exe,single_wal,1,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_single_wal.report.nochildren.txt,58.81,TxExecutor::read,Single WAL,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,single_wal,2,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_single_wal.report.nochildren.txt,24.00,TxExecutor::ssn_parallel_commit,Single WAL,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,single_wal,3,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_single_wal.report.nochildren.txt,4.41,MasstreeWrapper<Tuple>::get_value,Single WAL,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,single_wal,4,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_single_wal.report.nochildren.txt,3.31,TxExecutor::mainte,Single WAL,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,single_wal,5,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_single_wal.report.nochildren.txt,3.02,TxExecutor::read_internal,Single WAL,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,single_wal,6,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_single_wal.report.nochildren.txt,1.00,TxExecutor::begin,Single WAL,32,YCSB-C,ycsb_c
-[vdso],single_wal,7,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_single_wal.report.nochildren.txt,0.71,0x00000000000006e5,Single WAL,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,pwal,1,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_pwal.report.nochildren.txt,58.62,TxExecutor::read,P-WAL,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,pwal,2,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_pwal.report.nochildren.txt,23.52,TxExecutor::ssn_parallel_commit,P-WAL,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,pwal,3,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_pwal.report.nochildren.txt,4.39,MasstreeWrapper<Tuple>::get_value,P-WAL,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,pwal,4,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_pwal.report.nochildren.txt,3.54,TxExecutor::mainte,P-WAL,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,pwal,5,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_pwal.report.nochildren.txt,3.37,TxExecutor::read_internal,P-WAL,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,pwal,6,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_pwal.report.nochildren.txt,0.89,TxExecutor::begin,P-WAL,32,YCSB-C,ycsb_c
-[vdso],pwal,7,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_pwal.report.nochildren.txt,0.78,0x00000000000006e5,P-WAL,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,tidewal,1,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,57.20,TxExecutor::read,Ayame,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,tidewal,2,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,22.58,TxExecutor::ssn_parallel_commit,Ayame,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,tidewal,3,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,3.87,MasstreeWrapper<Tuple>::get_value,Ayame,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,tidewal,4,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,3.13,TxExecutor::mainte,Ayame,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,tidewal,5,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,3.06,TxExecutor::read_internal,Ayame,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,tidewal,6,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,2.92,TxExecutor::mergeVersionFrontier,Ayame,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,tidewal,7,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,1.17,TxExecutor::begin,Ayame,32,YCSB-C,ycsb_c
-libc.so.6,tidewal,8,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,0.81,getenv,Ayame,32,YCSB-C,ycsb_c
-[vdso],tidewal,9,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,0.66,0x00000000000006e5,Ayame,32,YCSB-C,ycsb_c
-libc.so.6,tidewal,10,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,0.56,__strncmp_evex,Ayame,32,YCSB-C,ycsb_c
-ycsb_ermia_pwal.exe,tidewal,11,results/ayame_perf_eval_20260616_164948/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,0.54,"YcsbWorkload::run<TxExecutor, TransactionStatus>",Ayame,32,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,single_wal,1,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,37.94,TxExecutor::ssn_parallel_commit,Single WAL,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,single_wal,2,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,21.01,TxExecutor::install_version,Single WAL,48,YCSB-A,ycsb_a
+[kernel.kallsyms],single_wal,3,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,6.53,update_sg_lb_stats,Single WAL,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,single_wal,4,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,3.35,TxExecutor::abort,Single WAL,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,single_wal,5,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,2.19,MasstreeWrapper<Tuple>::get_value,Single WAL,48,YCSB-A,ycsb_a
+[kernel.kallsyms],single_wal,6,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,1.25,_raw_spin_lock_irqsave,Single WAL,48,YCSB-A,ycsb_a
+[vdso],single_wal,7,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,0.99,0x00000000000006e5,Single WAL,48,YCSB-A,ycsb_a
+[kernel.kallsyms],single_wal,8,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,0.84,idle_cpu,Single WAL,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,single_wal,9,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,0.69,operator new[],Single WAL,48,YCSB-A,ycsb_a
+[kernel.kallsyms],single_wal,10,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,0.63,start_this_handle,Single WAL,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,single_wal,11,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,0.62,"ccbench::WalLogger::logShared<std::vector<SetElement<Tuple>, std::allocator<SetElement<Tuple> > > >",Single WAL,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,single_wal,12,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_single_wal.report.nochildren.txt,0.51,TxExecutor::read_internal,Single WAL,48,YCSB-A,ycsb_a
+[kernel.kallsyms],pwal,1,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,47.31,native_queued_spin_lock_slowpath.part.0,P-WAL,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,pwal,2,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,11.20,"ccbench::WalLogger::logPerThread<std::vector<SetElement<Tuple>, std::allocator<SetElement<Tuple> > > >",P-WAL,48,YCSB-A,ycsb_a
+libc.so.6,pwal,3,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,4.06,pthread_mutex_lock@@GLIBC_2.2.5,P-WAL,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,pwal,4,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,3.19,TxExecutor::read,P-WAL,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,pwal,5,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,2.75,TxExecutor::ssn_parallel_commit,P-WAL,48,YCSB-A,ycsb_a
+libc.so.6,pwal,6,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,2.30,pthread_mutex_unlock@@GLIBC_2.2.5,P-WAL,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,pwal,7,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,1.82,TxExecutor::update,P-WAL,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,pwal,8,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,1.61,TxExecutor::install_version,P-WAL,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,pwal,9,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,1.58,TxExecutor::abort,P-WAL,48,YCSB-A,ycsb_a
+[kernel.kallsyms],pwal,10,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,1.52,native_sched_clock,P-WAL,48,YCSB-A,ycsb_a
+[kernel.kallsyms],pwal,11,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,1.30,__schedule,P-WAL,48,YCSB-A,ycsb_a
+[kernel.kallsyms],pwal,12,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_pwal.report.nochildren.txt,0.95,syscall_return_via_sysret,P-WAL,48,YCSB-A,ycsb_a
+libc.so.6,tidewal,1,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,7.63,pthread_mutex_lock@@GLIBC_2.2.5,Ayame,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,tidewal,2,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,6.39,TxExecutor::mergeVersionFrontier,Ayame,48,YCSB-A,ycsb_a
+[kernel.kallsyms],tidewal,3,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,4.73,native_queued_spin_lock_slowpath.part.0,Ayame,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,tidewal,4,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,3.13,TxExecutor::abort,Ayame,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,tidewal,5,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,3.10,TxExecutor::ssn_parallel_commit,Ayame,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,tidewal,6,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,2.52,TxExecutor::update,Ayame,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,tidewal,7,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,2.43,TxExecutor::install_version,Ayame,48,YCSB-A,ycsb_a
+[vdso],tidewal,8,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,2.11,0x00000000000006e5,Ayame,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,tidewal,9,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,1.97,TxExecutor::read,Ayame,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,tidewal,10,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,1.94,MasstreeWrapper<Tuple>::get_value,Ayame,48,YCSB-A,ycsb_a
+libc.so.6,tidewal,11,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,1.80,pthread_mutex_unlock@@GLIBC_2.2.5,Ayame,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,tidewal,12,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_a_tidewal.report.nochildren.txt,1.78,TxExecutor::mergeVersionReadFrontier,Ayame,48,YCSB-A,ycsb_a
+ycsb_ermia_pwal.exe,single_wal,1,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,47.15,TxExecutor::ssn_parallel_commit,Single WAL,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,single_wal,2,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,13.35,TxExecutor::read_internal,Single WAL,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,single_wal,3,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,3.86,TxExecutor::read,Single WAL,48,YCSB-B,ycsb_b
+[kernel.kallsyms],single_wal,4,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,3.76,__schedule,Single WAL,48,YCSB-B,ycsb_b
+[kernel.kallsyms],single_wal,5,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,3.29,rq_qos_wait,Single WAL,48,YCSB-B,ycsb_b
+[kernel.kallsyms],single_wal,6,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,2.37,update_sg_lb_stats,Single WAL,48,YCSB-B,ycsb_b
+[kernel.kallsyms],single_wal,7,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,2.08,native_flush_tlb_one_user,Single WAL,48,YCSB-B,ycsb_b
+[kernel.kallsyms],single_wal,8,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,1.86,pick_next_task_fair,Single WAL,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,single_wal,9,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,1.67,MasstreeWrapper<Tuple>::get_value,Single WAL,48,YCSB-B,ycsb_b
+[kernel.kallsyms],single_wal,10,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_single_wal.report.nochildren.txt,1.36,mod_lruvec_page_state,Single WAL,48,YCSB-B,ycsb_b
+[kernel.kallsyms],pwal,1,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,35.92,native_queued_spin_lock_slowpath.part.0,P-WAL,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,pwal,2,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,14.79,TxExecutor::read,P-WAL,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,pwal,3,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,7.45,TxExecutor::ssn_parallel_commit,P-WAL,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,pwal,4,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,6.34,"ccbench::WalLogger::logPerThread<std::vector<SetElement<Tuple>, std::allocator<SetElement<Tuple> > > >",P-WAL,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,pwal,5,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,2.57,MasstreeWrapper<Tuple>::get_value,P-WAL,48,YCSB-B,ycsb_b
+libc.so.6,pwal,6,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,2.52,pthread_mutex_unlock@@GLIBC_2.2.5,P-WAL,48,YCSB-B,ycsb_b
+libc.so.6,pwal,7,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,2.47,pthread_mutex_lock@@GLIBC_2.2.5,P-WAL,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,pwal,8,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,1.86,TxExecutor::read_internal,P-WAL,48,YCSB-B,ycsb_b
+[kernel.kallsyms],pwal,9,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,1.56,_raw_spin_lock,P-WAL,48,YCSB-B,ycsb_b
+libc.so.6,pwal,10,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,1.37,__sched_yield,P-WAL,48,YCSB-B,ycsb_b
+[kernel.kallsyms],pwal,11,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,1.17,do_sched_yield,P-WAL,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,pwal,12,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_pwal.report.nochildren.txt,1.00,TxExecutor::begin,P-WAL,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,tidewal,1,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,13.85,TxExecutor::read,Ayame,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,tidewal,2,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,8.00,TxExecutor::ssn_parallel_commit,Ayame,48,YCSB-B,ycsb_b
+libc.so.6,tidewal,3,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,4.87,pthread_mutex_lock@@GLIBC_2.2.5,Ayame,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,tidewal,4,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,4.39,TxExecutor::mergeVersionFrontier,Ayame,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,tidewal,5,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,3.16,TxExecutor::publishReadFrontier,Ayame,48,YCSB-B,ycsb_b
+[kernel.kallsyms],tidewal,6,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,3.00,native_queued_spin_lock_slowpath.part.0,Ayame,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,tidewal,7,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,2.87,TxExecutor::read_internal,Ayame,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,tidewal,8,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,2.85,MasstreeWrapper<Tuple>::get_value,Ayame,48,YCSB-B,ycsb_b
+libc.so.6,tidewal,9,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,1.46,__GI___lll_lock_wait,Ayame,48,YCSB-B,ycsb_b
+[kernel.kallsyms],tidewal,10,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,1.35,_raw_spin_lock,Ayame,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,tidewal,11,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,1.33,mi_free_block_delayed_mt,Ayame,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,tidewal,12,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_b_tidewal.report.nochildren.txt,1.27,mi_free_generic_mt,Ayame,48,YCSB-B,ycsb_b
+ycsb_ermia_pwal.exe,single_wal,1,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_single_wal.report.nochildren.txt,62.55,TxExecutor::read,Single WAL,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,single_wal,2,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_single_wal.report.nochildren.txt,24.45,TxExecutor::ssn_parallel_commit,Single WAL,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,single_wal,3,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_single_wal.report.nochildren.txt,3.09,TxExecutor::mainte,Single WAL,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,single_wal,4,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_single_wal.report.nochildren.txt,3.00,MasstreeWrapper<Tuple>::get_value,Single WAL,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,single_wal,5,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_single_wal.report.nochildren.txt,2.01,TxExecutor::read_internal,Single WAL,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,single_wal,6,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_single_wal.report.nochildren.txt,0.80,TxExecutor::begin,Single WAL,48,YCSB-C,ycsb_c
+[vdso],single_wal,7,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_single_wal.report.nochildren.txt,0.53,0x00000000000006e5,Single WAL,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,pwal,1,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_pwal.report.nochildren.txt,62.90,TxExecutor::read,P-WAL,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,pwal,2,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_pwal.report.nochildren.txt,23.56,TxExecutor::ssn_parallel_commit,P-WAL,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,pwal,3,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_pwal.report.nochildren.txt,3.14,TxExecutor::mainte,P-WAL,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,pwal,4,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_pwal.report.nochildren.txt,3.04,MasstreeWrapper<Tuple>::get_value,P-WAL,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,pwal,5,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_pwal.report.nochildren.txt,2.16,TxExecutor::read_internal,P-WAL,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,pwal,6,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_pwal.report.nochildren.txt,0.88,TxExecutor::begin,P-WAL,48,YCSB-C,ycsb_c
+[vdso],pwal,7,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_pwal.report.nochildren.txt,0.54,0x00000000000006e5,P-WAL,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,tidewal,1,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,60.41,TxExecutor::read,Ayame,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,tidewal,2,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,23.24,TxExecutor::ssn_parallel_commit,Ayame,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,tidewal,3,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,3.31,TxExecutor::mainte,Ayame,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,tidewal,4,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,3.03,MasstreeWrapper<Tuple>::get_value,Ayame,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,tidewal,5,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,2.13,TxExecutor::read_internal,Ayame,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,tidewal,6,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,2.09,TxExecutor::mergeVersionFrontier,Ayame,48,YCSB-C,ycsb_c
+ycsb_ermia_pwal.exe,tidewal,7,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,0.90,TxExecutor::begin,Ayame,48,YCSB-C,ycsb_c
+[vdso],tidewal,8,results/ayame_perf_eval_20260617_185617/perf_record_logs/ycsb_c_tidewal.report.nochildren.txt,0.59,0x00000000000006e5,Ayame,48,YCSB-C,ycsb_c

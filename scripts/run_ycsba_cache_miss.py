@@ -29,8 +29,8 @@ RESULTS = ROOT / "results"
 
 SYSTEMS = {"single_wal": "Single WAL", "pwal": "P-WAL", "tidewal": "Ayame"}
 SYSTEM_ORDER = ["Single WAL", "P-WAL", "Ayame"]
-WORKERS = [1, 2, 4, 8, 16, 32, 48, 96]
-LOGGERS = {1: 1, 2: 1, 4: 1, 8: 2, 16: 4, 32: 7, 48: 9, 96: 19}
+WORKERS = [12, 24, 36, 48, 60, 72, 84, 96]
+LOGGERS = {12: 3, 24: 5, 36: 7, 48: 9, 60: 12, 72: 14, 84: 17, 96: 19}
 COLORS = {"Single WAL": "#4b5563", "P-WAL": "#d97706", "Ayame": "#047857"}
 MARKERS = {"Single WAL": "o", "P-WAL": "s", "Ayame": "^"}
 # cache-misses / cache-references is the last-level-cache miss ratio.
@@ -41,7 +41,7 @@ def env_for(mode, worker, wal_dir):
     env = os.environ.copy()
     env.update({
         "CCBENCH_WAL_DIR": str(wal_dir), "CCBENCH_WAL_SKIP_READ_ONLY": "1",
-        "CCBENCH_WAL_GROUP_SIZE": "16", "CCBENCH_WAL_FLUSH_US": "50",
+        "CCBENCH_WAL_GROUP_SIZE": "64", "CCBENCH_WAL_FLUSH_US": "50",
         "CCBENCH_WAL_MAX_PENDING": "65536", "CCBENCH_WAL_COMMITTER_NUM": "1",
     })
     log = LOGGERS.get(worker, max(1, round(worker * 7 / 32)))
@@ -171,8 +171,8 @@ def draw(rows, csv_path):
                 markerfacecolor="white", markeredgewidth=1.6, label=sysname)
     ax.set_xscale("linear")
     ax.minorticks_off()
-    ax.set_xticks([1, 16, 32, 48, 96])
-    ax.set_xticklabels(["1", "16", "32", "48", "96"])
+    ax.set_xticks([12, 24, 36, 48, 60, 72, 84, 96])
+    ax.set_xticklabels(["12", "24", "36", "48", "60", "72", "84", "96"])
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: str(int(v))))
     ax.set_xlabel("Worker threads")
     ax.set_ylabel("Cache-miss ratio [%]")

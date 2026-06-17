@@ -104,7 +104,7 @@ def draw(input_csv, top_n):
     fig.text(
         0.01,
         1.03,
-        "YCSB-C perf top symbols at 32 worker threads",
+        "YCSB-C perf top symbols at 48 worker threads",
         ha="left",
         va="bottom",
         fontsize=13,

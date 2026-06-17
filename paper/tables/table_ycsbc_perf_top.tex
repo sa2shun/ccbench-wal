@@ -1,6 +1,6 @@
 \begin{table*}[t]
   \centering
-  \caption{Top self-time symbols for YCSB-C at 32 transaction worker threads.}
+  \caption{Top self-time symbols for YCSB-C at 48 transaction worker threads.}
   \label{tab:ycsbc-perf-top}
   \small
   \setlength{\tabcolsep}{6pt}
@@ -8,21 +8,21 @@
     \hline
     System & Rank & Self \% & Symbol \\
     \hline
-    Single WAL & 1 & 58.81 & \texttt{TxExecutor::read} \\
-    Single WAL & 2 & 24.00 & \texttt{TxExecutor::ssn\_parallel\_commit} \\
-    Single WAL & 3 & 4.41 & \texttt{MasstreeWrapper::get\_value} \\
-    Single WAL & 4 & 3.31 & \texttt{TxExecutor::mainte} \\
-    Single WAL & 5 & 3.02 & \texttt{TxExecutor::read\_internal} \\
-    P-WAL & 1 & 58.62 & \texttt{TxExecutor::read} \\
-    P-WAL & 2 & 23.52 & \texttt{TxExecutor::ssn\_parallel\_commit} \\
-    P-WAL & 3 & 4.39 & \texttt{MasstreeWrapper::get\_value} \\
-    P-WAL & 4 & 3.54 & \texttt{TxExecutor::mainte} \\
-    P-WAL & 5 & 3.37 & \texttt{TxExecutor::read\_internal} \\
-    Ayame & 1 & 57.20 & \texttt{TxExecutor::read} \\
-    Ayame & 2 & 22.58 & \texttt{TxExecutor::ssn\_parallel\_commit} \\
-    Ayame & 3 & 3.87 & \texttt{MasstreeWrapper::get\_value} \\
-    Ayame & 4 & 3.13 & \texttt{TxExecutor::mainte} \\
-    Ayame & 5 & 3.06 & \texttt{TxExecutor::read\_internal} \\
+    Single WAL & 1 & 62.55 & \texttt{TxExecutor::read} \\
+    Single WAL & 2 & 24.45 & \texttt{TxExecutor::ssn\_parallel\_commit} \\
+    Single WAL & 3 & 3.09 & \texttt{TxExecutor::mainte} \\
+    Single WAL & 4 & 3.00 & \texttt{MasstreeWrapper::get\_value} \\
+    Single WAL & 5 & 2.01 & \texttt{TxExecutor::read\_internal} \\
+    P-WAL & 1 & 62.90 & \texttt{TxExecutor::read} \\
+    P-WAL & 2 & 23.56 & \texttt{TxExecutor::ssn\_parallel\_commit} \\
+    P-WAL & 3 & 3.14 & \texttt{TxExecutor::mainte} \\
+    P-WAL & 4 & 3.04 & \texttt{MasstreeWrapper::get\_value} \\
+    P-WAL & 5 & 2.16 & \texttt{TxExecutor::read\_internal} \\
+    Ayame & 1 & 60.41 & \texttt{TxExecutor::read} \\
+    Ayame & 2 & 23.24 & \texttt{TxExecutor::ssn\_parallel\_commit} \\
+    Ayame & 3 & 3.31 & \texttt{TxExecutor::mainte} \\
+    Ayame & 4 & 3.03 & \texttt{MasstreeWrapper::get\_value} \\
+    Ayame & 5 & 2.13 & \texttt{TxExecutor::read\_internal} \\
     \hline
   \end{tabular}
   \\[-1mm]

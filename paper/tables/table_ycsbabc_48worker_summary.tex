@@ -1,0 +1,24 @@
+\begin{table*}[t]
+  \centering
+  \caption{End-to-end YCSB results at 48 transaction worker threads.}
+  \label{tab:ycsbabc-48worker-summary}
+  \small
+  \setlength{\tabcolsep}{6pt}
+  \begin{tabular}{llrrrrrrr}
+    \hline
+    Workload & System & Ack tps & p99 $\mu$s & Pending & fdatasync calls & Tx/sync & Frontier B/tx & WAL atomic/tx \\
+    \hline
+    YCSB-A & Single WAL & 8.7K & 8,192 & 0 & 43,687 & 1.0 & 0.0 & 6.00 \\
+    YCSB-A & P-WAL & 48.5K & 1,024 & 0 & 242,173 & 1.0 & 0.0 & 6.00 \\
+    YCSB-A & Ayame & 249.7K & 2,048 & 353 & 48,062 & 26.0 & 72.0 & 0.00 \\
+    YCSB-B & Single WAL & 25.8K & 4,096 & 0 & 51,677 & 2.5 & 0.0 & 0.90 \\
+    YCSB-B & P-WAL & 163.7K & 512 & 0 & 328,218 & 2.5 & 0.0 & 0.90 \\
+    YCSB-B & Ayame & 448.9K & 512 & 75 & 135,620 & 16.6 & 72.0 & 0.00 \\
+    YCSB-C & Single WAL & 801.8K & 60 & 0 & 0 & 0.0 & 0.0 & 0.00 \\
+    YCSB-C & P-WAL & 803.9K & 58 & 0 & 0 & 0.0 & 0.0 & 0.00 \\
+    YCSB-C & Ayame & 819.9K & 57 & 0 & 0 & 0.0 & 72.0 & 0.00 \\
+    \hline
+  \end{tabular}
+  \\[-1mm]
+  {\footnotesize Ack tps is durable-acknowledgment throughput. Ayame uses 9 flusher threads and 1 committer thread at 48 workers.}
+\end{table*}

@@ -1,6 +1,6 @@
 # YCSB-B perf stat worker scaling
 
-date: 2026-06-16T16:49:48
+date: 2026-06-17T18:56:16
 
 `perf stat` was used to collect `task-clock` and `context-switches`.
 CPU cores are computed as `task-clock-ms / elapsed-ms`.
@@ -10,16 +10,16 @@ CPU cores are computed as `task-clock-ms / elapsed-ms`.
 | item | value |
 |---|---|
 | workload | YCSB-B |
-| worker threads | 1,2,4,8,16,32,48,96 |
+| worker threads | 12,24,36,48,60,72,84,96 |
 | systems | Single WAL, P-WAL, Ayame |
 | seconds | 5 |
 | repeats | 3 |
-| Ayame group_size | 16 |
+| Ayame group_size | 64 |
 | Ayame flush_us | 50 |
 | Ayame max_pending | 65536 |
 
 summary csv: `paper/tables/ycsbb_perf_scaling_20260609.csv`
-raw csv: `results/ycsbb_perf_scaling_20260616_164331/ycsbb_perf_scaling_raw_20260616_164331.csv`
+raw csv: `results/ycsbb_perf_scaling_20260617_185002/ycsbb_perf_scaling_raw_20260617_185002.csv`
 
 ## Figures
 
@@ -32,27 +32,27 @@ raw csv: `results/ycsbb_perf_scaling_20260616_164331/ycsbb_perf_scaling_raw_2026
 
 | system | workers | ack tps | CPU cores | context switches |
 |---|---:|---:|---:|---:|
-| Single WAL | 1 | 22657 | 0.62 | 95483 |
-| Single WAL | 2 | 20276 | 0.66 | 128195 |
-| Single WAL | 4 | 27140 | 0.72 | 168328 |
-| Single WAL | 8 | 26054 | 0.72 | 162677 |
-| Single WAL | 16 | 23956 | 0.85 | 149875 |
-| Single WAL | 32 | 18651 | 1.32 | 121014 |
-| Single WAL | 48 | 23372 | 1.38 | 148678 |
-| Single WAL | 96 | 21040 | 3.74 | 141485 |
-| P-WAL | 1 | 19642 | 0.56 | 85291 |
-| P-WAL | 2 | 32141 | 0.79 | 160722 |
-| P-WAL | 4 | 79088 | 1.61 | 419058 |
-| P-WAL | 8 | 115955 | 2.89 | 695746 |
-| P-WAL | 16 | 137717 | 6.16 | 958547 |
-| P-WAL | 32 | 134391 | 10.94 | 1081663 |
-| P-WAL | 48 | 148311 | 17.41 | 1718180 |
-| P-WAL | 96 | 152255 | 39.83 | 3973008 |
-| Ayame | 1 | 87519 | 1.65 | 150081 |
-| Ayame | 2 | 143862 | 2.80 | 172309 |
-| Ayame | 4 | 265851 | 4.65 | 187902 |
-| Ayame | 8 | 386277 | 8.72 | 493725 |
-| Ayame | 16 | 393199 | 15.98 | 1184063 |
-| Ayame | 32 | 398979 | 24.35 | 2821043 |
-| Ayame | 48 | 432021 | 26.14 | 4619251 |
-| Ayame | 96 | 374285 | 27.57 | 5473752 |
+| Single WAL | 12 | 25380 | 0.74 | 158541 |
+| Single WAL | 24 | 24061 | 0.92 | 150133 |
+| Single WAL | 36 | 24059 | 1.12 | 150714 |
+| Single WAL | 48 | 24081 | 1.33 | 151116 |
+| Single WAL | 60 | 23925 | 1.66 | 151064 |
+| Single WAL | 72 | 23785 | 2.09 | 151283 |
+| Single WAL | 84 | 23831 | 2.54 | 151921 |
+| Single WAL | 96 | 23713 | 3.65 | 152021 |
+| P-WAL | 12 | 133624 | 4.35 | 865410 |
+| P-WAL | 24 | 148512 | 9.05 | 1123487 |
+| P-WAL | 36 | 159095 | 13.60 | 1260324 |
+| P-WAL | 48 | 162612 | 18.26 | 1296583 |
+| P-WAL | 60 | 166271 | 23.01 | 1339000 |
+| P-WAL | 72 | 167514 | 27.26 | 1349805 |
+| P-WAL | 84 | 171707 | 32.15 | 1381592 |
+| P-WAL | 96 | 172101 | 38.67 | 1442279 |
+| Ayame | 12 | 436669 | 12.58 | 937029 |
+| Ayame | 24 | 458271 | 22.32 | 2131135 |
+| Ayame | 36 | 476118 | 28.37 | 3716425 |
+| Ayame | 48 | 451156 | 28.30 | 5161680 |
+| Ayame | 60 | 419489 | 26.79 | 5868212 |
+| Ayame | 72 | 408765 | 27.13 | 6177755 |
+| Ayame | 84 | 394821 | 27.98 | 6239889 |
+| Ayame | 96 | 396179 | 28.63 | 6093064 |

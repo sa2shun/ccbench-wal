@@ -99,7 +99,7 @@ def tex_table(path, caption, label, headers, rows, align=None, footnote=None, wi
 def main():
     ycsb = read_csv(TABLE_DIR / "ycsbabc_ayame_worker_threads_20260609.csv")
     ycsb_mean = group_mean(ycsb, ["workload", "system", "worker_threads"])
-    y32 = [r for r in ycsb_mean if int(r["worker_threads"]) == 32]
+    y32 = [r for r in ycsb_mean if int(r["worker_threads"]) == 48]
     order_workloads = {"YCSB-A": 0, "YCSB-B": 1, "YCSB-C": 2}
     order_systems = {"Single WAL": 0, "P-WAL": 1, "Ayame": 2}
     y32.sort(key=lambda r: (order_workloads[r["workload"]], order_systems[r["system"]]))
@@ -118,9 +118,9 @@ def main():
             two(r["global_atomic_per_tx"]),
         ])
     tex_table(
-        TABLE_DIR / "table_ycsbabc_32worker_summary.tex",
-        "End-to-end YCSB results at 32 transaction worker threads.",
-        "tab:ycsbabc-32worker-summary",
+        TABLE_DIR / "table_ycsbabc_48worker_summary.tex",
+        "End-to-end YCSB results at 48 transaction worker threads.",
+        "tab:ycsbabc-48worker-summary",
         [
             "Workload",
             "System",
@@ -136,7 +136,7 @@ def main():
         align="llrrrrrrr",
         footnote=(
             "Ack tps is durable-acknowledgment throughput. "
-            "Ayame uses 7 flusher threads and 1 committer thread at 32 workers."
+            "Ayame uses 9 flusher threads and 1 committer thread at 48 workers."
         ),
         wide=True,
     )
@@ -154,9 +154,9 @@ def main():
             whole(tide["pending"]),
         ])
     tex_table(
-        TABLE_DIR / "table_ayame_speedup_32worker.tex",
-        "Ayame throughput relative to P-WAL at 32 transaction worker threads.",
-        "tab:ayame-speedup-32worker",
+        TABLE_DIR / "table_ayame_speedup_48worker.tex",
+        "Ayame throughput relative to P-WAL at 48 transaction worker threads.",
+        "tab:ayame-speedup-48worker",
         ["Workload", "P-WAL tps", "Ayame tps", "Speedup", "Ayame p99 $\\mu$s", "Ayame pending"],
         rows,
         align="lrrrrr",
@@ -179,9 +179,9 @@ def main():
             one(r["commits_per_fdatasync"]),
         ])
     tex_table(
-        TABLE_DIR / "table_perf_stat_32worker.tex",
-        "Perf-stat summary at 32 transaction worker threads.",
-        "tab:perf-stat-32worker",
+        TABLE_DIR / "table_perf_stat_48worker.tex",
+        "Perf-stat summary at 48 transaction worker threads.",
+        "tab:perf-stat-48worker",
         ["Workload", "System", "Ack tps", "CPU cores", "Cycles/tx", "Instr/tx", "IPC", "Ctx sw.", "Tx/sync"],
         rows,
         align="llrrrrrrr",
@@ -191,7 +191,7 @@ def main():
     scaling = read_csv(TABLE_DIR / "ycsbb_perf_scaling_20260609.csv")
     scaling_mean = group_mean(scaling, ["system", "worker_threads"])
     rows = []
-    for workers in [1, 2, 4, 8, 16, 32]:
+    for workers in [12, 24, 36, 48, 60, 72, 84, 96]:
         vals = {r["system"]: r for r in scaling_mean if int(r["worker_threads"]) == workers}
         rows.append([
             str(workers),
@@ -220,7 +220,7 @@ def main():
                 rows.append([system, str(int(r["rank"])), f"{r['self_pct']:.2f}", fmt_symbol(r["symbol"])])
     tex_table(
         TABLE_DIR / "table_ycsbc_perf_top.tex",
-        "Top self-time symbols for YCSB-C at 32 transaction worker threads.",
+        "Top self-time symbols for YCSB-C at 48 transaction worker threads.",
         "tab:ycsbc-perf-top",
         ["System", "Rank", "Self \\%", "Symbol"],
         rows,
@@ -232,7 +232,7 @@ def main():
     abl_path = TABLE_DIR / "ack_policy_ablation_20260614.csv"
     if abl_path.exists():
         abl = read_csv(abl_path)
-        abl32 = [r for r in abl if int(r["worker_threads"]) == 32]
+        abl32 = [r for r in abl if int(r["worker_threads"]) == 48]
         pol_order = {"Global-prefix": 0, "Ayame": 1}
         abl32.sort(key=lambda r: (order_workloads[r["workload"]],
                                   pol_order.get(r["policy"], 9)))
@@ -249,7 +249,7 @@ def main():
             ])
         tex_table(
             TABLE_DIR / "table_ack_policy_ablation.tex",
-            "Acknowledgment-policy comparison at 32 worker threads.  Both policies "
+            "Acknowledgment-policy comparison at 48 worker threads.  Both policies "
             "use the same asynchronous pipeline and differ only in the "
             "acknowledgment condition.",
             "tab:ack-policy",
@@ -258,9 +258,9 @@ def main():
             align="llrrr",
         )
 
-    print(TABLE_DIR / "table_ycsbabc_32worker_summary.tex")
-    print(TABLE_DIR / "table_ayame_speedup_32worker.tex")
-    print(TABLE_DIR / "table_perf_stat_32worker.tex")
+    print(TABLE_DIR / "table_ycsbabc_48worker_summary.tex")
+    print(TABLE_DIR / "table_ayame_speedup_48worker.tex")
+    print(TABLE_DIR / "table_perf_stat_48worker.tex")
     print(TABLE_DIR / "table_ycsbb_perf_scaling.tex")
     print(TABLE_DIR / "table_ycsbc_perf_top.tex")
 

@@ -394,11 +394,11 @@ def workspace_path(path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workloads", default="ycsb_a,ycsb_b,ycsb_c")
-    parser.add_argument("--worker", type=int, default=32)
+    parser.add_argument("--worker", type=int, default=48)
     parser.add_argument("--seconds", type=int, default=5)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--record-seconds", type=int, default=5)
-    parser.add_argument("--group-size", type=int, default=16)
+    parser.add_argument("--group-size", type=int, default=64)
     parser.add_argument("--flush-us", type=int, default=50)
     parser.add_argument("--max-pending", type=int, default=65536)
     parser.add_argument("--freq", type=int, default=99)

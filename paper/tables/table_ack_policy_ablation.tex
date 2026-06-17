@@ -1,16 +1,16 @@
 \begin{table}[t]
   \centering
-  \caption{Acknowledgment-policy comparison at 32 worker threads.  Both policies use the same asynchronous pipeline and differ only in the acknowledgment condition.}
+  \caption{Acknowledgment-policy comparison at 48 worker threads.  Both policies use the same asynchronous pipeline and differ only in the acknowledgment condition.}
   \label{tab:ack-policy}
   \small
   \begin{tabular}{llrrr}
     \hline
     Workload & Ack policy & Ack tps & p99 $\mu$s & Pending \\
     \hline
-    YCSB-A & Global-prefix & 237.7K & 262,144 & 65,524 \\
-    YCSB-A & Dep.\ frontier (Ayame) & 225.4K & 131,072 & 14,509 \\
-    YCSB-B & Global-prefix & 394.7K & 131,072 & 65,470 \\
-    YCSB-B & Dep.\ frontier (Ayame) & 457.5K & 512 & 69 \\
+    YCSB-A & Global-prefix & 356.4K & 131,072 & 65,278 \\
+    YCSB-A & Dep.\ frontier (Ayame) & 247.3K & 2,048 & 358 \\
+    YCSB-B & Global-prefix & 486.2K & 4,096 & 694 \\
+    YCSB-B & Dep.\ frontier (Ayame) & 444.1K & 512 & 78 \\
     \hline
   \end{tabular}
 \end{table}

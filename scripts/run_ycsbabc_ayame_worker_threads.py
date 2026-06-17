@@ -58,13 +58,13 @@ MARKERS = {
 }
 
 AYAME_LOGGERS = {
-    1: 1,
-    2: 1,
-    4: 1,
-    8: 2,
-    16: 4,
-    32: 7,
+    12: 3,
+    24: 5,
+    36: 7,
     48: 9,
+    60: 12,
+    72: 14,
+    84: 17,
     96: 19,
 }
 
@@ -492,8 +492,8 @@ def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear",
         ax.set_title(workload, fontsize=16, fontweight="bold", pad=8)
         ax.set_xlabel("Worker threads")
         ax.set_xscale("linear")
-        ax.set_xticks([1, 16, 32, 48, 96])
-        ax.set_xticklabels(["1", "16", "32", "48", "96"], rotation=0)
+        ax.set_xticks([12, 24, 36, 48, 60, 72, 84, 96])
+        ax.set_xticklabels(["12", "24", "36", "48", "60", "72", "84", "96"], rotation=0)
         ax.minorticks_off()
         if yscale != "linear":
             ax.set_yscale(yscale)
@@ -568,8 +568,8 @@ def draw_speedup(rows, output):
     ax.set_xlabel("Worker threads", labelpad=8)
     ax.set_ylabel("Ayame / P-WAL ack throughput", labelpad=8)
     ax.set_xscale("linear")
-    ax.set_xticks([1, 16, 32, 48, 96])
-    ax.set_xticklabels(["1", "16", "32", "48", "96"])
+    ax.set_xticks([12, 24, 36, 48, 60, 72, 84, 96])
+    ax.set_xticklabels(["12", "24", "36", "48", "60", "72", "84", "96"])
     ax.minorticks_off()
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.1f}x"))
     ax.grid(True, axis="y", color="#e5e7eb", linewidth=0.9)
@@ -656,14 +656,14 @@ def write_report(rows, raw_csv, outputs, args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workloads", default="ycsb_a,ycsb_b,ycsb_c")
-    parser.add_argument("--workers", default="1,2,4,8,16,32,48,96")
+    parser.add_argument("--workers", default="12,24,36,48,60,72,84,96")
     parser.add_argument("--seconds", type=int, default=5)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--clocks-per-us", dest="clocks_per_us", type=int, default=1800,
                         help="TSC rate in MHz for tsc->time conversion; must match the host "
                              "(Xeon Gold 5418N invariant TSC = 1800 MHz). The binary default "
                              "(2100) overstates throughput on this host.")
-    parser.add_argument("--group-size", type=int, default=16)
+    parser.add_argument("--group-size", type=int, default=64)
     parser.add_argument("--flush-us", type=int, default=50)
     parser.add_argument("--max-pending", type=int, default=65536)
     parser.add_argument("--input-csv", default="")

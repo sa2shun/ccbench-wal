@@ -60,7 +60,7 @@ def run_case(out_dir, mode_value, remote_ppm, repeat, args):
         "CCBENCH_WAL_SKIP_READ_ONLY": "1",
         "CCBENCH_WAL_MODE": "per_thread",
         "CCBENCH_WAL_DURABLE_MODE": mode_value,
-        "CCBENCH_WAL_LOGGER_NUM": "7",
+        "CCBENCH_WAL_LOGGER_NUM": "9",
         "CCBENCH_WAL_COMMITTER_NUM": "1",
         "CCBENCH_WAL_GROUP_SIZE": str(args.group_size),
         "CCBENCH_WAL_FLUSH_US": str(args.flush_us),
@@ -111,7 +111,7 @@ def commafmt(v):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--workers", type=int, default=32)
+    ap.add_argument("--workers", type=int, default=48)
     ap.add_argument("--seconds", type=int, default=5)
     ap.add_argument("--repeats", type=int, default=5)
     # The abort-free workload commits (and logs) on every transaction, so its
@@ -169,7 +169,7 @@ def main():
     lines = [
         "\\begin{table}[t]",
         "  \\centering",
-        "  \\caption{Dependency-density experiment at 32 worker threads on an "
+        "  \\caption{Dependency-density experiment at 48 worker threads on an "
         "abort-free partitioned workload.  The remote-access probability sets the "
         "frontier width (nz/tx is the mean number of shards per dependency "
         "frontier).}",
