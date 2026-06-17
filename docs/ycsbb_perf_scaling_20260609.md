@@ -1,6 +1,6 @@
 # YCSB-B perf stat worker scaling
 
-date: 2026-06-17T18:56:16
+date: 2026-06-17T20:11:21
 
 `perf stat` was used to collect `task-clock` and `context-switches`.
 CPU cores are computed as `task-clock-ms / elapsed-ms`.
@@ -10,7 +10,7 @@ CPU cores are computed as `task-clock-ms / elapsed-ms`.
 | item | value |
 |---|---|
 | workload | YCSB-B |
-| worker threads | 12,24,36,48,60,72,84,96 |
+| worker threads | 1,12,24,36,48,60,72,84,96 |
 | systems | Single WAL, P-WAL, Ayame |
 | seconds | 5 |
 | repeats | 3 |
@@ -19,7 +19,7 @@ CPU cores are computed as `task-clock-ms / elapsed-ms`.
 | Ayame max_pending | 65536 |
 
 summary csv: `paper/tables/ycsbb_perf_scaling_20260609.csv`
-raw csv: `results/ycsbb_perf_scaling_20260617_185002/ycsbb_perf_scaling_raw_20260617_185002.csv`
+raw csv: `paper/tables/ycsbb_perf_scaling_20260609.csv`
 
 ## Figures
 
@@ -32,6 +32,7 @@ raw csv: `results/ycsbb_perf_scaling_20260617_185002/ycsbb_perf_scaling_raw_2026
 
 | system | workers | ack tps | CPU cores | context switches |
 |---|---:|---:|---:|---:|
+| Single WAL | 1 | 23707 | 0.62 | 99510 |
 | Single WAL | 12 | 25380 | 0.74 | 158541 |
 | Single WAL | 24 | 24061 | 0.92 | 150133 |
 | Single WAL | 36 | 24059 | 1.12 | 150714 |
@@ -40,6 +41,7 @@ raw csv: `results/ycsbb_perf_scaling_20260617_185002/ycsbb_perf_scaling_raw_2026
 | Single WAL | 72 | 23785 | 2.09 | 151283 |
 | Single WAL | 84 | 23831 | 2.54 | 151921 |
 | Single WAL | 96 | 23713 | 3.65 | 152021 |
+| P-WAL | 1 | 23935 | 0.59 | 100587 |
 | P-WAL | 12 | 133624 | 4.35 | 865410 |
 | P-WAL | 24 | 148512 | 9.05 | 1123487 |
 | P-WAL | 36 | 159095 | 13.60 | 1260324 |
@@ -48,6 +50,7 @@ raw csv: `results/ycsbb_perf_scaling_20260617_185002/ycsbb_perf_scaling_raw_2026
 | P-WAL | 72 | 167514 | 27.26 | 1349805 |
 | P-WAL | 84 | 171707 | 32.15 | 1381592 |
 | P-WAL | 96 | 172101 | 38.67 | 1442279 |
+| Ayame | 1 | 91261 | 1.50 | 186150 |
 | Ayame | 12 | 436669 | 12.58 | 937029 |
 | Ayame | 24 | 458271 | 22.32 | 2131135 |
 | Ayame | 36 | 476118 | 28.37 | 3716425 |

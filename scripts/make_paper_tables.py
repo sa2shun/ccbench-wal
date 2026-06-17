@@ -191,7 +191,7 @@ def main():
     scaling = read_csv(TABLE_DIR / "ycsbb_perf_scaling_20260609.csv")
     scaling_mean = group_mean(scaling, ["system", "worker_threads"])
     rows = []
-    for workers in [12, 24, 36, 48, 60, 72, 84, 96]:
+    for workers in [1, 12, 24, 36, 48, 60, 72, 84, 96]:
         vals = {r["system"]: r for r in scaling_mean if int(r["worker_threads"]) == workers}
         rows.append([
             str(workers),

@@ -492,8 +492,8 @@ def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear",
         ax.set_title(workload, fontsize=16, fontweight="bold", pad=8)
         ax.set_xlabel("Worker threads")
         ax.set_xscale("linear")
-        ax.set_xticks([12, 24, 36, 48, 60, 72, 84, 96])
-        ax.set_xticklabels(["12", "24", "36", "48", "60", "72", "84", "96"], rotation=0)
+        ax.set_xticks([1, 12, 24, 36, 48, 60, 72, 84, 96])
+        ax.set_xticklabels(["1", "12", "24", "36", "48", "60", "72", "84", "96"], rotation=0)
         ax.minorticks_off()
         if yscale != "linear":
             ax.set_yscale(yscale)
@@ -568,8 +568,8 @@ def draw_speedup(rows, output):
     ax.set_xlabel("Worker threads", labelpad=8)
     ax.set_ylabel("Ayame / P-WAL ack throughput", labelpad=8)
     ax.set_xscale("linear")
-    ax.set_xticks([12, 24, 36, 48, 60, 72, 84, 96])
-    ax.set_xticklabels(["12", "24", "36", "48", "60", "72", "84", "96"])
+    ax.set_xticks([1, 12, 24, 36, 48, 60, 72, 84, 96])
+    ax.set_xticklabels(["1", "12", "24", "36", "48", "60", "72", "84", "96"])
     ax.minorticks_off()
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.1f}x"))
     ax.grid(True, axis="y", color="#e5e7eb", linewidth=0.9)
@@ -656,7 +656,7 @@ def write_report(rows, raw_csv, outputs, args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workloads", default="ycsb_a,ycsb_b,ycsb_c")
-    parser.add_argument("--workers", default="12,24,36,48,60,72,84,96")
+    parser.add_argument("--workers", default="1,12,24,36,48,60,72,84,96")
     parser.add_argument("--seconds", type=int, default=5)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--clocks-per-us", dest="clocks_per_us", type=int, default=1800,

@@ -38,8 +38,8 @@ quantifies this residual overhead.
 
 Following the worker/flusher/committer separation of
 Section~\ref{sec:design}, Ayame offloads durability to background
-threads: it uses 3, 5, 7, 9, 12, 14, 17, and 19 flusher threads for 12,
-24, 36, 48, 60, 72, 84, and 96 worker threads, respectively, and one
+threads: it uses 1, 3, 5, 7, 9, 12, 14, 17, and 19 flusher threads for 1,
+12, 24, 36, 48, 60, 72, 84, and 96 worker threads, respectively, and one
 committer thread in all configurations.  The x-axis of our worker-scaling
 experiments is the number of transaction worker threads; at 48 workers
 Ayame therefore runs 58 active threads (48 workers, 9 flushers, and one
@@ -92,7 +92,7 @@ values, and keys were drawn from a uniform distribution.
     TX & \#operations & 10 \\
        & read ratio & 50 / 95 / 100\,\% \\
     \hline
-    Run & worker threads & 12,24,36,48,60,72,84,96 \\
+    Run & worker threads & 1,12,24,36,48,60,72,84,96 \\
         & measurement time & 5\,s \\
         & repeats & 5 \\
     \hline
@@ -122,8 +122,9 @@ latencies are means of the per-run p99 values.
 \label{sec:results}
 
 We evaluate Ayame using the worker-thread sweep of
-Table~\ref{tab:params}, which spans 12 to 96 worker threads in steps of
-12 (up to the full two-socket machine).  At 48 worker threads on YCSB-A,
+Table~\ref{tab:params}, which adds a single-thread baseline and then spans
+12 to 96 worker threads in steps of 12 (up to the full two-socket
+machine).  At 48 worker threads on YCSB-A,
 Single WAL achieves 9K durable acknowledgments per second and P-WAL achieves
 48K, whereas Ayame achieves 250K durable acknowledgments per second.  On
 YCSB-B, Single WAL achieves 26K and P-WAL achieves 164K, whereas Ayame

@@ -265,7 +265,7 @@ def draw_metric(rows, metric, ylabel, output, title):
     ax.set_xlabel("Worker threads")
     ax.set_ylabel(ylabel)
     ax.set_xscale("linear")
-    ax.set_xticks([12, 24, 36, 48, 60, 72, 84, 96])
+    ax.set_xticks([1, 12, 24, 36, 48, 60, 72, 84, 96])
     ax.minorticks_off()
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: compact_number(v)))
     ax.grid(True, axis="y")
@@ -309,7 +309,7 @@ def draw_combined(rows, output):
         ax.set_xlabel("Worker threads")
         ax.set_ylabel(ylabel)
         ax.set_xscale("linear")
-        ax.set_xticks([12, 24, 36, 48, 60, 72, 84, 96])
+        ax.set_xticks([1, 12, 24, 36, 48, 60, 72, 84, 96])
         ax.minorticks_off()
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: compact_number(v)))
         ax.grid(True, axis="y")
@@ -369,7 +369,7 @@ def write_report(summary, raw_csv, outputs, args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--workers", default="12,24,36,48,60,72,84,96")
+    parser.add_argument("--workers", default="1,12,24,36,48,60,72,84,96")
     parser.add_argument("--seconds", type=int, default=5)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--group-size", type=int, default=64)

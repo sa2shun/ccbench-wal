@@ -154,9 +154,9 @@ def draw(rows, workers, out_path):
                 ax.set_yscale(yscale)
             ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: compact(v)))
             ax.set_xscale("linear")
-            ax.set_xticks([12, 24, 36, 48, 60, 72, 84, 96])
+            ax.set_xticks([1, 12, 24, 36, 48, 60, 72, 84, 96])
             ax.minorticks_off()
-            ax.set_xticklabels(["12", "24", "36", "48", "60", "72", "84", "96"])
+            ax.set_xticklabels(["1", "12", "24", "36", "48", "60", "72", "84", "96"])
             if row_i == 0:
                 ax.set_title(workload, fontsize=16, fontweight="bold")
             if row_i == 1:
@@ -176,7 +176,7 @@ def draw(rows, workers, out_path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--workers", default="12,24,36,48,60,72,84,96")
+    ap.add_argument("--workers", default="1,12,24,36,48,60,72,84,96")
     ap.add_argument("--seconds", type=int, default=5)
     ap.add_argument("--repeats", type=int, default=5)
     ap.add_argument("--group-size", type=int, default=64)
