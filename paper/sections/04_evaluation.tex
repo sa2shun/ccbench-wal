@@ -222,12 +222,9 @@ blowups caused by global-prefix waiting (Section~\ref{sec:why-dep}).
 \end{figure*}
 
 Table~\ref{tab:ycsbabc-48worker-summary} summarizes the main 48-worker
-end-to-end results used in the figures.  Table~\ref{tab:ayame-speedup-48worker}
-extracts the Ayame-vs-P-WAL speedups from the same measurements.
+end-to-end results used in the figures.
 
 \input{tables/table_ycsbabc_48worker_summary}
-
-\input{tables/table_ayame_speedup_48worker}
 
 \subsection{Acknowledgment-Policy Comparison}
 \label{sec:why-dep}
@@ -334,63 +331,22 @@ remains when frontiers are sparse.
 \subsection{Hardware Counters and Overhead}
 \label{sec:overhead}
 
-Table~\ref{tab:perf-stat-48worker} summarizes the 48-worker perf-stat analysis.
-Table~\ref{tab:ycsbb-perf-scaling} shows the worker-scaling perf-stat data for
-YCSB-B, where Ayame's throughput improvement is most visible.  The perf-stat
-runs are separate from the main throughput runs; their absolute throughputs
-therefore differ slightly due to profiling overhead and run-to-run variation.
+Table~\ref{tab:perf-stat-48worker} reports a perf-stat comparison of the three
+systems at 48 worker threads, and three effects explain Ayame's throughput.
+First, Ayame amortizes storage synchronization: it makes 23 commits durable per
+\texttt{fdatasync} on YCSB-A and 14 on YCSB-B, whereas Single WAL and P-WAL
+synchronize roughly once per transaction (Tx/sync of 1.0--2.5).  Second, Ayame
+spends far fewer CPU cycles per committed transaction than P-WAL (243K versus
+1.15M on YCSB-A), because its workers enqueue a log record and return to
+execution instead of busy-waiting on the global durable prefix as in P-WAL's
+commit loop; Single WAL, in contrast, barely uses the machine (1.8 cores)
+because its workers serialize on a single shared log.  Third, this decoupling is
+paid for in context switches, of which Ayame performs the most, reflecting the
+worker/flusher/committer hand-offs.  On read-only YCSB-C the three systems
+converge---about 683K acknowledgments per second on 48 cores with near-identical
+counters---confirming that these differences come from the durable-logging path
+rather than from transaction execution.  The perf-stat runs are separate from
+the main throughput runs, so their absolute throughputs differ slightly due to
+profiling overhead and run-to-run variation.
 
 \input{tables/table_perf_stat_48worker}
-
-\input{tables/table_ycsbb_perf_scaling}
-
-\begin{figure}[!tbp]
-  \centering
-  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbb_perf_scaling_tps.pdf}
-  \caption{
-  YCSB-B durable-acknowledgment throughput in the perf-stat worker-scaling runs.
-  }
-  \label{fig:ycsbb-perf-scaling-tps}
-\end{figure}
-
-\begin{figure}[!tbp]
-  \centering
-  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbb_perf_scaling_cpu_cores.pdf}
-  \caption{
-  CPU-core utilization in the YCSB-B perf-stat worker-scaling runs.
-  }
-  \label{fig:ycsbb-perf-scaling-cpu-cores}
-\end{figure}
-
-\begin{figure}[!tbp]
-  \centering
-  \includegraphics[width=0.86\linewidth]{figures/fig_ycsbb_perf_scaling_context_switches.pdf}
-  \caption{
-  Context-switch counts in the YCSB-B perf-stat worker-scaling runs.
-  }
-  \label{fig:ycsbb-perf-scaling-context-switches}
-\end{figure}
-
-\begin{figure*}[!tbp]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_ycsbb_perf_scaling_perf_stat.pdf}
-  \caption{
-  Perf-stat summary for YCSB-B worker scaling.
-  }
-  \label{fig:ycsbb-perf-scaling-perf-stat}
-\end{figure*}
-
-Finally, Table~\ref{tab:ycsbc-perf-top} reports the top self-time symbols for
-YCSB-C.  Since YCSB-C is read-only, this table is used as a sanity check that
-the remaining cost is read-path bookkeeping rather than WAL persistence.
-
-\input{tables/table_ycsbc_perf_top}
-
-\begin{figure*}[!tbp]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_ycsbc_perf_top_symbols_horizontal.pdf}
-  \caption{
-  Top self-time symbols for YCSB-C at 48 transaction worker threads.
-  }
-  \label{fig:ycsbc-perf-top-symbols}
-\end{figure*}

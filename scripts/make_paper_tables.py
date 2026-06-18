@@ -141,28 +141,6 @@ def main():
         wide=True,
     )
 
-    rows = []
-    for workload in ["YCSB-A", "YCSB-B", "YCSB-C"]:
-        pwal = next(r for r in y32 if r["workload"] == workload and r["system"] == "P-WAL")
-        tide = next(r for r in y32 if r["workload"] == workload and r["system"] == "Ayame")
-        rows.append([
-            workload,
-            k_tps(pwal["ack_tps"]),
-            k_tps(tide["ack_tps"]),
-            f"{tide['ack_tps'] / pwal['ack_tps']:.2f}$\\times$",
-            whole(tide["p99_us"]),
-            whole(tide["pending"]),
-        ])
-    tex_table(
-        TABLE_DIR / "table_ayame_speedup_48worker.tex",
-        "Ayame throughput relative to P-WAL at 48 transaction worker threads.",
-        "tab:ayame-speedup-48worker",
-        ["Workload", "P-WAL tps", "Ayame tps", "Speedup", "Ayame p99 $\\mu$s", "Ayame pending"],
-        rows,
-        align="lrrrrr",
-        wide=True,
-    )
-
     perf = read_csv(TABLE_DIR / "ayame_perf_stat_20260609.csv")
     perf.sort(key=lambda r: (order_workloads[r["workload"]], order_systems[r["system"]]))
     rows = []
@@ -185,47 +163,6 @@ def main():
         ["Workload", "System", "Ack tps", "CPU cores", "Cycles/tx", "Instr/tx", "IPC", "Ctx sw.", "Tx/sync"],
         rows,
         align="llrrrrrrr",
-        wide=True,
-    )
-
-    scaling = read_csv(TABLE_DIR / "ycsbb_perf_scaling_20260609.csv")
-    scaling_mean = group_mean(scaling, ["system", "worker_threads"])
-    rows = []
-    for workers in [1, 12, 24, 36, 48, 60, 72, 84, 96]:
-        vals = {r["system"]: r for r in scaling_mean if int(r["worker_threads"]) == workers}
-        rows.append([
-            str(workers),
-            k_tps(vals["Single WAL"]["ack_tps"]),
-            k_tps(vals["P-WAL"]["ack_tps"]),
-            k_tps(vals["Ayame"]["ack_tps"]),
-            one(vals["Single WAL"]["cpu_cores"]),
-            one(vals["P-WAL"]["cpu_cores"]),
-            one(vals["Ayame"]["cpu_cores"]),
-        ])
-    tex_table(
-        TABLE_DIR / "table_ycsbb_perf_scaling.tex",
-        "YCSB-B perf-stat worker scaling.",
-        "tab:ycsbb-perf-scaling",
-        ["Workers", "Single tps", "P-WAL tps", "Ayame tps", "Single CPU", "P-WAL CPU", "Ayame CPU"],
-        rows,
-        align="rrrrrrr",
-        wide=True,
-    )
-
-    top = read_csv(TABLE_DIR / "ayame_perf_top_20260609.csv")
-    rows = []
-    for system in ["Single WAL", "P-WAL", "Ayame"]:
-        for r in top:
-            if r["workload"] == "YCSB-C" and r["system"] == system and int(r["rank"]) <= 5:
-                rows.append([system, str(int(r["rank"])), f"{r['self_pct']:.2f}", fmt_symbol(r["symbol"])])
-    tex_table(
-        TABLE_DIR / "table_ycsbc_perf_top.tex",
-        "Top self-time symbols for YCSB-C at 48 transaction worker threads.",
-        "tab:ycsbc-perf-top",
-        ["System", "Rank", "Self \\%", "Symbol"],
-        rows,
-        align="llrl",
-        footnote="YCSB-C is read-only; WAL bytes and fdatasync counts are zero for all systems.",
         wide=True,
     )
 
@@ -259,10 +196,8 @@ def main():
         )
 
     print(TABLE_DIR / "table_ycsbabc_48worker_summary.tex")
-    print(TABLE_DIR / "table_ayame_speedup_48worker.tex")
     print(TABLE_DIR / "table_perf_stat_48worker.tex")
-    print(TABLE_DIR / "table_ycsbb_perf_scaling.tex")
-    print(TABLE_DIR / "table_ycsbc_perf_top.tex")
+    print(TABLE_DIR / "table_ack_policy_ablation.tex")
 
 
 if __name__ == "__main__":

@@ -47,24 +47,7 @@ not the per-shard physical position.
 \subsection{Worker, Flusher, and Committer Separation}
 \label{sec:pipeline}
 
-\begin{figure*}[t]
-  \centering
-  \includegraphics[width=0.92\linewidth]{figures/fig_ayame_architecture.pdf}
-  \caption{
-  The Ayame commit pipeline.  Workers execute and validate transactions under
-  SSN, assign the commit timestamp $T.c$ (reused as the logical LSN), build a
-  commit record carrying the closed dependency frontier $F$, and enqueue it to
-  their own WAL shard without flushing or waiting.  Flushers batch each shard's
-  records and call \texttt{fdatasync} once per batch, advancing the durable
-  vector $D$.  The committer returns a durable acknowledgment only once
-  $F \le D$, that is, once the transaction's own record and every record it
-  depends on are durable.
-  }
-  \label{fig:ayame-architecture}
-\end{figure*}
-
-Ayame divides commit processing into three roles, illustrated in
-Figure~\ref{fig:ayame-architecture}.  A \emph{worker}
+Ayame divides commit processing into three roles.  A \emph{worker}
 executes the transaction, validates it with SSN, assigns the commit
 timestamp, appends the log record to its own WAL shard, publishes
 durability metadata, and registers a durable-acknowledgment request.
