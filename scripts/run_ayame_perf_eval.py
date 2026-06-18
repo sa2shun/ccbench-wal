@@ -183,6 +183,7 @@ def run_stat_case(out_dir, workload, mode, repeat, args):
         "-o", str(stat_path), "--", *ycsb_cmd(workload, worker, args.seconds)
     ]
     with out_path.open("w") as out, err_path.open("w") as err:
+        subprocess.run("sync; sleep 3", shell=True)  # rest storage: avoid cumulative-load p99 spikes
         proc = subprocess.run(cmd, cwd=ROOT, env=env, stdout=out, stderr=err)
     shutil.rmtree(out_dir / "wal" / case, ignore_errors=True)
     metrics = parse_metrics(out_path.read_text(errors="replace"))
@@ -235,6 +236,7 @@ def run_record_case(out_dir, workload, mode, args):
         "-o", str(data_path), "--", *ycsb_cmd(workload, worker, args.record_seconds)
     ]
     with out_path.open("w") as out, err_path.open("w") as err:
+        subprocess.run("sync; sleep 3", shell=True)  # rest storage: avoid cumulative-load p99 spikes
         proc = subprocess.run(cmd, cwd=ROOT, env=env, stdout=out, stderr=err)
     shutil.rmtree(out_dir / "wal" / f"record_{case}", ignore_errors=True)
     if proc.returncode == 0:
@@ -398,7 +400,7 @@ def main():
     parser.add_argument("--seconds", type=int, default=5)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--record-seconds", type=int, default=5)
-    parser.add_argument("--group-size", type=int, default=64)
+    parser.add_argument("--group-size", type=int, default=256)
     parser.add_argument("--flush-us", type=int, default=50)
     parser.add_argument("--max-pending", type=int, default=65536)
     parser.add_argument("--freq", type=int, default=99)

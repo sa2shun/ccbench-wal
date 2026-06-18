@@ -96,7 +96,7 @@ values, and keys were drawn from a uniform distribution.
         & measurement time & 5\,s \\
         & repeats & 5 \\
     \hline
-    Ayame & flush group size [commits] & 64 \\
+    Ayame & flush group size [commits] & 256 \\
           & flush interval & 50\,$\mu$s \\
           & max pending acks & 65{,}536 \\
     \hline
@@ -126,22 +126,22 @@ Table~\ref{tab:params}, which adds a single-thread baseline and then spans
 12 to 96 worker threads in steps of 12 (up to the full two-socket
 machine).  At 48 worker threads on YCSB-A,
 Single WAL achieves 9K durable acknowledgments per second and P-WAL achieves
-48K, whereas Ayame achieves 250K durable acknowledgments per second.  On
-YCSB-B, Single WAL achieves 26K and P-WAL achieves 164K, whereas Ayame
-achieves 449K durable acknowledgments per second.  These results correspond
-to 5.2$\times$ and 2.7$\times$ improvements over P-WAL on YCSB-A and YCSB-B,
+50K, whereas Ayame achieves 253K durable acknowledgments per second.  On
+YCSB-B, Single WAL achieves 26K and P-WAL achieves 165K, whereas Ayame
+achieves 467K durable acknowledgments per second.  These results correspond
+to 5.1$\times$ and 2.8$\times$ improvements over P-WAL on YCSB-A and YCSB-B,
 respectively.  Ayame also keeps the number of pending durable commits small
-at 48 worker threads---353 on YCSB-A and 75 on YCSB-B, both with a 2\,ms p99
+at 48 worker threads---318 on YCSB-A and 83 on YCSB-B, both with a 2\,ms p99
 acknowledgment latency.  In fact, across the entire sweep Ayame holds its
-pending durable commits below 500 and its p99 below 10\,ms
+pending durable commits below 500 and its p99 at or below 2\,ms
 (Figures~\ref{fig:ycsbabc-worker-latency}
 and~\ref{fig:ycsbabc-worker-pending}), so the asynchronous pipeline keeps up
 with the offered durable-logging load at every thread count.  Ayame's YCSB-A
-throughput peaks near 24--36 workers (290--298K) and then declines gradually
-toward 96 workers (208K): beyond the 48 physical cores the added background
+throughput peaks near 24--36 workers (294--296K) and then declines gradually
+toward 96 workers (209K): beyond the 48 physical cores the added background
 flushers and committer (116 active threads at 96 workers) oversubscribe the
 machine.  P-WAL declines in parallel, so the Ayame-over-P-WAL ratio stays
-large throughout, ranging from 6.7$\times$ at 12 workers to 4.2$\times$ at 96.
+large throughout, ranging from 6.5$\times$ at 12 workers to 4.1$\times$ at 96.
 
 Figure~\ref{fig:ycsbabc-worker-throughput} shows the worker-thread comparison.
 The results show that Ayame improves update and mixed read-write workloads,
@@ -235,25 +235,25 @@ report the result.  On YCSB-A the contrast is sharp and holds across the
 entire sweep: the global-prefix variant stays pinned near the 65{,}536
 backpressure limit with a 131\,ms p99 acknowledgment latency at every
 worker count, whereas the dependency-frontier variant keeps fewer than 500
-pending durable commits at most worker counts---and far below the
-global-prefix queue everywhere---with a 1--8\,ms p99.  At 48 workers, for
-instance, global-prefix holds 65{,}278 pending commits and 131\,ms while
-Ayame holds 358 and 2\,ms.  Even without injecting an artificial straggler,
+pending durable commits at every worker count---and far below the
+global-prefix queue everywhere---with a 1--4\,ms p99.  At 48 workers, for
+instance, global-prefix holds 64{,}197 pending commits and 131\,ms while
+Ayame holds 455 and 2\,ms.  Even without injecting an artificial straggler,
 natural progress variation among the WAL shards is enough to keep the
 global durable prefix behind, so the global-prefix queue never drains; the
 dependency-frontier rule does not wait for unrelated shards and therefore
 drains regardless of worker count.  On YCSB-B, whose update load is an
 order of magnitude lighter, the dependency-frontier rule again holds the
-pending count under about 130 and the p99 at 1\,ms across the whole sweep,
-while the global-prefix rule is erratic---draining at some worker counts
-but saturating at others as shard progress fluctuates.  (Pending counts
+pending count under about 100 and the p99 at 1\,ms across the whole sweep,
+while the global-prefix rule drains at low-to-mid worker counts but
+saturates beyond 48 workers as shard progress fluctuates.  (Pending counts
 here are the measurement-window snapshot, as in
 Table~\ref{tab:ycsbabc-48worker-summary}; these acknowledgment-policy
 runs are separate from the main worker-scaling runs, so values differ
 slightly due to run-to-run variation.)  Dependency-closed acknowledgment
 does not primarily improve short-window throughput: at 48 workers the
-global-prefix variant even reaches higher throughput on YCSB-A (356K versus
-247K durable acknowledgments per second), because it does not wait per
+global-prefix variant even reaches higher throughput on YCSB-A (444K versus
+251K durable acknowledgments per second), because it does not wait per
 transaction but bulk-acknowledges at the prefix.  Its benefit is not
 throughput; rather, it keeps the pending durable commits and the tail
 latency from exploding, while throughput remains comparable and sometimes
@@ -289,7 +289,7 @@ shard per transaction (nz/tx\,$=1$)---and with remote accesses the
 frontier quickly becomes dense (about nine shards).  Because this
 abort-free workload commits---and therefore logs---on every transaction,
 it is the most write-intensive workload in our evaluation; the flush group
-of 64 commits (Table~\ref{tab:params}) keeps the flush pipeline unsaturated
+of 256 commits (Table~\ref{tab:params}) keeps the flush pipeline unsaturated
 for \emph{both} acknowledgment policies, so the remaining difference
 reflects only the acknowledgment rule rather than flush-pipeline
 saturation.
@@ -305,7 +305,7 @@ range; its throughput is again slightly lower, as in the comparison.
 Crucially, even when each transaction depends on a single shard
 (nz/tx\,$=1$), the dependency-frontier rule still keeps pending durable
 commits and tail latency far below the global-prefix rule: about
-360 versus 65{,}000 pending commits, and 2\,ms versus 131\,ms p99.  The value of dependency-closed acknowledgment
+400 versus 65{,}000 pending commits, and 2\,ms versus 131\,ms p99.  The value of dependency-closed acknowledgment
 is therefore not that a transaction has many dependencies, but that it
 does not wait for the shards it does not depend on, and this value
 remains when frontiers are sparse.

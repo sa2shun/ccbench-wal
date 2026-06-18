@@ -133,6 +133,7 @@ def run_case(out_dir, mode, worker, repeat, args):
         *ycsb_cmd(worker, args.seconds),
     ]
     with out_path.open("w") as out, err_path.open("w") as err:
+        subprocess.run("sync; sleep 3", shell=True)  # rest storage: avoid cumulative-load p99 spikes
         proc = subprocess.run(cmd, cwd=ROOT, env=env, stdout=out, stderr=err)
     # WAL is write-only here (durability path, never replayed); drop it right
     # after the run so per-run log files do not accumulate over the sweep.
@@ -372,7 +373,7 @@ def main():
     parser.add_argument("--workers", default="1,12,24,36,48,60,72,84,96")
     parser.add_argument("--seconds", type=int, default=5)
     parser.add_argument("--repeats", type=int, default=3)
-    parser.add_argument("--group-size", type=int, default=64)
+    parser.add_argument("--group-size", type=int, default=256)
     parser.add_argument("--flush-us", type=int, default=50)
     parser.add_argument("--max-pending", type=int, default=65536)
     parser.add_argument("--input-csv")

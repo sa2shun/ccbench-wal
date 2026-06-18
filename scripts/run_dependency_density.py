@@ -72,6 +72,7 @@ def run_case(out_dir, mode_value, remote_ppm, repeat, args):
         "--clocks_per_us=1800", "--ycsb_tuple_num=100000", "--ycsb_max_ope=10",
         f"--ycsb_remote_read_prob_ppm={remote_ppm}",
     ]
+    subprocess.run("sync; sleep 3", shell=True)  # rest storage: avoid cumulative-load p99 spikes
     proc = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True)
     m = parse_metrics(proc.stdout)
     acked = float(m.get("wal_stats_async_acked_commits", 0) or 0)
@@ -116,14 +117,14 @@ def main():
     ap.add_argument("--repeats", type=int, default=5)
     # The abort-free workload commits (and logs) on every transaction, so its
     # per-second WAL volume is roughly twice that of the mixed YCSB workloads
-    # (which skip read-only transactions).  With the default group of 16 the
+    # (which skip read-only transactions).  With a small flush group the
     # fdatasync-bound flush pipeline saturates for *both* acknowledgment
-    # policies, hiding the effect we want to isolate.  A flush group of 64
-    # keeps the pipeline unsaturated for both policies, so the remaining
-    # difference reflects only the acknowledgment rule.  The result is robust
-    # to the exact value (64-1024 all drain the dependency-frontier rule while
-    # global-prefix stays saturated).
-    ap.add_argument("--group-size", type=int, default=64)
+    # policies, hiding the effect we want to isolate.  A flush group of 256
+    # (the paper-wide default) keeps the pipeline unsaturated for both
+    # policies, so the remaining difference reflects only the acknowledgment
+    # rule.  The result is robust to the exact value (256-1024 all drain the
+    # dependency-frontier rule while global-prefix stays saturated).
+    ap.add_argument("--group-size", type=int, default=256)
     ap.add_argument("--flush-us", type=int, default=50)
     ap.add_argument("--max-pending", type=int, default=65536)
     args = ap.parse_args()

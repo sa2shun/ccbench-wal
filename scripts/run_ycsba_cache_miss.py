@@ -41,7 +41,7 @@ def env_for(mode, worker, wal_dir):
     env = os.environ.copy()
     env.update({
         "CCBENCH_WAL_DIR": str(wal_dir), "CCBENCH_WAL_SKIP_READ_ONLY": "1",
-        "CCBENCH_WAL_GROUP_SIZE": "64", "CCBENCH_WAL_FLUSH_US": "50",
+        "CCBENCH_WAL_GROUP_SIZE": "256", "CCBENCH_WAL_FLUSH_US": "50",
         "CCBENCH_WAL_MAX_PENDING": "65536", "CCBENCH_WAL_COMMITTER_NUM": "1",
     })
     log = LOGGERS.get(worker, max(1, round(worker * 7 / 32)))
@@ -87,6 +87,7 @@ def run_case(out_dir, mode, worker, args):
         "--clocks_per_us=1800", "--ycsb_tuple_num=100000", "--ycsb_max_ope=10",
         "--ycsb_rratio=50",
     ]
+    subprocess.run("sync; sleep 3", shell=True)  # rest storage: avoid cumulative-load p99 spikes
     proc = subprocess.run(cmd, cwd=ROOT, env=env_for(mode, worker, wal_dir),
                           capture_output=True, text=True)
     tps = 0.0

@@ -38,7 +38,7 @@
 \author{Hideyuki Kawashima}{SFC}[river@sfc.keio.ac.jp]
 
 \begin{abstract}
-Concurrency control is essential for database access, and the Serial Safety Net (SSN) represents one of the state-of-the-art methods in this field. Integrating SSN with logging ensures that transaction processing is recoverable. While P-WAL is an efficient logging method that leverages parallel I/O extensively, it still suffers from certain limitations. To overcome these drawbacks, this paper proposes a novel logging method, Ayame. Ayame incorporates three techniques: reusing SSN commit timestamps as logical LSNs, separating workers, flushers, and committers, and dependency-closed durable acknowledgment. Experimental results demonstrate that Ayame achieves a 5.2-fold performance improvement over P-WAL in YCSB-A at 48 worker threads.
+Concurrency control is essential for database access, and the Serial Safety Net (SSN) represents one of the state-of-the-art methods in this field. Integrating SSN with logging ensures that transaction processing is recoverable. While P-WAL is an efficient logging method that leverages parallel I/O extensively, it still suffers from certain limitations. To overcome these drawbacks, this paper proposes a novel logging method, Ayame. Ayame incorporates three techniques: reusing SSN commit timestamps as logical LSNs, separating workers, flushers, and committers, and dependency-closed durable acknowledgment. Experimental results demonstrate that Ayame achieves a 5.1-fold performance improvement over P-WAL in YCSB-A at 48 worker threads.
 \end{abstract}
 
 \maketitle

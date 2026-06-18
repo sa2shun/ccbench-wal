@@ -81,6 +81,7 @@ def run_case(out_dir, policy, mode_value, workload, rratio, worker, repeat, args
         "--clocks_per_us=1800", "--ycsb_tuple_num=100000",
         "--ycsb_max_ope=10", f"--ycsb_rratio={rratio}",
     ]
+    subprocess.run("sync; sleep 3", shell=True)  # rest storage: avoid cumulative-load p99 spikes
     proc = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True)
     m = parse_metrics(proc.stdout)
     acked = float(m.get("wal_stats_async_acked_commits", 0) or 0)
@@ -179,7 +180,7 @@ def main():
     ap.add_argument("--workers", default="1,12,24,36,48,60,72,84,96")
     ap.add_argument("--seconds", type=int, default=5)
     ap.add_argument("--repeats", type=int, default=5)
-    ap.add_argument("--group-size", type=int, default=64)
+    ap.add_argument("--group-size", type=int, default=256)
     ap.add_argument("--flush-us", type=int, default=50)
     ap.add_argument("--max-pending", type=int, default=65536)
     ap.add_argument("--input-csv", default="",
