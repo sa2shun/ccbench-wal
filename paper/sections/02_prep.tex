@@ -2,13 +2,109 @@
 \label{sec:background}
 
 \subsection{Concurrency Control}
+
+A database transaction is a unit of execution that must satisfy atomicity,
+consistency, isolation, and durability~\cite{haerder1983principles}.
+Concurrency control (CC) is responsible for isolation: it interleaves the
+operations of concurrent transactions so that the outcome is equivalent to some
+serial execution, the standard correctness criterion of
+serializability~\cite{bernstein1987ccr}.  CC protocols differ in how they detect
+and resolve the read--write, write--read, and write--write conflicts that would
+otherwise violate serializability.  Pessimistic protocols such as two-phase
+locking block conflicting operations as they occur, whereas optimistic protocols
+let transactions execute first and validate them at commit time, aborting those
+whose interleaving cannot be serialized.  Main-memory multicore databases favor
+optimistic and multiversion designs because they avoid the lock-manager and
+latch contention that limit scalability on many
+cores~\cite{tu2013silo,kim2016ermia,tanabe2020ccbench}.
+
 \subsection{Timestamp-based Protocols}
+
+Multiversion concurrency control retains several versions of each record so that
+reads need not block writes.  Snapshot isolation (SI) runs each transaction
+against a consistent snapshot taken at its start and, at commit, checks only for
+write--write conflicts; it is efficient but admits write-skew anomalies and is
+therefore not serializable.  Serializable Snapshot Isolation (SSI) strengthens
+SI by detecting the dangerous read--write antidependency structures that can
+lead to non-serializable schedules~\cite{ports2012ssi}.  These protocols order
+transactions with timestamps: a transaction reads as of a begin timestamp and
+commits at a commit timestamp, and the commit timestamps induce a total order
+that defines the serialization order.  Ayame builds directly on this order,
+reusing the commit timestamp the protocol already assigns as the logical order
+for recovery (Section~\ref{sec:cstamp}).
+
 \subsubsection{Serial Safety Net}
 
-\subsection{Write Ahead Logging for Recovery}
+The Serial Safety Net (SSN) is a certifier layered on top of a multiversion
+engine such as SI or ERMIA to guarantee
+serializability~\cite{wang2017ssn,kim2016ermia}.  Rather than maintaining the
+full dependency graph, SSN summarizes, for each transaction $T$, the commit
+timestamps of its predecessors and successors in the dependency graph into a
+pair of watermarks, and it refuses to commit $T$ when these watermarks reveal
+that committing $T$ would close a non-serializable cycle.  Each committing
+transaction receives a commit timestamp ($\mathit{cstamp}$) that fixes its
+position in the serialization order, and the read and write footprints of
+in-flight and recently committed transactions are tracked through a shared
+transaction-mapping table so that validation can read the relevant
+predecessors' and successors' timestamps.  SSN admits more concurrency than
+two-phase locking while remaining serializable, which makes it a strong but
+demanding target for a recovery protocol.  The recovery layer must respect the
+same commit-timestamp order that SSN uses for serialization, yet it must do so
+without introducing new centralized bottlenecks of its own.  Ayame exploits the
+first property---the commit timestamp is reused as the logical LSN
+(Section~\ref{sec:cstamp})---and is careful not to violate the second.  The
+shared commit-timestamp counter and transaction-mapping table are also the
+structures whose cache-line contention ultimately bounds throughput at high
+core counts, a known scalability limit of SSN-style
+certification~\cite{tanabe2020ccbench} that we revisit in
+Section~\ref{sec:results}.
 
-\subsection{Logging}
+\subsection{Write-Ahead Logging for Recovery}
+
+Durability and atomicity across crashes are provided by write-ahead logging
+(WAL).  Under the WAL rule, a transaction's log records are forced to stable
+storage before the transaction is reported as committed, so that a crash can be
+recovered by replaying the log.  ARIES is the classical WAL design: each log
+record carries a monotonically increasing log sequence number (LSN), recovery
+repeats history in a redo pass and then rolls back loser transactions in an undo
+pass, and fuzzy checkpoints bound the amount of log that must be
+scanned~\cite{haerder1983principles,mohan1992aries}.  Forcing the log on every
+commit is costly because it requires a storage synchronization
+(\texttt{fdatasync}) on the commit path; group commit amortizes this cost by
+making a single synchronization durable for a batch of commits.  In a
+main-memory database the redo log is the dominant persistence cost, so the rate
+at which log records can be made durable---and the latency of doing so---directly
+bounds commit throughput.
+
+\subsection{Parallel Logging}
+\label{sec:pwal}
+
+A single shared log serializes every commit through one log tail, which becomes
+a bottleneck on many cores.  Parallel WAL designs remove this bottleneck by
+partitioning the log into multiple streams that are appended and flushed
+independently~\cite{zheng2014silor,wang2014nvm,kamiya2017pwal}.
+
 \subsubsection{P-WAL}
+
+P-WAL gives each worker its own log stream, which we hereafter call a
+\emph{WAL shard}, so that workers append commit and redo records without
+contending on a shared log tail~\cite{kamiya2017pwal}.
+Algorithm~\ref{alg:pwal} shows the resulting commit path.  Because the shards
+are independent, P-WAL re-establishes a single global order across them: every
+record is stamped with a value drawn from a global LSN counter $L$, and each
+shard publishes a durable position $f[i]$ whose minimum over all shards forms a
+global durable prefix $P = \min_i f[i]$.  A transaction is acknowledged once the
+global prefix reaches its commit LSN, which guarantees that every earlier
+record, on every shard, is already durable.  P-WAL underlies Shirakami, the
+transaction engine of Tsurugi~\cite{kamiya2017pwal,kawashima2025tsurugi}.
+
+This design makes log insertion parallel, but combining it with a timestamp-based
+certifier such as SSN raises the three problems detailed in
+Section~\ref{sec:introduction-problem}: a WAL-side global counter that
+duplicates the commit timestamp already assigned by SSN (P1), worker threads
+that wait on \texttt{fdatasync} or on durable-prefix updates (P2), and a global
+durable prefix that delays a transaction behind unrelated slow shards (P3).
+Ayame addresses these problems while preserving P-WAL's parallel log insertion.
 
 \begin{algorithm}[t]
 \caption{\bfseries Per-Thread WAL Commit for Update Transactions (P-WAL)}
@@ -40,17 +136,3 @@
 \EndFunction
 \end{algorithmic}
 \end{algorithm}
-
-
-% Problem of P-WAL
-P-WAL is attractive because it removes the single-WAL insertion bottleneck by assigning transactions to multiple log streams, which we hereafter call \emph{WAL shards}.  However, combining P-WAL with SSN exposes three
-problems.
-
-\textbf{P1. Multiple Global Counter Accesses:~} First, P-WAL can introduce frequent global-counter accesses.  Even if the CC
-layer already assigns a commit timestamp for SSN validation and serialization, the recovery layer may allocate a separate global LSN or maintain a global durable prefix.  This duplicates the ordering work already performed by the CC layer and adds shared-memory synchronization to the commit path.
-
-\textbf{P2. Waiting for Data Transfer:~} Second, workers can spend a long time waiting around \texttt{fdatasync}.  P-WAL parallelizes log streams, but a transaction cannot be acknowledged until the corresponding durable condition is satisfied.  If worker threads wait directly
-for log flushes or durable-prefix updates, storage synchronization and notification latency reduce the effective scalability of the CC protocol.
-
-\textbf{P3. Global-prefix over-waiting:~} Third, global-prefix acknowledgment waits for log records that are unrelated to the transaction being acknowledged.  This rule is safe, but overly conservative:
-if one WAL shard is slow, transactions on other shards may be delayed even when they have no dependency on transactions logged by the slow shard.  The opposite design point, local-only acknowledgment, avoids this delay but is unsafe.  If transaction $T$ reads a value written by transaction $U$, acknowledging $T$ before $U$ is recoverable may allow a crash recovery state that contains $T$ without the state on which $T$ depends.

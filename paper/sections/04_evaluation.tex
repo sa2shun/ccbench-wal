@@ -134,9 +134,9 @@ respectively.  Ayame also keeps the number of pending durable commits small
 at 48 worker threads---318 on YCSB-A and 83 on YCSB-B, both with a 2\,ms p99
 acknowledgment latency.  In fact, across the entire sweep Ayame holds its
 pending durable commits below 500 and its p99 at or below 2\,ms
-(Figures~\ref{fig:ycsbabc-worker-latency}
-and~\ref{fig:ycsbabc-worker-pending}), so the asynchronous pipeline keeps up
-with the offered durable-logging load at every thread count.  Ayame's YCSB-A
+(Figure~\ref{fig:ycsbabc-worker-latency} reports the p99; the pending counts
+are in Table~\ref{tab:ycsbabc-48worker-summary}), so the asynchronous pipeline
+keeps up with the offered durable-logging load at every thread count.  Ayame's YCSB-A
 throughput peaks near 24--36 workers (294--296K) and then declines gradually
 toward 96 workers (209K), and YCSB-B follows the same shape.  P-WAL declines
 in parallel, so the Ayame-over-P-WAL ratio stays large throughout, ranging
@@ -184,7 +184,7 @@ as the thread count grows.  This is the known scalability limitation of SSN's
 centralized metadata~\cite{tanabe2020ccbench}.  The limitation is upstream of
 durability: across the whole sweep the WAL pipeline keeps pending durable
 commits below 500 and the p99 acknowledgment latency at or below 2\,ms
-(Figures~\ref{fig:ycsbabc-worker-latency} and~\ref{fig:ycsbabc-worker-pending}),
+(Figure~\ref{fig:ycsbabc-worker-latency}),
 so the flushers and committer are not the bottleneck---the throughput ceiling
 is set by the concurrency-control layer that Ayame inherits through cstamp
 reuse.
@@ -219,26 +219,6 @@ blowups caused by global-prefix waiting (Section~\ref{sec:why-dep}).
   P99 durable-acknowledgment latency by transaction worker threads.
   }
   \label{fig:ycsbabc-worker-latency}
-\end{figure*}
-
-\begin{figure*}[!tbp]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_pending.pdf}
-  \caption{
-  Pending durable commits by transaction worker threads (log scale).
-  Single WAL and P-WAL are synchronous and keep no pending durable
-  commits; they are drawn at the axis floor.
-  }
-  \label{fig:ycsbabc-worker-pending}
-\end{figure*}
-
-\begin{figure*}[!tbp]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_ayame_speedup_vs_pwal.pdf}
-  \caption{
-  Ayame throughput relative to P-WAL by transaction worker threads.
-  }
-  \label{fig:ycsbabc-worker-speedup}
 \end{figure*}
 
 Table~\ref{tab:ycsbabc-48worker-summary} summarizes the main 48-worker
