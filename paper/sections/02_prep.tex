@@ -99,12 +99,9 @@ record, on every shard, is already durable.  P-WAL underlies Shirakami, the
 transaction engine of Tsurugi~\cite{kamiya2017pwal,kawashima2025tsurugi}.
 
 This design makes log insertion parallel, but combining it with a timestamp-based
-certifier such as SSN raises the three problems detailed in
-Section~\ref{sec:introduction-problem}: a WAL-side global counter that
-duplicates the commit timestamp already assigned by SSN (P1), worker threads
-that wait on \texttt{fdatasync} or on durable-prefix updates (P2), and a global
-durable prefix that delays a transaction behind unrelated slow shards (P3).
-Ayame addresses these problems while preserving P-WAL's parallel log insertion.
+certifier such as SSN raises the three problems (P1--P3) detailed in
+Section~\ref{sec:introduction-problem}.  Ayame addresses them while preserving
+P-WAL's parallel log insertion.
 
 \begin{algorithm}[t]
 \caption{\bfseries Per-Thread WAL Commit for Update Transactions (P-WAL)}

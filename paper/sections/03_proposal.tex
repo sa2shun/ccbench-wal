@@ -3,7 +3,7 @@
 
 Ayame is a logging method that integrates durable write-ahead logging
 into SSN while avoiding the three problems of P-WAL identified in
-Section~\ref{sec:background}.  It combines three techniques.
+Section~\ref{sec:introduction-problem}.  It combines three techniques.
 First, it reuses the commit timestamp that SSN already assigns as the
 logical log sequence number, eliminating the separate WAL-side global
 counter (addresses \textbf{P1}).  Second, it splits commit processing
@@ -81,8 +81,9 @@ installs $F$ as the write frontier of the versions $T$ created
 frontier is installed, so any later reader or overwriter observes the
 writer's complete frontier.  It also merges $F$ into the read frontiers
 of the versions $T$ read (line~\ref{ln:pub-r}).  Finally, the worker
-registers $F$ for durable acknowledgment (line~\ref{ln:register}) before
-returning a logical commit.
+registers $F$ for durable acknowledgment (line~\ref{ln:register}) and returns
+to the execution scheduler; the client-visible commit response is returned
+only later by the committer, once the frontier condition is satisfied.
 
 \begin{algorithm}[t]
 \caption{\bfseries Worker-Side Commit Protocol (Ayame)}
@@ -126,7 +127,7 @@ returning a logical commit.
     \State \Call{Register}{$F, T$}
            \label{ln:register}
            \Comment{durable ack deferred to the committer}
-    \State \Return logical commit
+    \State \Return after logical commit registration
 \EndFunction
 \end{algorithmic}
 \end{algorithm}
@@ -157,9 +158,10 @@ version makes $T$ depend on the writer of the version it supersedes
 (line~\ref{ln:dep-write}).  A version also carries a \emph{read frontier}
 $\rfr$, into which readers monotonically merge their closed frontiers;
 \textsc{OverwriteVersion} additionally joins $\rfr$ so that an overwriter
-conservatively tracks the readers of the version it supersedes.  As
-discussed below, this last term is an anti-dependency over-approximation
-that the safety argument does not rely on.  Transactions known to be
+conservatively tracks the readers of the version it supersedes.  This
+read-frontier term is a conservative delay mechanism; it is not required for
+the recoverable-acknowledgment proof, which relies only on write frontiers
+published before a version becomes visible.  Transactions known to be
 read-only skip WAL generation and durable-acknowledgment registration.
 When the read-only fast path applies, they also avoid dependency-frontier
 collection; otherwise, only lightweight read-path frontier bookkeeping
@@ -298,18 +300,22 @@ happened to be durable while a dependency's was not.
 
 \begin{theorem}[Recoverable acknowledgment]
 \label{thm:recover}
-Suppose a crash occurs and recovery replays exactly the durable WAL
-records in logical-LSN order.  If $T$ was acknowledged before the crash,
+Suppose a crash occurs and recovery replays exactly the transactions whose
+stored frontier is covered by the durable vector ($F \le D$), in increasing
+cstamp order.  If $T$ was acknowledged before the crash,
 recovery never yields a state that contains the effects of $T$ but omits
 the effects of some $U \in \mathrm{cl}(T)$.
 \end{theorem}
 
 \begin{proof}
 By Lemma~\ref{lem:closure}, every $U \in \mathrm{cl}(T)$ has a durable
-record and is therefore replayed.  Each dependency edge $U \to T$ is a
-serialization edge of SSN, so $U$'s commit timestamp precedes $T$'s;
-because logical LSNs equal commit timestamps, replay in logical-LSN
-order installs every such $U$ before $T$.  Hence whenever $T$'s effects
+record and is therefore replayed.  For the dependency classes included in
+$\mathrm{cl}(T)$---read-from dependencies and version-order dependencies from
+overwritten versions---the producer version must have become visible before
+$T$ reads or overwrites it, so under the engine's MVCC visibility rule the
+producer's commit timestamp precedes $T$'s.  Because logical LSNs equal commit
+timestamps, replaying the acknowledged transactions in increasing cstamp order
+installs every such $U$ before $T$.  Hence whenever $T$'s effects
 are installed, the effects of all $U \in \mathrm{cl}(T)$ are already
 present.
 \end{proof}

@@ -60,7 +60,7 @@ parallelizes log streams, but a transaction cannot be acknowledged until the cor
 for log flushes or durable-prefix updates, storage synchronization and
 notification latency reduce the effective scalability of the CC protocol.
 
-\textbf{P3. Total History:~} Third, global-prefix acknowledgment waits for log records that are unrelated to
+\textbf{P3. Unrelated-shard waiting under global-prefix acknowledgment:~} Third, global-prefix acknowledgment waits for log records that are unrelated to
 the transaction being acknowledged.  This rule is safe, but overly conservative:
 if one WAL shard is slow, transactions on other shards may be delayed even when
 they have no dependency on transactions logged by the slow shard.  The opposite
@@ -80,12 +80,10 @@ transactions it depends on are durable.
   \centering
   \includegraphics[width=\linewidth]{figures/fig1_ayame_ack_policies.pdf}
   \caption{
-  Durable acknowledgment policies in parallel WAL.  Global-prefix acknowledgment
-  is safe but can delay transactions whose dependencies are already durable
-  because it waits for unrelated slow shards.  Local-only acknowledgment avoids
-  this delay but is unsafe.  Ayame uses dependency-closed acknowledgment,
-  acknowledging a transaction only after its own log record and dependency
-  frontier are durable.
+  Durable acknowledgment policies in parallel WAL.  Global-prefix is safe but
+  waits for unrelated slow shards; local-only avoids the wait but is unsafe;
+  Ayame's dependency-closed rule waits only for a transaction's own record and
+  its dependency frontier.
   }
   \label{fig:ack-policies}
 \end{figure}

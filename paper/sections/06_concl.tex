@@ -1,3 +1,21 @@
 \section{Conclusion}
 \label{sec:conclusion}
 
+This paper presented Ayame, a timestamp-integrated, dependency-closed parallel
+WAL protocol for SSN-based main-memory transaction processing.  Ayame reuses
+SSN's commit timestamp as the logical LSN (\textbf{A1}), separates transaction
+execution from durable acknowledgment across worker, flusher, and committer
+roles (\textbf{A2}), and acknowledges each transaction once its own log record
+and its dependency frontier are durable (\textbf{A3}).  The first two techniques
+deliver the throughput---a 4.1- to 6.5-fold improvement over P-WAL on YCSB-A
+across the worker sweep---while the third bounds the durable-acknowledgment
+backlog and tail latency without waiting for unrelated WAL shards, which we
+proved recoverable (Lemma~\ref{lem:closure}, Theorem~\ref{thm:recover}).
+
+The scope of this paper is the durable-acknowledgment path and its safety: we
+evaluated durable-acknowledgment throughput, pending durable commits, and tail
+latency, and we established that an acknowledged transaction is always
+recoverable together with the transactions it depends on.  We did not measure
+crash-recovery time or replay throughput; quantifying recovery cost, and
+evaluating Ayame under a wider range of workloads and storage devices, are left
+as future work.
