@@ -308,8 +308,14 @@ the effects of some $U \in \mathrm{cl}(T)$.
 \end{theorem}
 
 \begin{proof}
-By Lemma~\ref{lem:closure}, every $U \in \mathrm{cl}(T)$ has a durable
-record and is therefore replayed.  For the dependency classes included in
+By Lemma~\ref{lem:closure}, every $U \in \mathrm{cl}(T)$ has a durable WAL
+record.  Moreover, the induction in that lemma gives $F \ge F_U$ for every
+$U \in \mathrm{cl}(T)$, where $F$ is the frontier $T$ registered; since
+\textsc{Ack}$(T)$ requires $F \le D$, it follows that $F_U \le D$.  Every
+$U \in \mathrm{cl}(T)$ therefore belongs to the dependency-closed set that
+recovery admits---the committed transactions whose stored frontier is covered
+by $D$---not merely to the set of physically durable records, and is replayed.
+For the dependency classes included in
 $\mathrm{cl}(T)$---read-from dependencies and version-order dependencies from
 overwritten versions---the producer version must have become visible before
 $T$ reads or overwrites it, so under the engine's MVCC visibility rule the

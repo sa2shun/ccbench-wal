@@ -28,10 +28,10 @@ therefore not serializable.  Serializable Snapshot Isolation (SSI) strengthens
 SI by detecting the dangerous read--write antidependency structures that can
 lead to non-serializable schedules~\cite{ports2012ssi}.  These protocols order
 transactions with timestamps: a transaction reads as of a begin timestamp and
-commits at a commit timestamp, and the commit timestamps induce a total order
-that defines the serialization order.  Because these commit timestamps already
-encode the serialization order, they can also serve as the logical order in
-which a recovery protocol replays committed transactions after a crash.
+commits at a commit timestamp, and the commit timestamps induce a logical
+version order.  For serializable executions this version order is also a
+serialization order, and a recovery protocol can reuse it as the order in which
+to replay committed transactions after a crash.
 
 \subsubsection{Serial Safety Net}
 

@@ -288,8 +288,8 @@ lowers throughput to 251K.  Its role is to prevent the global-prefix rule from
 accumulating a large durable-ack backlog and long tail acknowledgment latency,
 cutting pending durable commits from 64{,}197 to 455 and the p99 from 131\,ms
 to 2\,ms.  Because the two variants share the same pipeline and differ only in
-the acknowledgment condition, this comparison is itself a complete ablation of
-\textbf{A3}, and no separate ablation experiment is required.
+the acknowledgment condition, this comparison isolates the effect of
+\textbf{A3}.
 
 \begin{figure}[t]
   \centering
