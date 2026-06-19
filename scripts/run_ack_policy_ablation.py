@@ -170,7 +170,7 @@ def draw(rows, workers, out_path):
     handles = [plt.Line2D([0], [0], color=COLORS[p], marker=MARKERS[p], markerfacecolor="white",
                           markeredgewidth=1.8, linewidth=2.4, label=p) for p in POLICY_ORDER]
     fig.legend(handles=handles, ncols=2, frameon=False, loc="upper center",
-               bbox_to_anchor=(0.5, 1.06))
+               bbox_to_anchor=(0.5, 1.14))
     fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
 

@@ -103,9 +103,10 @@ def tex_table(path, caption, label, headers, rows, align=None, footnote=None, wi
         "  \\end{tabular}",
     ])
     if footnote:
-        # Paragraph break (not a negative-space line break) so the note sits
-        # below the bottom rule instead of overlapping the last row.
+        # Paragraph break plus a small gap so the note sits clearly below the
+        # bottom rule instead of overlapping the last row.
         lines.append("")
+        lines.append("  \\vspace{1.5mm}")
         lines.append("  {\\footnotesize " + footnote + "}")
     lines.append("\\end{" + env + "}")
     path.write_text("\n".join(lines) + "\n")
