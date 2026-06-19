@@ -310,8 +310,8 @@ the acknowledgment condition, this comparison isolates the effect of
   Acknowledgment-policy comparison (top: p99 latency; bottom: pending durable
   commits).  Both variants use the same asynchronous WAL pipeline and differ
   only in the acknowledgment condition.  The global-prefix rule saturates on
-  YCSB-A across the whole sweep, while the dependency-frontier rule stays
-  bounded at every worker count.
+  YCSB-A once multiple WAL shards are active, while the dependency-frontier rule
+  keeps pending commits and p99 acknowledgment latency bounded.
   }
   \label{fig:ack-policy-ablation}
 \end{figure}
@@ -371,10 +371,10 @@ Ayame's workers enqueue a log record and return to execution.  Single WAL, in
 contrast, barely uses the machine (1.8 cores) because its workers serialize on
 a single shared log.  Third, this decoupling is
 paid for in context switches, of which Ayame performs the most, reflecting the
-worker/flusher/committer hand-offs.  On read-only YCSB-C the three systems
-converge---within a few percent of one another on 48 cores with near-identical
-counters---confirming that these differences come from the durable-logging path
-rather than from transaction execution.  These perf-stat runs are separate from
+worker/flusher/committer hand-offs.  On read-only YCSB-C, the three systems
+converge in throughput, core utilization, and cycles per transaction; Ayame
+still incurs more context switches due to the background pipeline, but this does
+not materially affect read-only throughput.  These perf-stat runs are separate from
 the main throughput runs and carry profiling overhead, so their absolute
 throughputs are lower (for instance, YCSB-C reads about 683K here versus 812K
 in Table~\ref{tab:ycsbabc-48worker-summary}); we use them only for the relative
