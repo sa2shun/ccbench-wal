@@ -6,7 +6,7 @@ into SSN while avoiding the three problems of P-WAL identified in
 Section~\ref{sec:introduction-problem}.  It combines three techniques.
 First, it reuses the commit timestamp that SSN already assigns as the
 logical log sequence number, eliminating the separate WAL-side global
-counter (addresses \textbf{P1}).  Second, it splits commit processing
+counter (addresses \textbf{P1}).  Second, it splits the commit processing
 into worker, flusher, and committer roles so that worker threads do not
 block on \texttt{fdatasync} or durable-ack waiting, subject only to a
 bounded backpressure limit (addresses \textbf{P2}).
