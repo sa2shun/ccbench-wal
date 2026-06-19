@@ -252,22 +252,22 @@ concurrency-control layer that Ayame inherits through cstamp reuse.
 \subsection{Acknowledgment-Policy Comparison}
 \label{sec:why-dep}
 
-The main end-to-end comparison combines several changes:
-timestamp-integrated ordering, asynchronous flushing, and
-dependency-closed acknowledgment.  To isolate the effect of the
-acknowledgment rule itself, we run an acknowledgment-policy comparison
-that uses the same worker/flusher/committer pipeline as Ayame and changes
-only the condition for returning durable acknowledgments.  The \emph{global-prefix}
-variant acknowledges a transaction only after a single global durable
-prefix covers its logical commit position; the \emph{dependency-frontier}
-variant acknowledges a transaction once the shard positions in its
-dependency frontier are durable.
+This section isolates the effect of dependency-closed acknowledgment
+(\textbf{A3}).  Both variants use the same asynchronous worker/flusher/committer
+pipeline and differ only in the acknowledgment condition: the
+\emph{global-prefix} variant acknowledges a transaction only after a single
+global durable prefix covers its logical commit position, whereas the
+\emph{dependency-frontier} variant acknowledges it once the shard positions in
+its dependency frontier are durable.  The results show that \textbf{A3} trades
+some short-window throughput for bounded pending durable commits and much lower
+tail latency.
 
-The benefit of dependency-closed acknowledgment is not that a transaction
-has many dependencies.  Its benefit appears when a transaction does
-\emph{not} depend on some slow or lagging WAL shards: global-prefix
-acknowledgment still waits for those shards, whereas dependency-frontier
-acknowledgment does not.
+\subsubsection{A3 Bounds Backlog and Tail Latency, Not Raw Throughput}
+
+The benefit of dependency-closed acknowledgment is not that a transaction has
+many dependencies; it appears when a transaction does \emph{not} depend on some
+slow or lagging WAL shards, because global-prefix acknowledgment still waits for
+those shards whereas the dependency frontier does not.
 
 Figure~\ref{fig:ack-policy-ablation} reports the result.
 On YCSB-A the contrast is sharp: once multiple WAL shards are active, the
@@ -318,8 +318,11 @@ the acknowledgment condition, this comparison isolates the effect of
   \label{fig:ack-policy-ablation}
 \end{figure}
 
-We next ask whether this benefit requires dense dependency frontiers.
-Zipfian skew does not answer this question: it changes which keys are hot
+\subsubsection{Avoiding Unrelated-Shard Waits Helps Even with Sparse Frontiers}
+
+The benefit comes from not waiting for shards a transaction does not depend on,
+so it should not require dense dependency frontiers.  Zipfian skew does not let
+us vary frontier density: it changes which keys are hot
 but not which WAL shards wrote them, so in a non-partitioned workload the
 writers of the accessed versions stay spread across all shards and the
 dependency frontier remains dense.  We therefore vary the frontier width
@@ -346,7 +349,7 @@ global durable prefix regardless of what a transaction actually depends
 on.  The
 dependency-frontier rule keeps the pending count to a few hundred
 commits and the p99 to about 2\,ms across the whole
-range; its throughput is again slightly lower, as in the comparison.
+range; its throughput is again slightly lower, as in the ablation.
 Crucially, even when each transaction depends on a single shard
 (nz/tx\,$=1$), the dependency-frontier rule still keeps pending durable
 commits and tail latency far below the global-prefix rule: about
