@@ -140,8 +140,8 @@ def compact(v):
 def draw(rows, workers, out_path):
     setup_style()
     fig, axes = plt.subplots(2, 2, figsize=(6.6, 4.6), constrained_layout=True)
-    panels = [("p99_us", "p99 [us]", "log"),
-              ("pending", "Pending", "symlog")]
+    panels = [("p99_us", "p99 latency [us]", "log"),
+              ("pending", "Pending durable commits", "symlog")]
     for col, (workload, _) in enumerate(WORKLOADS):
         for row_i, (metric, ylabel, yscale) in enumerate(panels):
             ax = axes[row_i][col]
