@@ -469,7 +469,7 @@ def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear",
     df["workload"] = pd.Categorical(df["workload"], WORKLOAD_ORDER)
     df["system"] = pd.Categorical(df["system"], SYSTEM_ORDER)
     workers = sorted(df["worker_threads"].unique())
-    fig, axes = plt.subplots(1, 3, figsize=(10.6, 3.7), sharey=False, constrained_layout=True)
+    fig, axes = plt.subplots(1, 3, figsize=(6.8, 2.6), sharey=False, constrained_layout=True)
     for ax, workload in zip(axes, WORKLOAD_ORDER):
         sub_w = df[df["workload"] == workload]
         for system in SYSTEM_ORDER:
@@ -490,11 +490,11 @@ def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear",
                 markeredgewidth=1.8,
                 solid_capstyle="round",
             )
-        ax.set_title(workload, fontsize=16, fontweight="bold", pad=8)
+        ax.set_title(workload, fontsize=15, fontweight="bold", pad=4)
         ax.set_xlabel("Worker threads")
         ax.set_xscale("linear")
-        ax.set_xticks([1, 12, 24, 36, 48, 60, 72, 84, 96])
-        ax.set_xticklabels(["1", "12", "24", "36", "48", "60", "72", "84", "96"], rotation=0)
+        ax.set_xticks([1, 24, 48, 72, 96])
+        ax.set_xticklabels(["1", "24", "48", "72", "96"], rotation=0)
         ax.minorticks_off()
         if yscale != "linear":
             ax.set_yscale(yscale)
@@ -513,10 +513,8 @@ def draw_faceted_lines(rows, metric, ylabel, output, caption, yscale="linear",
                    linewidth=2.4, label=s)
         for s in SYSTEM_ORDER
     ]
-    fig.legend(handles=handles, ncols=3, frameon=False, loc="upper right",
-               bbox_to_anchor=(0.985, 1.08))
-    fig.text(0.01, 1.03, caption, ha="left", va="bottom",
-             fontsize=13, color="#374151")
+    fig.legend(handles=handles, ncols=3, frameon=False, loc="upper center",
+               bbox_to_anchor=(0.5, 1.14), fontsize=12)
     fig.savefig(output, bbox_inches="tight")
     plt.close(fig)
 
@@ -698,17 +696,11 @@ def main():
             outs = [
                 FIG_DIR / "fig_ycsbabc_worker_threads_throughput.pdf",
                 FIG_DIR / "fig_ycsbabc_worker_threads_latency.pdf",
-                FIG_DIR / "fig_ycsbabc_worker_threads_pending.pdf",
-                FIG_DIR / "fig_ycsbabc_worker_threads_ayame_speedup_vs_pwal.pdf",
             ]
             draw_faceted_lines(rows, "ack_tps", "Ack throughput [tx/s]", outs[0],
                                "Worker-thread comparison with a common CCBench binary")
             draw_faceted_lines(rows, "p99_us", "p99 latency [us]", outs[1],
                                "Worker-thread p99 durable-ack latency", yscale="log")
-            draw_faceted_lines(rows, "pending", "Pending durable commits", outs[2],
-                               "Worker-thread pending durable commits", yscale="log",
-                               clamp_min=1)
-            draw_speedup(rows, outs[3])
             for o in outs:
                 print(o)
             return

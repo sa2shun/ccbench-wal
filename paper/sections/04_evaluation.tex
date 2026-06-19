@@ -159,7 +159,7 @@ below Single WAL because it still maintains read-path frontier bookkeeping
 read-only bookkeeping overhead rather than as evidence of WAL persistence
 performance.
 
-\begin{figure*}[!tbp]
+\begin{figure}[t]
   \centering
   \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_throughput.pdf}
   \caption{
@@ -169,7 +169,7 @@ performance.
   logical ordering.
   }
   \label{fig:ycsbabc-worker-throughput}
-\end{figure*}
+\end{figure}
 
 This peak-and-decline is a property of the underlying SSN concurrency
 control rather than of Ayame's WAL pipeline, and it is not caused by aborts.
@@ -222,14 +222,14 @@ separating workers from durable-wait processing; dependency-closed
 acknowledgment primarily prevents the pending-ack backlog and tail-latency
 blowups caused by global-prefix waiting (Section~\ref{sec:why-dep}).
 
-\begin{figure*}[!tbp]
+\begin{figure}[t]
   \centering
   \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_latency.pdf}
   \caption{
   P99 durable-acknowledgment latency by transaction worker threads.
   }
   \label{fig:ycsbabc-worker-latency}
-\end{figure*}
+\end{figure}
 
 Table~\ref{tab:ycsbabc-48worker-summary} summarizes the main 48-worker
 end-to-end results used in the figures.
@@ -256,8 +256,8 @@ has many dependencies.  Its benefit appears when a transaction does
 acknowledgment still waits for those shards, whereas dependency-frontier
 acknowledgment does not.
 
-Figure~\ref{fig:ack-policy-ablation} and Table~\ref{tab:ack-policy}
-report the result.  On YCSB-A the contrast is sharp and holds across the
+Figure~\ref{fig:ack-policy-ablation} reports the result.
+On YCSB-A the contrast is sharp and holds across the
 entire sweep: the global-prefix variant stays pinned near the 65{,}536
 backpressure limit with a 131\,ms p99 acknowledgment latency at every
 worker count, whereas the dependency-frontier variant keeps fewer than 500
@@ -291,20 +291,18 @@ to 2\,ms.  Because the two variants share the same pipeline and differ only in
 the acknowledgment condition, this comparison is itself a complete ablation of
 \textbf{A3}, and no separate ablation experiment is required.
 
-\begin{figure*}[!tbp]
+\begin{figure}[t]
   \centering
   \includegraphics[width=\linewidth]{figures/fig_ack_policy_ablation.pdf}
   \caption{
-  Acknowledgment-policy comparison.  Both variants use the same asynchronous
-  WAL pipeline and differ only in the acknowledgment condition.  The
-  global-prefix rule keeps the pending count and p99 acknowledgment
-  latency saturated on YCSB-A across the whole sweep, while the
-  dependency-frontier rule keeps them bounded at every worker count.
+  Acknowledgment-policy comparison (top: p99 latency; bottom: pending durable
+  commits).  Both variants use the same asynchronous WAL pipeline and differ
+  only in the acknowledgment condition.  The global-prefix rule saturates on
+  YCSB-A across the whole sweep, while the dependency-frontier rule stays
+  bounded at every worker count.
   }
   \label{fig:ack-policy-ablation}
-\end{figure*}
-
-\input{tables/table_ack_policy_ablation}
+\end{figure}
 
 We next ask whether this benefit requires dense dependency frontiers.
 Zipfian skew does not answer this question: it changes which keys are hot

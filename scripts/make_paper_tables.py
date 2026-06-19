@@ -112,9 +112,7 @@ def main():
             k_tps(r["ack_tps"]),
             whole(r["p99_us"]),
             whole(r["pending"]),
-            whole(r["fdatasync_count"]),
             one(r["commits_per_fdatasync"]),
-            one(r["frontier_bytes_per_tx"]),
             two(r["global_atomic_per_tx"]),
         ])
     tex_table(
@@ -127,16 +125,16 @@ def main():
             "Ack tps",
             "p99 $\\mu$s",
             "Pending",
-            "fdatasync calls",
             "Tx/sync",
-            "Frontier B/tx",
             "WAL atomic/tx",
         ],
         rows,
-        align="llrrrrrrr",
+        align="llrrrrr",
         footnote=(
-            "Ack tps is durable-acknowledgment throughput. "
-            "Ayame uses 9 flusher threads and 1 committer thread at 48 workers."
+            "Ack tps is durable-acknowledgment throughput; Tx/sync is commits made "
+            "durable per \\texttt{fdatasync}; WAL atomic/tx is per-transaction "
+            "WAL-side global-counter accesses.  Ayame uses 9 flusher threads and "
+            "1 committer at 48 workers."
         ),
         wide=True,
     )
@@ -166,38 +164,8 @@ def main():
         wide=True,
     )
 
-    abl_path = TABLE_DIR / "ack_policy_ablation_20260614.csv"
-    if abl_path.exists():
-        abl = read_csv(abl_path)
-        abl32 = [r for r in abl if int(r["worker_threads"]) == 48]
-        pol_order = {"Global-prefix": 0, "Ayame": 1}
-        abl32.sort(key=lambda r: (order_workloads[r["workload"]],
-                                  pol_order.get(r["policy"], 9)))
-        pol_label = {"Global-prefix": "Global-prefix",
-                     "Ayame": "Dep.\\ frontier (Ayame)"}
-        rows = []
-        for r in abl32:
-            rows.append([
-                str(r["workload"]),
-                pol_label.get(r["policy"], str(r["policy"])),
-                k_tps(r["ack_tps"]),
-                whole(r["p99_us"]),
-                whole(r["pending"]),
-            ])
-        tex_table(
-            TABLE_DIR / "table_ack_policy_ablation.tex",
-            "Acknowledgment-policy comparison at 48 worker threads.  Both policies "
-            "use the same asynchronous pipeline and differ only in the "
-            "acknowledgment condition.",
-            "tab:ack-policy",
-            ["Workload", "Ack policy", "Ack tps", "p99 $\\mu$s", "Pending"],
-            rows,
-            align="llrrr",
-        )
-
     print(TABLE_DIR / "table_ycsbabc_48worker_summary.tex")
     print(TABLE_DIR / "table_perf_stat_48worker.tex")
-    print(TABLE_DIR / "table_ack_policy_ablation.tex")
 
 
 if __name__ == "__main__":

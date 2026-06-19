@@ -4,21 +4,21 @@
   \label{tab:ycsbabc-48worker-summary}
   \small
   \setlength{\tabcolsep}{6pt}
-  \begin{tabular}{llrrrrrrr}
+  \begin{tabular}{llrrrrr}
     \hline
-    Workload & System & Ack tps & p99 $\mu$s & Pending & fdatasync calls & Tx/sync & Frontier B/tx & WAL atomic/tx \\
+    Workload & System & Ack tps & p99 $\mu$s & Pending & Tx/sync & WAL atomic/tx \\
     \hline
-    YCSB-A & Single WAL & 8.8K & 8,192 & 0 & 43,768 & 1.0 & 0.0 & 6.01 \\
-    YCSB-A & P-WAL & 49.8K & 1,024 & 0 & 248,576 & 1.0 & 0.0 & 6.00 \\
-    YCSB-A & Ayame & 252.7K & 2,048 & 318 & 49,861 & 25.4 & 72.0 & 0.00 \\
-    YCSB-B & Single WAL & 25.7K & 4,096 & 0 & 51,660 & 2.5 & 0.0 & 0.90 \\
-    YCSB-B & P-WAL & 165.5K & 512 & 0 & 331,911 & 2.5 & 0.0 & 0.90 \\
-    YCSB-B & Ayame & 466.9K & 512 & 83 & 140,327 & 16.7 & 72.0 & 0.00 \\
-    YCSB-C & Single WAL & 871.6K & 53 & 0 & 0 & 0.0 & 0.0 & 0.00 \\
-    YCSB-C & P-WAL & 807.5K & 58 & 0 & 0 & 0.0 & 0.0 & 0.00 \\
-    YCSB-C & Ayame & 811.7K & 57 & 0 & 0 & 0.0 & 72.0 & 0.00 \\
+    YCSB-A & Single WAL & 8.8K & 8,192 & 0 & 1.0 & 6.01 \\
+    YCSB-A & P-WAL & 49.8K & 1,024 & 0 & 1.0 & 6.00 \\
+    YCSB-A & Ayame & 252.7K & 2,048 & 318 & 25.4 & 0.00 \\
+    YCSB-B & Single WAL & 25.7K & 4,096 & 0 & 2.5 & 0.90 \\
+    YCSB-B & P-WAL & 165.5K & 512 & 0 & 2.5 & 0.90 \\
+    YCSB-B & Ayame & 466.9K & 512 & 83 & 16.7 & 0.00 \\
+    YCSB-C & Single WAL & 871.6K & 53 & 0 & 0.0 & 0.00 \\
+    YCSB-C & P-WAL & 807.5K & 58 & 0 & 0.0 & 0.00 \\
+    YCSB-C & Ayame & 811.7K & 57 & 0 & 0.0 & 0.00 \\
     \hline
   \end{tabular}
   \\[-1mm]
-  {\footnotesize Ack tps is durable-acknowledgment throughput. Ayame uses 9 flusher threads and 1 committer thread at 48 workers.}
+  {\footnotesize Ack tps is durable-acknowledgment throughput; Tx/sync is commits made durable per \texttt{fdatasync}; WAL atomic/tx is per-transaction WAL-side global-counter accesses.  Ayame uses 9 flusher threads and 1 committer at 48 workers.}
 \end{table*}

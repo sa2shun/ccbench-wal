@@ -139,7 +139,7 @@ def compact(v):
 
 def draw(rows, workers, out_path):
     setup_style()
-    fig, axes = plt.subplots(2, 2, figsize=(10.0, 6.6), constrained_layout=True)
+    fig, axes = plt.subplots(2, 2, figsize=(6.6, 4.6), constrained_layout=True)
     panels = [("p99_us", "p99 latency [us]", "log"),
               ("pending", "Pending durable commits", "symlog")]
     for col, (workload, _) in enumerate(WORKLOADS):
@@ -155,11 +155,11 @@ def draw(rows, workers, out_path):
                 ax.set_yscale(yscale)
             ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: compact(v)))
             ax.set_xscale("linear")
-            ax.set_xticks([1, 12, 24, 36, 48, 60, 72, 84, 96])
+            ax.set_xticks([1, 48, 96])
             ax.minorticks_off()
-            ax.set_xticklabels(["1", "12", "24", "36", "48", "60", "72", "84", "96"])
+            ax.set_xticklabels(["1", "48", "96"])
             if row_i == 0:
-                ax.set_title(workload, fontsize=16, fontweight="bold")
+                ax.set_title(workload, fontsize=14, fontweight="bold")
             if row_i == 1:
                 ax.set_xlabel("Worker threads")
             if col == 0:
