@@ -29,9 +29,9 @@ SI by detecting the dangerous read--write antidependency structures that can
 lead to non-serializable schedules~\cite{ports2012ssi}.  These protocols order
 transactions with timestamps: a transaction reads as of a begin timestamp and
 commits at a commit timestamp, and the commit timestamps induce a total order
-that defines the serialization order.  Ayame builds directly on this order,
-reusing the commit timestamp the protocol already assigns as the logical order
-for recovery (Section~\ref{sec:cstamp}).
+that defines the serialization order.  Because these commit timestamps already
+encode the serialization order, they can also serve as the logical order in
+which a recovery protocol replays committed transactions after a crash.
 
 \subsubsection{Serial Safety Net}
 
@@ -50,14 +50,10 @@ predecessors' and successors' timestamps.  SSN admits more concurrency than
 two-phase locking while remaining serializable, which makes it a strong but
 demanding target for a recovery protocol.  The recovery layer must respect the
 same commit-timestamp order that SSN uses for serialization, yet it must do so
-without introducing new centralized bottlenecks of its own.  Ayame exploits the
-first property---the commit timestamp is reused as the logical LSN
-(Section~\ref{sec:cstamp})---and is careful not to violate the second.  The
-shared commit-timestamp counter and transaction-mapping table are also the
-structures whose cache-line contention ultimately bounds throughput at high
-core counts, a known scalability limit of SSN-style
-certification~\cite{tanabe2020ccbench} that we revisit in
-Section~\ref{sec:results}.
+without introducing new centralized bottlenecks of its own.  The shared
+commit-timestamp counter and transaction-mapping table are also the structures
+whose cache-line contention ultimately bounds throughput at high core counts, a
+known scalability limit of SSN-style certification~\cite{tanabe2020ccbench}.
 
 \subsection{Write-Ahead Logging for Recovery}
 
@@ -100,8 +96,7 @@ transaction engine of Tsurugi~\cite{kamiya2017pwal,kawashima2025tsurugi}.
 
 This design makes log insertion parallel, but combining it with a timestamp-based
 certifier such as SSN raises the three problems (P1--P3) detailed in
-Section~\ref{sec:introduction-problem}.  Ayame addresses them while preserving
-P-WAL's parallel log insertion.
+Section~\ref{sec:introduction-problem}.
 
 \begin{algorithm}[t]
 \caption{\bfseries Per-Thread WAL Commit for Update Transactions (P-WAL)}
