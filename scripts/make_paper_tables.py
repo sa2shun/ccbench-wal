@@ -151,6 +151,9 @@ def main():
             is_ayame = r["system"] == "Ayame"
             cells = []
             for key, fmt, better in summary_metrics:
+                if key == "commits_per_fdatasync" and workload == "YCSB-C":
+                    cells.append("---")  # read-only: no fdatasync, Tx/sync is N/A
+                    continue
                 c = fmt(r[key])
                 if is_ayame and ayame_best(r[key], [o[key] for o in others], better):
                     c = bold(c)
@@ -201,6 +204,9 @@ def main():
             is_ayame = r["system"] == "Ayame"
             cells = []
             for key, fmt, better in perf_metrics:
+                if key == "commits_per_fdatasync" and workload == "YCSB-C":
+                    cells.append("---")  # read-only: no fdatasync, Tx/sync is N/A
+                    continue
                 c = fmt(r[key])
                 if is_ayame and ayame_best(r[key], [o[key] for o in others], better):
                     c = bold(c)
