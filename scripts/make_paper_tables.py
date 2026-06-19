@@ -65,20 +65,33 @@ def two(v):
     return f"{v:.2f}"
 
 
-def tex_table(path, caption, label, headers, rows, align=None, footnote=None, wide=False):
+def km(v):
+    if v >= 1_000_000:
+        return f"{v / 1_000_000:.2f}M"
+    if v >= 1000:
+        return f"{v / 1000:.0f}K"
+    return f"{v:.0f}"
+
+
+def tex_table(path, caption, label, headers, rows, align=None, footnote=None, wide=False,
+              compact=False):
     if align is None:
         align = "l" + "r" * (len(headers) - 1)
     env = "table*" if wide else "table"
+    place = "tb" if compact else "t"
     lines = [
-        "\\begin{" + env + "}[t]",
+        "\\begin{" + env + "}[" + place + "]",
         "  \\centering",
         "  \\caption{" + caption + "}",
         "  \\label{" + label + "}",
-        "  \\small",
+        "  \\footnotesize" if compact else "  \\small",
     ]
     if wide:
         # Span both columns and tighten spacing so wide tables are not clipped.
         lines.append("  \\setlength{\\tabcolsep}{6pt}")
+    elif compact:
+        # Keep a many-column table inside a single column so it flows inline.
+        lines.append("  \\setlength{\\tabcolsep}{3pt}")
     lines.append("  \\begin{tabular}{" + align + "}")
     lines.append("    \\hline")
     lines.append("    " + " & ".join(headers) + " \\\\")
@@ -148,19 +161,20 @@ def main():
             str(r["system"]),
             k_tps(r["durable_ack_tps"]),
             one(r["cpu_util_cores"]),
-            whole(r["cycles_per_tx"]),
-            two(r["ipc"]),
-            whole(r["context_switches"]),
+            km(r["cycles_per_tx"]),
+            km(r["context_switches"]),
             one(r["commits_per_fdatasync"]),
         ])
     tex_table(
         TABLE_DIR / "table_perf_stat_48worker.tex",
-        "Perf-stat summary at 48 transaction worker threads.",
+        "Perf-stat summary at 48 transaction worker threads.  Cores is CPU-core "
+        "utilization, Cyc/tx is CPU cycles per committed transaction, Ctx sw.\\ is "
+        "total context switches, and Tx/sync is commits per \\texttt{fdatasync}.",
         "tab:perf-stat-48worker",
-        ["Workload", "System", "Ack tps", "CPU cores", "Cycles/tx", "IPC", "Ctx sw.", "Tx/sync"],
+        ["Workload", "System", "Ack tps", "Cores", "Cyc/tx", "Ctx sw", "Tx/sync"],
         rows,
-        align="llrrrrrr",
-        wide=True,
+        align="llrrrrr",
+        compact=True,
     )
 
     print(TABLE_DIR / "table_ycsbabc_48worker_summary.tex")
