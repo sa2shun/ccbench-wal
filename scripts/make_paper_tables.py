@@ -149,7 +149,6 @@ def main():
             k_tps(r["durable_ack_tps"]),
             one(r["cpu_util_cores"]),
             whole(r["cycles_per_tx"]),
-            whole(r["instructions_per_tx"]),
             two(r["ipc"]),
             whole(r["context_switches"]),
             one(r["commits_per_fdatasync"]),
@@ -158,9 +157,9 @@ def main():
         TABLE_DIR / "table_perf_stat_48worker.tex",
         "Perf-stat summary at 48 transaction worker threads.",
         "tab:perf-stat-48worker",
-        ["Workload", "System", "Ack tps", "CPU cores", "Cycles/tx", "Instr/tx", "IPC", "Ctx sw.", "Tx/sync"],
+        ["Workload", "System", "Ack tps", "CPU cores", "Cycles/tx", "IPC", "Ctx sw.", "Tx/sync"],
         rows,
-        align="llrrrrrrr",
+        align="llrrrrrr",
         wide=True,
     )
 
