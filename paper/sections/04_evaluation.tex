@@ -128,43 +128,42 @@ latencies are means of the per-run p99 values.
 \subsection{Results}
 \label{sec:results}
 
-We evaluate Ayame using the worker-thread sweep of
-Table~\ref{tab:params}, which adds a single-thread baseline and then spans
-12 to 96 worker threads in steps of 12 (up to the full two-socket
-machine).  At 48 worker threads on YCSB-A,
-Single WAL achieves 9K durable acknowledgments per second and P-WAL achieves
-50K, whereas Ayame achieves 253K durable acknowledgments per second.  On
-YCSB-B, Single WAL achieves 26K and P-WAL achieves 165K, whereas Ayame
-achieves 467K durable acknowledgments per second.  These results correspond
-to 5.1$\times$ and 2.8$\times$ improvements over P-WAL on YCSB-A and YCSB-B,
-respectively.  Ayame also keeps the number of pending durable commits small
-at 48 worker threads---318 on YCSB-A and 83 on YCSB-B---with a 2\,ms p99
-acknowledgment latency on YCSB-A and 0.5\,ms on YCSB-B.
-Figure~\ref{fig:ycsbabc-worker-latency} shows that the p99
-durable-acknowledgment latency stays low across the worker sweep.  This
-end-to-end comparison evaluates Ayame as a complete durability pipeline; it
-should not be read as isolating the effect of dependency-closed acknowledgment
-alone, since the throughput gain over P-WAL mainly reflects
-worker/flusher/committer separation and batched \texttt{fdatasync}
-(Section~\ref{sec:why-dep}).  Ayame's YCSB-A
-throughput peaks near 24--36 workers (294--296K) and then declines gradually
-toward 96 workers (209K), and YCSB-B follows the same shape.  P-WAL declines
-in parallel, so the Ayame-over-P-WAL ratio stays large throughout, ranging
-from 6.5$\times$ at 12 workers to 4.1$\times$ at 96.  We analyze the cause of
-this peak-and-decline below (Figure~\ref{fig:scalability-breakdown}).
+This section evaluates Ayame as a complete durable-acknowledgment pipeline.
+The results show that Ayame substantially improves end-to-end throughput on
+update workloads by decoupling workers from batched durable flushing, while
+keeping tail latency and pending durable commits small.  The remaining
+throughput decline at high thread counts is caused by contention in the
+underlying SSN concurrency-control layer rather than by the WAL pipeline.
 
-Figure~\ref{fig:ycsbabc-worker-throughput} shows the worker-thread comparison.
-The results show that Ayame improves update and mixed read-write workloads,
-where durable logging is still required on every update commit.  We also evaluate YCSB-C,
-where all transactions are read-only and WAL records are skipped.  In this case,
-durability work largely disappears; with the same binary and a read-only
-empty-frontier fast path, the three systems land within about 8\% of one
-another at 48 worker threads (872K for Single WAL, 808K for P-WAL, and 812K
-for Ayame in Table~\ref{tab:ycsbabc-48worker-summary}).  Ayame is marginally
+\subsubsection{End-to-End Throughput Improves on Update Workloads}
+
+We evaluate Ayame using the worker-thread sweep of Table~\ref{tab:params},
+which adds a single-thread baseline and then spans 12 to 96 worker threads in
+steps of 12 (up to the full two-socket machine).
+Figure~\ref{fig:ycsbabc-worker-throughput} shows the comparison.  At 48 worker
+threads on YCSB-A, Single WAL achieves 9K durable acknowledgments per second
+and P-WAL achieves 50K, whereas Ayame achieves 253K; on YCSB-B, Single WAL
+achieves 26K and P-WAL 165K, whereas Ayame achieves 467K.  These are
+5.1$\times$ and 2.8$\times$ improvements over P-WAL on YCSB-A and YCSB-B, and
+the Ayame-over-P-WAL ratio stays large across the sweep, ranging from
+6.5$\times$ at 12 workers to 4.1$\times$ at 96.
+
+This gain comes from Ayame's durability pipeline as a whole, mainly from
+decoupling workers from batched durable flushing (\textbf{A2}); reusing the
+commit timestamp as the logical LSN (\textbf{A1}) is a design simplification
+that removes duplicated logical ordering rather than a direct throughput
+optimization.  This end-to-end comparison should therefore not be read as
+isolating the effect of dependency-closed acknowledgment (\textbf{A3}), whose
+contribution we isolate in Section~\ref{sec:why-dep}.
+
+We also evaluate YCSB-C, where all transactions are read-only and WAL records
+are skipped.  Durability work largely disappears: with the same binary and a
+read-only empty-frontier fast path, the three systems land within about 8\% of
+one another at 48 worker threads (872K for Single WAL, 808K for P-WAL, and 812K
+for Ayame in Table~\ref{tab:ycsbabc-48worker-summary}); Ayame is marginally
 below Single WAL because it may still execute lightweight read-path frontier
-bookkeeping.  We therefore use YCSB-C as a sanity check for
-read-only bookkeeping overhead rather than as evidence of WAL persistence
-performance.
+bookkeeping.  We therefore use YCSB-C as a sanity check for read-only
+bookkeeping overhead rather than as evidence of WAL persistence performance.
 
 \begin{figure}[t]
   \centering
@@ -179,30 +178,61 @@ performance.
   \label{fig:ycsbabc-worker-throughput}
 \end{figure}
 
-This peak-and-decline is a property of the underlying SSN concurrency
-control rather than of Ayame's WAL pipeline, and it is not caused by aborts.
-Figure~\ref{fig:scalability-breakdown} reports the per-committed-transaction
-CPU cost and the abort rate across the sweep.  The cycles spent per committed
-transaction rise steeply with thread count---about 2.8$\times$ on YCSB-A
-(136K at 12 workers to 375K at 96) and 2.2$\times$ on YCSB-B---consistent with
-cache-line contention on SSN's shared metadata.
+Table~\ref{tab:ycsbabc-48worker-summary} summarizes the main 48-worker
+end-to-end results.  For YCSB-C, Tx/sync is not applicable because no WAL
+records are flushed.
+
+\input{tables/table_ycsbabc_48worker_summary}
+
+\subsubsection{Tail Latency and Pending Durable Commits Remain Small}
+
+Ayame keeps pending durable commits small: at 48 worker threads it holds 318
+pending commits with a 2\,ms p99 acknowledgment latency on YCSB-A, and 83 with
+a 0.5\,ms p99 on YCSB-B.  Figure~\ref{fig:ycsbabc-worker-latency} shows that the
+p99 stays low across the whole sweep.  The asynchronous pipeline therefore keeps
+up with the offered durable-logging load at every thread count; it does not buy
+throughput by letting an unbounded backlog accumulate.  The zero pending count
+of Single WAL and P-WAL does not mean that they avoid waiting; their workers
+wait synchronously on the commit path, so the wait shows up as lower throughput
+rather than as an asynchronous pending queue.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_latency.pdf}
+  \caption{
+  P99 durable-acknowledgment latency by transaction worker threads.
+  }
+  \label{fig:ycsbabc-worker-latency}
+\end{figure}
+
+\subsubsection{The Scalability Ceiling Comes from SSN Contention}
+
+Ayame's YCSB-A throughput peaks near 24--36 workers (294--296K) and then
+declines gradually toward 96 workers (209K), and YCSB-B follows the same shape;
+P-WAL declines in parallel.  This peak-and-decline is a property of the
+underlying SSN concurrency control rather than of Ayame's WAL pipeline, and it
+is not caused by aborts.  Figure~\ref{fig:scalability-breakdown} reports the
+per-committed-transaction CPU cost and the abort rate across the sweep.  The
+cycles spent per committed transaction rise steeply with thread count---about
+2.8$\times$ on YCSB-A (136K at 12 workers to 375K at 96) and 2.2$\times$ on
+YCSB-B---consistent with cache-line contention on SSN's shared metadata.
 Because the per-transaction cost grows faster than the core count, throughput
 falls once the contention outweighs the added parallelism.  The abort rate
 cannot explain the decline: it never exceeds 1.5\% on YCSB-A and 0.03\% on
-YCSB-B, yet YCSB-B exhibits the same peak-and-decline shape with that
-near-zero abort rate.  The contended structures are central to SSN: every
-commit increments a single global commit-timestamp counter---which Ayame
-reuses as the logical LSN (\textbf{A1})---and SSN validation consults a
-central transaction-mapping table, both of which bounce between cores' caches
-as the thread count grows.  This is the known scalability limitation of SSN's
+YCSB-B, yet YCSB-B exhibits the same peak-and-decline shape with that near-zero
+abort rate.  The contended structures are central to SSN: every commit
+increments a single global commit-timestamp counter---which Ayame reuses as the
+logical LSN (\textbf{A1})---and SSN validation consults a central
+transaction-mapping table, both of which bounce between cores' caches as the
+thread count grows.  This is the known scalability limitation of SSN's
 centralized metadata~\cite{tanabe2020ccbench}.  The decline is not thread
-oversubscription: P-WAL carries no background flush threads, so at 96 workers
-it runs 96 threads on the 96 logical cores without oversubscribing them, yet
-its throughput falls in parallel with Ayame's---so the falloff reflects the
-shared SSN structures, not an excess of threads.  The limitation is also
-upstream of durability: the p99 acknowledgment latency stays at or below 2\,ms
-across the whole sweep (Figure~\ref{fig:ycsbabc-worker-latency}) and the
-pending durable commits remain small at the operating point
+oversubscription: P-WAL carries no background flush threads, so at 96 workers it
+runs 96 threads on the 96 logical cores without oversubscribing them, yet its
+throughput falls in parallel with Ayame's---so the falloff reflects the shared
+SSN structures, not an excess of threads.  The limitation is also upstream of
+durability: the p99 acknowledgment latency stays at or below 2\,ms across the
+whole sweep (Figure~\ref{fig:ycsbabc-worker-latency}) and the pending durable
+commits remain small at the operating point
 (Table~\ref{tab:ycsbabc-48worker-summary}), so the flushers and committer are
 not the bottleneck---the throughput ceiling is set by the concurrency-control
 layer that Ayame inherits through cstamp reuse.
@@ -219,33 +249,6 @@ layer that Ayame inherits through cstamp reuse.
   }
   \label{fig:scalability-breakdown}
 \end{figure}
-
-Ayame's timestamp integration is primarily a design simplification: it removes
-duplicated logical ordering between concurrency control and WAL durability by
-reusing SSN's commit timestamp (cstamp) as the logical recovery order.  We do
-not rely on timestamp integration alone as a direct throughput optimization.
-The main throughput effect comes from parallel WAL shards, batching, and
-separating workers from durable-wait processing; dependency-closed
-acknowledgment primarily prevents the pending-ack backlog and tail-latency
-blowups caused by global-prefix waiting (Section~\ref{sec:why-dep}).
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_ycsbabc_worker_threads_latency.pdf}
-  \caption{
-  P99 durable-acknowledgment latency by transaction worker threads.
-  }
-  \label{fig:ycsbabc-worker-latency}
-\end{figure}
-
-Table~\ref{tab:ycsbabc-48worker-summary} summarizes the main 48-worker
-end-to-end results used in the figures.  Two entries deserve a note.  The zero
-pending count of Single WAL and P-WAL does not mean that they avoid waiting;
-their workers wait synchronously on the commit path, so the wait is reflected
-as lower throughput rather than as an asynchronous pending queue.  For YCSB-C,
-Tx/sync is not applicable because no WAL records are flushed.
-
-\input{tables/table_ycsbabc_48worker_summary}
 
 \subsection{Acknowledgment-Policy Comparison}
 \label{sec:why-dep}
