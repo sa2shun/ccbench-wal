@@ -1,21 +1,24 @@
 \begin{table}[tb]
   \centering
-  \caption{Dependency-density experiment at 48 worker threads on an abort-free partitioned workload.  The remote-access probability sets the frontier width (nz/tx is the mean number of shards per dependency frontier).}
+  \caption{Dependency-density experiment at 48 worker threads on an abort-free partitioned workload.  The remote-access probability sets the frontier width (nz/tx is the mean number of shards per dependency frontier).  Arrows mark the better direction and the Ayame rows are in bold.}
   \label{tab:dep-density}
   \small
   \setlength{\tabcolsep}{4pt}
   \begin{tabular}{rrlrrr}
     \hline
-    Remote & nz/tx & Policy & Ack tps & p99 ms & Pending \\
+    Remote & nz/tx & Policy & Ack tps $\uparrow$ & p99 ms $\downarrow$ & Pending $\downarrow$ \\
     \hline
     0\% & 1.0 & Global & 438.9K & 131 & 64,626 \\
-    0\% & 1.0 & Ayame & 261.7K & 2 & 397 \\
+     &  & \textbf{Ayame} & \textbf{261.7K} & \textbf{2} & \textbf{397} \\
+    \hline
     1\% & 8.9 & Global & 437.3K & 131 & 63,618 \\
-    1\% & 8.9 & Ayame & 256.8K & 2 & 325 \\
+     &  & \textbf{Ayame} & \textbf{256.8K} & \textbf{2} & \textbf{325} \\
+    \hline
     10\% & 8.9 & Global & 436.6K & 131 & 64,602 \\
-    10\% & 8.9 & Ayame & 252.8K & 2 & 358 \\
+     &  & \textbf{Ayame} & \textbf{252.8K} & \textbf{2} & \textbf{358} \\
+    \hline
     100\% & 9.0 & Global & 438.9K & 131 & 64,924 \\
-    100\% & 9.0 & Ayame & 238.5K & 2 & 349 \\
+     &  & \textbf{Ayame} & \textbf{238.5K} & \textbf{2} & \textbf{349} \\
     \hline
   \end{tabular}
 \end{table}

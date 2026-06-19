@@ -173,22 +173,31 @@ def main():
         "  \\caption{Dependency-density experiment at 48 worker threads on an "
         "abort-free partitioned workload.  The remote-access probability sets the "
         "frontier width (nz/tx is the mean number of shards per dependency "
-        "frontier).}",
+        "frontier).  Arrows mark the better direction and the Ayame rows are in "
+        "bold.}",
         "  \\label{tab:dep-density}",
         "  \\small",
         "  \\setlength{\\tabcolsep}{4pt}",
         "  \\begin{tabular}{rrlrrr}",
         "    \\hline",
-        "    Remote & nz/tx & Policy & Ack tps & p99 ms & Pending \\\\",
+        "    Remote & nz/tx & Policy & Ack tps $\\uparrow$ & p99 ms $\\downarrow$ "
+        "& Pending $\\downarrow$ \\\\",
         "    \\hline",
     ]
     for remote, nz, policy, items in rows_for_tex:
-        lines.append(
-            f"    {remote/10000:.0f}\\% & {nz:.1f} & {POLICY_LABEL[policy]} & "
-            f"{kfmt(mean(x['ack_tps'] for x in items))} & "
-            f"{median(x['p99_us'] for x in items)/1000:.0f} & "
-            f"{commafmt(mean(x['pending'] for x in items))} \\\\")
-    lines += ["    \\hline", "  \\end{tabular}", "\\end{table}"]
+        ack = kfmt(mean(x['ack_tps'] for x in items))
+        p99 = f"{median(x['p99_us'] for x in items)/1000:.0f}"
+        pend = commafmt(mean(x['pending'] for x in items))
+        if policy == "Ayame":  # group's second row: blank knobs, bold, then a rule
+            lines.append(
+                f"     &  & \\textbf{{{POLICY_LABEL[policy]}}} & "
+                f"\\textbf{{{ack}}} & \\textbf{{{p99}}} & \\textbf{{{pend}}} \\\\")
+            lines.append("    \\hline")
+        else:
+            lines.append(
+                f"    {remote/10000:.0f}\\% & {nz:.1f} & {POLICY_LABEL[policy]} & "
+                f"{ack} & {p99} & {pend} \\\\")
+    lines += ["  \\end{tabular}", "\\end{table}"]
     tex_path = TABLE_DIR / "table_dependency_density.tex"
     tex_path.write_text("\n".join(lines) + "\n")
     print("CSV:", csv_path)

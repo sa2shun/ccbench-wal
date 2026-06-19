@@ -73,6 +73,10 @@ def km(v):
     return f"{v:.0f}"
 
 
+def bold(c):
+    return "\\textbf{" + c + "}"
+
+
 def tex_table(path, caption, label, headers, rows, align=None, footnote=None, wide=False,
               compact=False):
     if align is None:
@@ -97,7 +101,10 @@ def tex_table(path, caption, label, headers, rows, align=None, footnote=None, wi
     lines.append("    " + " & ".join(headers) + " \\\\")
     lines.append("    \\hline")
     for row in rows:
-        lines.append("    " + " & ".join(row) + " \\\\")
+        if isinstance(row, str):  # raw line such as \hline between groups
+            lines.append("    " + row)
+        else:
+            lines.append("    " + " & ".join(row) + " \\\\")
     lines.extend([
         "    \\hline",
         "  \\end{tabular}",
@@ -121,28 +128,36 @@ def main():
     y32.sort(key=lambda r: (order_workloads[r["workload"]], order_systems[r["system"]]))
 
     rows = []
-    for r in y32:
-        rows.append([
-            str(r["workload"]),
-            str(r["system"]),
-            k_tps(r["ack_tps"]),
-            whole(r["p99_us"]),
-            whole(r["pending"]),
-            one(r["commits_per_fdatasync"]),
-            two(r["global_atomic_per_tx"]),
-        ])
+    for gi, workload in enumerate(["YCSB-A", "YCSB-B", "YCSB-C"]):
+        group = [r for r in y32 if r["workload"] == workload]
+        for idx, r in enumerate(group):
+            cells = [
+                k_tps(r["ack_tps"]),
+                whole(r["p99_us"]),
+                whole(r["pending"]),
+                one(r["commits_per_fdatasync"]),
+                two(r["global_atomic_per_tx"]),
+            ]
+            sysname = str(r["system"])
+            if sysname == "Ayame":
+                sysname = bold(sysname)
+                cells = [bold(c) for c in cells]
+            rows.append([workload if idx == 0 else "", sysname] + cells)
+        if gi < 2:
+            rows.append("\\hline")
     tex_table(
         TABLE_DIR / "table_ycsbabc_48worker_summary.tex",
-        "End-to-end YCSB results at 48 transaction worker threads.",
+        "End-to-end YCSB results at 48 transaction worker threads.  Arrows mark the "
+        "better direction and the Ayame rows are in bold.",
         "tab:ycsbabc-48worker-summary",
         [
             "Workload",
             "System",
-            "Ack tps",
-            "p99 $\\mu$s",
-            "Pending",
-            "Tx/sync",
-            "WAL atomic/tx",
+            "Ack tps $\\uparrow$",
+            "p99 $\\mu$s $\\downarrow$",
+            "Pending $\\downarrow$",
+            "Tx/sync $\\uparrow$",
+            "WAL atomic/tx $\\downarrow$",
         ],
         rows,
         align="llrrrrr",
@@ -156,25 +171,34 @@ def main():
     )
 
     perf = read_csv(TABLE_DIR / "ayame_perf_stat_20260609.csv")
-    perf.sort(key=lambda r: (order_workloads[r["workload"]], order_systems[r["system"]]))
+    perf_by = {(r["workload"], r["system"]): r for r in perf}
     rows = []
-    for r in perf:
-        rows.append([
-            str(r["workload"]),
-            str(r["system"]),
-            k_tps(r["durable_ack_tps"]),
-            one(r["cpu_util_cores"]),
-            km(r["cycles_per_tx"]),
-            km(r["context_switches"]),
-            one(r["commits_per_fdatasync"]),
-        ])
+    for gi, workload in enumerate(["YCSB-A", "YCSB-B", "YCSB-C"]):
+        for idx, system in enumerate(["Single WAL", "P-WAL", "Ayame"]):
+            r = perf_by[(workload, system)]
+            cells = [
+                k_tps(r["durable_ack_tps"]),
+                one(r["cpu_util_cores"]),
+                km(r["cycles_per_tx"]),
+                km(r["context_switches"]),
+                one(r["commits_per_fdatasync"]),
+            ]
+            sysname = system
+            if system == "Ayame":
+                sysname = bold(sysname)
+                cells = [bold(c) for c in cells]
+            rows.append([workload if idx == 0 else "", sysname] + cells)
+        if gi < 2:
+            rows.append("\\hline")
     tex_table(
         TABLE_DIR / "table_perf_stat_48worker.tex",
         "Perf-stat summary at 48 transaction worker threads.  Cores is CPU-core "
         "utilization, Cyc/tx is CPU cycles per committed transaction, Ctx sw.\\ is "
-        "total context switches, and Tx/sync is commits per \\texttt{fdatasync}.",
+        "total context switches, and Tx/sync is commits per \\texttt{fdatasync}.  "
+        "Arrows mark the better direction and the Ayame rows are in bold.",
         "tab:perf-stat-48worker",
-        ["Workload", "System", "Ack tps", "Cores", "Cyc/tx", "Ctx sw", "Tx/sync"],
+        ["Workload", "System", "Ack tps $\\uparrow$", "Cores", "Cyc/tx $\\downarrow$",
+         "Ctx sw", "Tx/sync $\\uparrow$"],
         rows,
         align="llrrrrr",
         compact=True,
