@@ -24,7 +24,14 @@ Single WAL appends to one shared log under a global latch and
 synchronizes it per commit.  P-WAL gives each worker a private WAL shard
 and synchronizes it per commit, acknowledging through a global durable
 prefix.  Ayame uses the worker/flusher/committer pipeline of
-Section~\ref{sec:design} with dependency-closed acknowledgment.  Each WAL
+Section~\ref{sec:design} with dependency-closed acknowledgment.  Ayame keeps
+one WAL shard per flusher, so the number of shards equals the flusher count
+(nine at 48 workers) and is smaller than the worker count; each worker is
+mapped to a shard and several workers share one, which lets a flusher batch
+many workers' records into a single \texttt{fdatasync} (in contrast to P-WAL,
+which gives every worker a private shard).  The dependency frontier is thus a
+vector over these shards, and the per-shard sequence reservation is shared by
+co-located workers.  Each WAL
 redo record carries the key, value, storage identifier, and operation
 type of a write; the terminating commit record additionally stores the
 transaction's commit timestamp and its closed dependency frontier, which
@@ -205,11 +212,10 @@ layer that Ayame inherits through cstamp reuse.
   \includegraphics[width=0.86\linewidth]{figures/fig_scalability_breakdown.pdf}
   \caption{
   Per-committed-transaction CPU cost (solid, left axis) and abort rate
-  (dashed, right axis) versus worker threads for Ayame.  The cycles per
-  committed transaction rise sharply with thread count---cache-line
-  contention on SSN's central commit-timestamp counter and
-  transaction-mapping table---while the abort rate stays small; YCSB-B
-  declines with a near-zero abort rate.
+  (dashed, right axis) versus worker threads for Ayame.  The rise in cycles
+  per committed transaction is consistent with cache-line contention on SSN's
+  central commit-timestamp counter and transaction-mapping table, while the
+  abort rate stays small; YCSB-B declines with a near-zero abort rate.
   }
   \label{fig:scalability-breakdown}
 \end{figure}
@@ -353,7 +359,8 @@ remains when frontiers are sparse.
 \label{sec:overhead}
 
 Table~\ref{tab:perf-stat-48worker} reports a perf-stat comparison of the three
-systems at 48 worker threads, and three effects explain Ayame's throughput.
+systems at 48 worker threads, showing two sources of Ayame's throughput
+improvement and one overhead.
 First, Ayame amortizes storage synchronization: it makes 23 commits durable per
 \texttt{fdatasync} on YCSB-A and 14 on YCSB-B, whereas Single WAL and P-WAL
 synchronize roughly once per transaction (Tx/sync of 1.0--2.5).  Second, Ayame
