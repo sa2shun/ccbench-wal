@@ -1,24 +1,24 @@
-\begin{table}[tb]
+\begin{table*}[t]
   \centering
-  \caption{Perf-stat summary at 48 transaction worker threads.  Cores is CPU-core utilization, Cyc/tx is CPU cycles per committed transaction, Ctx sw.\ is total context switches, and Tx/sync is commits per \texttt{fdatasync}.  Arrows mark the better direction and the Ayame rows are in bold.}
+  \caption{Perf-stat summary at 48 transaction worker threads.  Cores is CPU-core utilization, Cyc/tx is CPU cycles per committed transaction, Ctx sw.\ is total context switches, and Tx/sync is commits per \texttt{fdatasync}.  Arrows mark the better direction and bold marks where Ayame wins.}
   \label{tab:perf-stat-48worker}
-  \footnotesize
-  \setlength{\tabcolsep}{3pt}
+  \small
+  \setlength{\tabcolsep}{6pt}
   \begin{tabular}{llrrrrr}
     \hline
     Workload & System & Ack tps $\uparrow$ & Cores & Cyc/tx $\downarrow$ & Ctx sw & Tx/sync $\uparrow$ \\
     \hline
     YCSB-A & Single WAL & 8.1K & 1.8 & 552K & 133K & 1.0 \\
      & P-WAL & 48.7K & 22.1 & 1.15M & 1.48M & 1.0 \\
-     & \textbf{Ayame} & \textbf{237.4K} & \textbf{23.5} & \textbf{243K} & \textbf{4.21M} & \textbf{23.0} \\
+     & \textbf{Ayame} & \textbf{237.4K} & 23.5 & \textbf{243K} & 4.21M & \textbf{23.0} \\
     \hline
     YCSB-B & Single WAL & 22.1K & 1.4 & 165K & 140K & 2.5 \\
      & P-WAL & 162.6K & 18.0 & 282K & 1.29M & 2.5 \\
-     & \textbf{Ayame} & \textbf{414.4K} & \textbf{24.3} & \textbf{145K} & \textbf{4.12M} & \textbf{14.4} \\
+     & \textbf{Ayame} & \textbf{414.4K} & 24.3 & \textbf{145K} & 4.12M & \textbf{14.4} \\
     \hline
     YCSB-C & Single WAL & 680.6K & 48.4 & 184K & 4K & 0.0 \\
      & P-WAL & 685.5K & 48.3 & 183K & 4K & 0.0 \\
-     & \textbf{Ayame} & \textbf{683.0K} & \textbf{48.4} & \textbf{184K} & \textbf{34K} & \textbf{0.0} \\
+     & \textbf{Ayame} & 683.0K & 48.4 & 184K & 34K & 0.0 \\
     \hline
   \end{tabular}
-\end{table}
+\end{table*}

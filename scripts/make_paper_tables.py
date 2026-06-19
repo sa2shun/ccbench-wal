@@ -77,6 +77,15 @@ def bold(c):
     return "\\textbf{" + c + "}"
 
 
+def ayame_best(ayame_val, other_vals, better):
+    # Strictly best, so we only embolden a cell Ayame actually wins.
+    if better == "+":
+        return all(ayame_val > o for o in other_vals)
+    if better == "-":
+        return all(ayame_val < o for o in other_vals)
+    return False  # no better direction -> never emboldened
+
+
 def tex_table(path, caption, label, headers, rows, align=None, footnote=None, wide=False,
               compact=False):
     if align is None:
@@ -127,28 +136,33 @@ def main():
     order_systems = {"Single WAL": 0, "P-WAL": 1, "Ayame": 2}
     y32.sort(key=lambda r: (order_workloads[r["workload"]], order_systems[r["system"]]))
 
+    summary_metrics = [
+        ("ack_tps", k_tps, "+"),
+        ("p99_us", whole, "-"),
+        ("pending", whole, "-"),
+        ("commits_per_fdatasync", one, "+"),
+        ("global_atomic_per_tx", two, "-"),
+    ]
     rows = []
     for gi, workload in enumerate(["YCSB-A", "YCSB-B", "YCSB-C"]):
         group = [r for r in y32 if r["workload"] == workload]
+        others = [r for r in group if r["system"] != "Ayame"]
         for idx, r in enumerate(group):
-            cells = [
-                k_tps(r["ack_tps"]),
-                whole(r["p99_us"]),
-                whole(r["pending"]),
-                one(r["commits_per_fdatasync"]),
-                two(r["global_atomic_per_tx"]),
-            ]
-            sysname = str(r["system"])
-            if sysname == "Ayame":
-                sysname = bold(sysname)
-                cells = [bold(c) for c in cells]
+            is_ayame = r["system"] == "Ayame"
+            cells = []
+            for key, fmt, better in summary_metrics:
+                c = fmt(r[key])
+                if is_ayame and ayame_best(r[key], [o[key] for o in others], better):
+                    c = bold(c)
+                cells.append(c)
+            sysname = bold("Ayame") if is_ayame else str(r["system"])
             rows.append([workload if idx == 0 else "", sysname] + cells)
         if gi < 2:
             rows.append("\\hline")
     tex_table(
         TABLE_DIR / "table_ycsbabc_48worker_summary.tex",
         "End-to-end YCSB results at 48 transaction worker threads.  Arrows mark the "
-        "better direction and the Ayame rows are in bold.",
+        "better direction and bold marks where Ayame wins.",
         "tab:ycsbabc-48worker-summary",
         [
             "Workload",
@@ -172,21 +186,26 @@ def main():
 
     perf = read_csv(TABLE_DIR / "ayame_perf_stat_20260609.csv")
     perf_by = {(r["workload"], r["system"]): r for r in perf}
+    perf_metrics = [
+        ("durable_ack_tps", k_tps, "+"),
+        ("cpu_util_cores", one, None),
+        ("cycles_per_tx", km, "-"),
+        ("context_switches", km, None),
+        ("commits_per_fdatasync", one, "+"),
+    ]
     rows = []
     for gi, workload in enumerate(["YCSB-A", "YCSB-B", "YCSB-C"]):
-        for idx, system in enumerate(["Single WAL", "P-WAL", "Ayame"]):
-            r = perf_by[(workload, system)]
-            cells = [
-                k_tps(r["durable_ack_tps"]),
-                one(r["cpu_util_cores"]),
-                km(r["cycles_per_tx"]),
-                km(r["context_switches"]),
-                one(r["commits_per_fdatasync"]),
-            ]
-            sysname = system
-            if system == "Ayame":
-                sysname = bold(sysname)
-                cells = [bold(c) for c in cells]
+        group = [perf_by[(workload, s)] for s in ["Single WAL", "P-WAL", "Ayame"]]
+        others = [r for r in group if r["system"] != "Ayame"]
+        for idx, r in enumerate(group):
+            is_ayame = r["system"] == "Ayame"
+            cells = []
+            for key, fmt, better in perf_metrics:
+                c = fmt(r[key])
+                if is_ayame and ayame_best(r[key], [o[key] for o in others], better):
+                    c = bold(c)
+                cells.append(c)
+            sysname = bold("Ayame") if is_ayame else str(r["system"])
             rows.append([workload if idx == 0 else "", sysname] + cells)
         if gi < 2:
             rows.append("\\hline")
@@ -195,13 +214,13 @@ def main():
         "Perf-stat summary at 48 transaction worker threads.  Cores is CPU-core "
         "utilization, Cyc/tx is CPU cycles per committed transaction, Ctx sw.\\ is "
         "total context switches, and Tx/sync is commits per \\texttt{fdatasync}.  "
-        "Arrows mark the better direction and the Ayame rows are in bold.",
+        "Arrows mark the better direction and bold marks where Ayame wins.",
         "tab:perf-stat-48worker",
         ["Workload", "System", "Ack tps $\\uparrow$", "Cores", "Cyc/tx $\\downarrow$",
          "Ctx sw", "Tx/sync $\\uparrow$"],
         rows,
         align="llrrrrr",
-        compact=True,
+        wide=True,
     )
 
     print(TABLE_DIR / "table_ycsbabc_48worker_summary.tex")

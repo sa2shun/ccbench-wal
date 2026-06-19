@@ -173,8 +173,8 @@ def main():
         "  \\caption{Dependency-density experiment at 48 worker threads on an "
         "abort-free partitioned workload.  The remote-access probability sets the "
         "frontier width (nz/tx is the mean number of shards per dependency "
-        "frontier).  Arrows mark the better direction and the Ayame rows are in "
-        "bold.}",
+        "frontier).  Arrows mark the better direction and bold marks where Ayame "
+        "wins.}",
         "  \\label{tab:dep-density}",
         "  \\small",
         "  \\setlength{\\tabcolsep}{4pt}",
@@ -184,19 +184,25 @@ def main():
         "& Pending $\\downarrow$ \\\\",
         "    \\hline",
     ]
+    prev_global = None
     for remote, nz, policy, items in rows_for_tex:
-        ack = kfmt(mean(x['ack_tps'] for x in items))
-        p99 = f"{median(x['p99_us'] for x in items)/1000:.0f}"
-        pend = commafmt(mean(x['pending'] for x in items))
-        if policy == "Ayame":  # group's second row: blank knobs, bold, then a rule
-            lines.append(
-                f"     &  & \\textbf{{{POLICY_LABEL[policy]}}} & "
-                f"\\textbf{{{ack}}} & \\textbf{{{p99}}} & \\textbf{{{pend}}} \\\\")
-            lines.append("    \\hline")
-        else:
+        ack_v = mean(x['ack_tps'] for x in items)
+        p99_v = median(x['p99_us'] for x in items)
+        pend_v = mean(x['pending'] for x in items)
+        ack, p99, pend = kfmt(ack_v), f"{p99_v/1000:.0f}", commafmt(pend_v)
+        if policy != "Ayame":
+            prev_global = (ack_v, p99_v, pend_v)
             lines.append(
                 f"    {remote/10000:.0f}\\% & {nz:.1f} & {POLICY_LABEL[policy]} & "
                 f"{ack} & {p99} & {pend} \\\\")
+        else:  # bold only the metrics Ayame wins (tps higher, p99/pending lower)
+            ga, gp, gpe = prev_global
+            ack = f"\\textbf{{{ack}}}" if ack_v > ga else ack
+            p99 = f"\\textbf{{{p99}}}" if p99_v < gp else p99
+            pend = f"\\textbf{{{pend}}}" if pend_v < gpe else pend
+            lines.append(
+                f"     &  & \\textbf{{{POLICY_LABEL[policy]}}} & {ack} & {p99} & {pend} \\\\")
+            lines.append("    \\hline")
     lines += ["  \\end{tabular}", "\\end{table}"]
     tex_path = TABLE_DIR / "table_dependency_density.tex"
     tex_path.write_text("\n".join(lines) + "\n")
