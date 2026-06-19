@@ -27,32 +27,23 @@ partitions the log into multiple streams~\cite{zheng2014silor,wang2014nvm,kamiya
 Although these systems differ in the target storage device, log format, and
 recovery procedure, they share an important lesson: writing log records in
 parallel is essential for making durability compatible with multicore
-transaction processing.  At the same time, strong multiversion protocols such
-as SI, SSI, and SSN introduce timestamp and dependency structures that are not
-fully reflected in conventional parallel logging designs.  The motivation of
-this work is therefore to clarify how P-WAL-style parallel logging should be
-combined with such timestamp-based CC protocols, especially SSN, without
-unnecessarily reintroducing global ordering and durable-prefix bottlenecks.
+transaction processing.  
+
+At the same time, strong multiversion protocols such as SI, SSI, and SSN introduce timestamp and dependency structures that are not fully reflected in the parallel logging designs described above.
+%
+The motivation of this work is therefore to clarify how parallel logging systems 
+should be combined with such timestamp-based CC protocols, especially SSN, without unnecessarily reintroducing global ordering and durable-prefix bottlenecks.
 
 \subsection{Problem}
 \label{sec:introduction-problem}
 
-We target SSN because it is the most complex of the SI-family protocols we
-consider: it certifies serializability using dependency metadata, while the
-underlying engine still uses timestamped multiversion execution.  As the
-baseline recovery protocol, we start from P-WAL, which is also used as a
-foundation of Shirakami, the transaction processing mechanism of
-Tsurugi~\cite{kamiya2017pwal,kawashima2025tsurugi}. 
+We target SSN because it is the most complex of the SI-family protocols we consider: it certifies serializability using dependency metadata, while the underlying engine still uses timestamped multiversion execution.  As the baseline recovery protocol, we start from P-WAL~\cite{kamiya2017pwal}, which is also used as a foundation of Shirakami, the transaction processing mechanism of Tsurugi relational database system~\cite{shirakami}. 
 %
-P-WAL is attractive because
-it removes the single-WAL insertion bottleneck by assigning transactions to
+P-WAL removes the single-WAL insertion bottleneck by assigning transactions to
 multiple log streams.  However, combining P-WAL with SSN exposes three
 problems.
 
-\textbf{P1. Multiple Global Counter Accesses:~} First, P-WAL can introduce frequent global-counter accesses.  Even if the CC
-layer already assigns a commit timestamp for SSN validation and serialization,
-the recovery layer may allocate a separate global LSN or maintain a global
-durable prefix.  This duplicates the ordering work already performed by the CC layer
+\textbf{P1. Multiple Global Counter Accesses:~} First, P-WAL can introduce frequent a centralized global-counter accesses.  Even if the CC layer already assigns a commit timestamp for SSN validation and serialization, the recovery layer may allocate a separate global LSN or maintain a global durable prefix.  This duplicates the ordering work already performed by the CC layer
 and adds shared-memory synchronization to the commit path.
 
 \textbf{P2. Waiting for Data Transfer:~} Second, workers can spend a long time waiting around \texttt{fdatasync}.  P-WAL
@@ -60,21 +51,12 @@ parallelizes log streams, but a transaction cannot be acknowledged until the cor
 for log flushes or durable-prefix updates, storage synchronization and
 notification latency reduce the effective scalability of the CC protocol.
 
-\textbf{P3. Total History:~} Third, global-prefix acknowledgment waits for log records that are unrelated to
-the transaction being acknowledged.  This rule is safe, but overly conservative:
-if one WAL shard is slow, transactions on other shards may be delayed even when
-they have no dependency on transactions logged by the slow shard.  The opposite
-design point, local-only acknowledgment, avoids this delay but is unsafe.  If
-transaction $T$ reads a value written by transaction $U$, acknowledging $T$
-before $U$ is recoverable may allow a crash recovery state that contains $T$
+\textbf{P3. Requiring Total History:~} Third, global-prefix acknowledgment waits for log records that are unrelated to
+the transaction being acknowledged.  This rule is safe, but overly conservative: if one WAL shard is slow, transactions on other shards may be delayed even when they have no dependency on transactions logged by the slow shard.  The opposite
+design point, local-only acknowledgment, avoids this delay but is unsafe.  If transaction $T$ reads a value written by transaction $U$, acknowledging $T$ before $U$ is recoverable may allow a crash recovery state that contains $T$
 without the state on which $T$ depends.
 
-Figure~\ref{fig:ack-policies} summarizes these alternatives.  Global-prefix
-acknowledgment is safe but may wait for unrelated slow shards.  Local-only
-acknowledgment avoids such waits but can acknowledge a transaction before its
-dependencies are recoverable.  The desired point is dependency-closed
-acknowledgment: acknowledge a transaction after its own log record and the
-transactions it depends on are durable.
+Figure~\ref{fig:ack-policies} summarizes these alternatives.  Global-prefix acknowledgment is safe but may wait for unrelated slow shards.  Local-only acknowledgment avoids such waits but can acknowledge a transaction before its dependencies are recoverable.  The desired point is dependency-closed acknowledgment: acknowledge a transaction after its own log record, and the transactions it depends on are durable.
 
 \begin{figure}[t]
   \centering
@@ -90,23 +72,16 @@ transactions it depends on are durable.
   \label{fig:ack-policies}
 \end{figure}
 
-In asynchronous durability protocols, logical commits and durable commit
-acknowledgments must be distinguished.  A worker may continue after enqueueing a
-log record, but the transaction is not durable from the client's perspective
-until the system returns a durable acknowledgment.  Therefore, this paper uses
-\emph{durable-acknowledgment throughput} as the main throughput metric and
-reports it together with pending durable commits and tail latency.
+In asynchronous durability protocols, logical commits and durable commit acknowledgments must be distinguished.  A worker may continue after enqueuing a log record, but the transaction is not durable from the client's perspective until the system returns a durable acknowledgment.  Therefore, this paper uses
+\emph{durable-acknowledgment throughput} as the main throughput metric and reports it together with pending durable commits and tail latency.
 
 \subsection{Approach}
 \label{sec:introduction-approach}
 
 This paper proposes \emph{Ayame}, a timestamp-integrated,
 dependency-closed parallel WAL protocol for main-memory transaction processing.
-Ayame targets timestamp-based engines such as ERMIA, where the transaction
-engine already computes a logical commit order.  Its goal is not merely to
-maximize raw logical commit throughput, but to return durable commit
-acknowledgments safely without unnecessary global-prefix waiting.
-
+Ayame targets timestamp-based engines such as ERMIA, where the transaction engine already computes a logical commit order.  Its goal is not merely to maximize raw logical commit throughput, but to return durable commit acknowledgments safely without unnecessary global-prefix waiting.
+%
 Ayame addresses the three problems above with three corresponding techniques.
 
 \noindent\textbf{A1. Commit timestamps as logical LSNs.}

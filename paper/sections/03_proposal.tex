@@ -6,7 +6,7 @@ into SSN while avoiding the three problems of P-WAL identified in
 Section~\ref{sec:background}.  It combines three techniques.
 First, it reuses the commit timestamp that SSN already assigns as the
 logical log sequence number, eliminating the separate WAL-side global
-counter (addresses \textbf{P1}).  Second, it splits commit processing
+counter (addresses \textbf{P1}).  Second, it splits the commit processing
 into worker, flusher, and committer roles so that worker threads do not
 block on \texttt{fdatasync} or durable-ack waiting, subject only to a
 bounded backpressure limit (addresses \textbf{P2}).
@@ -44,8 +44,8 @@ not the per-shard physical position.
 \label{sec:pipeline}
 
 Ayame divides commit processing into three roles.  A \emph{worker}
-executes the transaction, validates it with SSN, assigns the commit
-timestamp, appends the log record to its own WAL shard, publishes
+executes the transaction, validates it with SSN, and assigns the commit
+timestamp, appends the log record to its own WAL shard, and publishes
 durability metadata, and registers a durable-acknowledgment request.
 The worker then returns to its next transaction; it does not call
 \texttt{fdatasync} and does not wait for a durable acknowledgment.  A
