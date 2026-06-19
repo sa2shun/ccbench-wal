@@ -140,10 +140,12 @@ underlying SSN concurrency-control layer rather than by the WAL pipeline.
 We evaluate Ayame using the worker-thread sweep of Table~\ref{tab:params},
 which adds a single-thread baseline and then spans 12 to 96 worker threads in
 steps of 12 (up to the full two-socket machine).
-Figure~\ref{fig:ycsbabc-worker-throughput} shows the comparison.  At 48 worker
-threads on YCSB-A, Single WAL achieves 9K durable acknowledgments per second
-and P-WAL achieves 50K, whereas Ayame achieves 253K; on YCSB-B, Single WAL
-achieves 26K and P-WAL 165K, whereas Ayame achieves 467K.  These are
+Figure~\ref{fig:ycsbabc-worker-throughput} plots the durable-acknowledgment
+throughput across the sweep, and Table~\ref{tab:ycsbabc-48worker-summary} lists
+the 48-worker numbers.  At 48 worker threads on YCSB-A, Single WAL achieves 9K
+durable acknowledgments per second and P-WAL achieves 50K, whereas Ayame
+achieves 253K; on YCSB-B, Single WAL achieves 26K and P-WAL 165K, whereas Ayame
+achieves 467K.  These are
 5.1$\times$ and 2.8$\times$ improvements over P-WAL on YCSB-A and YCSB-B, and
 the Ayame-over-P-WAL ratio stays large across the sweep, ranging from
 6.5$\times$ at 12 workers to 4.1$\times$ at 96.
@@ -186,9 +188,10 @@ records are flushed.
 
 \subsubsection{Tail Latency and Pending Durable Commits Remain Small}
 
-Ayame keeps pending durable commits small: at 48 worker threads it holds 318
+Ayame keeps pending durable commits small
+(Table~\ref{tab:ycsbabc-48worker-summary}): at 48 worker threads it holds 318
 pending commits with a 2\,ms p99 acknowledgment latency on YCSB-A, and 83 with
-a 0.5\,ms p99 on YCSB-B.  Figure~\ref{fig:ycsbabc-worker-latency} shows that the
+a 0.5\,ms p99 on YCSB-B.  Figure~\ref{fig:ycsbabc-worker-latency} shows that this
 p99 stays low across the whole sweep.  The asynchronous pipeline therefore keeps
 up with the offered durable-logging load at every thread count; it does not buy
 throughput by letting an unbounded backlog accumulate.  The zero pending count
@@ -207,35 +210,31 @@ rather than as an asynchronous pending queue.
 
 \subsubsection{The Scalability Ceiling Comes from SSN Contention}
 
-Ayame's YCSB-A throughput peaks near 24--36 workers (294--296K) and then
-declines gradually toward 96 workers (209K), and YCSB-B follows the same shape;
-P-WAL declines in parallel.  This peak-and-decline is a property of the
-underlying SSN concurrency control rather than of Ayame's WAL pipeline, and it
-is not caused by aborts.  Figure~\ref{fig:scalability-breakdown} reports the
-per-committed-transaction CPU cost and the abort rate across the sweep.  The
-cycles spent per committed transaction rise steeply with thread count---about
-2.8$\times$ on YCSB-A (136K at 12 workers to 375K at 96) and 2.2$\times$ on
-YCSB-B---consistent with cache-line contention on SSN's shared metadata.
-Because the per-transaction cost grows faster than the core count, throughput
-falls once the contention outweighs the added parallelism.  The abort rate
-cannot explain the decline: it never exceeds 1.5\% on YCSB-A and 0.03\% on
-YCSB-B, yet YCSB-B exhibits the same peak-and-decline shape with that near-zero
-abort rate.  The contended structures are central to SSN: every commit
-increments a single global commit-timestamp counter---which Ayame reuses as the
-logical LSN (\textbf{A1})---and SSN validation consults a central
-transaction-mapping table, both of which bounce between cores' caches as the
-thread count grows.  This is the known scalability limitation of SSN's
-centralized metadata~\cite{tanabe2020ccbench}.  The decline is not thread
-oversubscription: P-WAL carries no background flush threads, so at 96 workers it
-runs 96 threads on the 96 logical cores without oversubscribing them, yet its
-throughput falls in parallel with Ayame's---so the falloff reflects the shared
-SSN structures, not an excess of threads.  The limitation is also upstream of
-durability: the p99 acknowledgment latency stays at or below 2\,ms across the
-whole sweep (Figure~\ref{fig:ycsbabc-worker-latency}) and the pending durable
-commits remain small at the operating point
-(Table~\ref{tab:ycsbabc-48worker-summary}), so the flushers and committer are
-not the bottleneck---the throughput ceiling is set by the concurrency-control
-layer that Ayame inherits through cstamp reuse.
+The high-thread throughput decline is a known scalability limit of the
+underlying SSN concurrency control, not a limit of Ayame's WAL pipeline: SSN
+certifies serializability through centralized metadata---a single global
+commit-timestamp counter (which Ayame reuses as the logical LSN, \textbf{A1})
+and a central transaction-mapping table---and this metadata does not scale to
+many cores~\cite{tanabe2020ccbench}.  Concretely, Ayame's YCSB-A throughput
+peaks near 24--36 workers (294--296K) and then declines toward 96 workers
+(209K); YCSB-B follows the same shape, and P-WAL declines in parallel.
+Figure~\ref{fig:scalability-breakdown} traces the cause to per-transaction cost
+rather than to aborts.  The cycles spent per committed transaction rise steeply
+with thread count---about 2.8$\times$ on YCSB-A (136K at 12 workers to 375K at
+96) and 2.2$\times$ on YCSB-B---consistent with cache-line contention on these
+shared structures as they bounce between cores' caches; because the
+per-transaction cost grows faster than the core count, throughput falls once the
+contention outweighs the added parallelism.  Aborts, by contrast, cannot explain
+the decline: the abort rate never exceeds 1.5\% on YCSB-A and 0.03\% on YCSB-B,
+and YCSB-B shows the same decline with that near-zero abort rate.  Nor is the
+decline thread oversubscription: P-WAL carries no background flush threads, so at
+96 workers it runs 96 threads on the 96 logical cores without oversubscribing
+them, yet its throughput falls in parallel with Ayame's.  Finally, the limit is
+upstream of durability---the p99 acknowledgment latency stays at or below 2\,ms
+across the whole sweep (Figure~\ref{fig:ycsbabc-worker-latency}) and the pending
+durable commits remain small (Table~\ref{tab:ycsbabc-48worker-summary})---so the
+flushers and committer are not the bottleneck; the ceiling is set by the
+concurrency-control layer that Ayame inherits through cstamp reuse.
 
 \begin{figure}[t]
   \centering
