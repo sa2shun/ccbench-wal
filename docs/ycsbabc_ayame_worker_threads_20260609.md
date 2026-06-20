@@ -1,6 +1,6 @@
 # YCSB-A/B/C worker-thread Ayame comparison
 
-date: 2026-06-20T17:24:31
+date: 2026-06-20T18:36:37
 
 This rerun uses worker threads on the x-axis. All three systems use the same `build/cc/ermia_pwal/ycsb_ermia_pwal.exe` binary. Single WAL is selected by `CCBENCH_WAL_MODE=shared`, while P-WAL and Ayame use `CCBENCH_WAL_MODE=per_thread`.
 
@@ -12,7 +12,7 @@ Read-only WAL skip is enabled for every WAL system with `CCBENCH_WAL_SKIP_READ_O
 |---|---|
 | workloads | ycsb_a,ycsb_b,ycsb_c |
 | worker threads | 1,12,24,36,48,60,72,84,96 |
-| repeats | 3 |
+| repeats | 5 |
 | seconds | 5 |
 | Ayame logger mapping | {12: 3, 24: 5, 36: 7, 48: 9, 60: 9, 72: 9, 84: 9, 96: 9} |
 | Ayame group_size | 256 |
@@ -20,7 +20,7 @@ Read-only WAL skip is enabled for every WAL system with `CCBENCH_WAL_SKIP_READ_O
 | Ayame max_pending | 65536 |
 
 summary csv: `paper/tables/ycsbabc_ayame_worker_threads_20260609.csv`
-raw csv: `results/ycsbabc_ayame_worker_threads_20260620_164848/ycsbabc_ayame_worker_threads_raw_20260620_164848.csv`
+raw csv: `results/ycsbabc_ayame_worker_threads_20260620_183635/ycsbabc_ayame_worker_threads_raw_20260620_183635.csv`
 
 ## Figures
 

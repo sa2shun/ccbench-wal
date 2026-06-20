@@ -335,7 +335,7 @@ def aggregate(rows):
                 "p50_us": median(p50_values),
                 "p95_us": median(p95_values),
                 "p99_us": median(p99_values),
-                "pending": mean(safe_float(r.get("pending_commits")) for r in rs),
+                "pending": median(safe_float(r.get("pending_commits")) for r in rs),
                 "max_pending_commits": mean(safe_float(r.get("wal_stats_max_pending_commits")) for r in rs),
                 "abort_rate": mean(safe_float(r.get("abort_rate")) for r in rs),
                 "read_only_commits_per_tx": mean(
