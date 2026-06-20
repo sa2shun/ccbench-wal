@@ -942,18 +942,16 @@ void TxExecutor::mergeVersionFrontier(Version *ver) {
     ccbench::WalLogger::instance().recordReadOnlyFrontierCollectSkipped();
     return;
   }
+  uint32_t n = ccbench::WalLogger::instance().shardCount();
+  if (n > ccbench::kInlineFrontierShards) n = ccbench::kInlineFrontierShards;
   const uint64_t collect_start = ccbench::TxBreakdownProfiler::nowNs();
-  auto frontier = std::atomic_load_explicit(&ver->write_frontier_,
-                                            std::memory_order_acquire);
+  dep_frontier_.ensureSize(n);
+  for (uint32_t i = 0; i < n; ++i) {
+    const uint64_t v = ver->loadWriteFrontier(i);
+    if (v > dep_frontier_.seq[i]) dep_frontier_.seq[i] = v;
+  }
   ccbench::WalLogger::instance().recordFrontierCollect(
       ccbench::TxBreakdownProfiler::nowNs() - collect_start);
-  if (frontier) {
-    const uint64_t merge_start = ccbench::TxBreakdownProfiler::nowNs();
-    dep_frontier_.merge(*frontier,
-                        ccbench::WalLogger::instance().shardCount());
-    ccbench::WalLogger::instance().recordFrontierMerge(
-        ccbench::TxBreakdownProfiler::nowNs() - merge_start);
-  }
 }
 
 void TxExecutor::mergeVersionReadFrontier(Version *ver) {
@@ -962,53 +960,43 @@ void TxExecutor::mergeVersionReadFrontier(Version *ver) {
     ccbench::WalLogger::instance().recordReadOnlyFrontierCollectSkipped();
     return;
   }
+  uint32_t n = ccbench::WalLogger::instance().shardCount();
+  if (n > ccbench::kInlineFrontierShards) n = ccbench::kInlineFrontierShards;
   const uint64_t collect_start = ccbench::TxBreakdownProfiler::nowNs();
-  auto frontier = std::atomic_load_explicit(&ver->read_frontier_,
-                                            std::memory_order_acquire);
+  dep_frontier_.ensureSize(n);
+  for (uint32_t i = 0; i < n; ++i) {
+    const uint64_t v = ver->loadReadFrontier(i);
+    if (v > dep_frontier_.seq[i]) dep_frontier_.seq[i] = v;
+  }
   ccbench::WalLogger::instance().recordFrontierCollect(
       ccbench::TxBreakdownProfiler::nowNs() - collect_start);
-  if (frontier) {
-    const uint64_t merge_start = ccbench::TxBreakdownProfiler::nowNs();
-    dep_frontier_.merge(*frontier,
-                        ccbench::WalLogger::instance().shardCount());
-    ccbench::WalLogger::instance().recordFrontierMerge(
-        ccbench::TxBreakdownProfiler::nowNs() - merge_start);
-  }
 }
 
 void TxExecutor::publishReadFrontier(Version *ver,
                                      const ccbench::WalFrontier& closed) {
   if (!ver || !ccbench::WalLogger::frontierPublishRequested()) return;
-  auto old_frontier = std::atomic_load_explicit(&ver->read_frontier_,
-                                                std::memory_order_acquire);
-  for (;;) {
-    if (old_frontier &&
-        old_frontier->covers(closed, ccbench::WalLogger::instance().shardCount())) {
-      return;
-    }
-    ccbench::WalFrontier merged;
-    if (old_frontier) merged = *old_frontier;
-    merged.merge(closed, ccbench::WalLogger::instance().shardCount());
-    auto new_frontier = std::make_shared<const ccbench::WalFrontier>(merged);
-    ccbench::WalLogger::instance().recordFrontierPublishMetadata(0, 0, 1, 1);
-    if (std::atomic_compare_exchange_weak_explicit(
-            &ver->read_frontier_, &old_frontier, new_frontier,
-            std::memory_order_acq_rel, std::memory_order_acquire)) {
-      return;
-    }
+  uint32_t n = ccbench::WalLogger::instance().shardCount();
+  if (n > ccbench::kInlineFrontierShards) n = ccbench::kInlineFrontierShards;
+  // Skip if the version's read frontier already covers the closed frontier.
+  bool covered = true;
+  for (uint32_t i = 0; i < n; ++i) {
+    if (ver->loadReadFrontier(i) < closed.get(i)) { covered = false; break; }
   }
+  if (covered) return;
+  for (uint32_t i = 0; i < n; ++i) ver->maxReadFrontier(i, closed.get(i));
 }
 
 void TxExecutor::publishFrontiers(const ccbench::WalFrontier& closed) {
   if (!ccbench::WalLogger::frontierPublishRequested()) return;
   const uint64_t publish_start = ccbench::TxBreakdownProfiler::nowNs();
-  auto closed_ptr = std::make_shared<const ccbench::WalFrontier>(closed);
-  ccbench::WalLogger::instance().recordFrontierPublishMetadata(
-      0, write_set_.size(), 1, 1);
+  uint32_t n = ccbench::WalLogger::instance().shardCount();
+  if (n > ccbench::kInlineFrontierShards) n = ccbench::kInlineFrontierShards;
   for (auto itr = write_set_.begin(); itr != write_set_.end(); ++itr) {
-    std::atomic_store_explicit(&(*itr).ver_->write_frontier_, closed_ptr,
-                               std::memory_order_release);
+    Version *ver = (*itr).ver_;
+    for (uint32_t i = 0; i < n; ++i) ver->storeWriteFrontier(i, closed.get(i));
   }
+  ccbench::WalLogger::instance().recordFrontierPublishMetadata(
+      0, write_set_.size(), 0, 0);
   uint64_t read_updates = 0;
   for (auto itr = read_set_.begin(); itr != read_set_.end(); ++itr) {
     ++read_updates;

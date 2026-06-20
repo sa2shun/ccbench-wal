@@ -99,10 +99,20 @@ public:
   std::atomic <uint64_t> readers_;  // summarize all of V's readers.
   std::atomic <uint32_t> cstamp_;   // Version creation stamp, c(V)
   std::atomic <VersionStatus> status_;
-  std::shared_ptr<const ccbench::WalFrontier> write_frontier_;
-  std::shared_ptr<const ccbench::WalFrontier> read_frontier_;
 
   TupleBody body_;
+
+  // Inline durability-dependency frontier (Ayame dependency-frontier mode).
+  // Each shard entry is an independent, monotonically increasing durable-LSN
+  // requirement, so lock-free per-entry atomic access is correct: a reader only
+  // needs each shard's requirement (there is no cross-shard snapshot invariant)
+  // and the merge is an element-wise max.  This replaces the per-version
+  // std::shared_ptr<WalFrontier> (atomic ref-count + libstdc++ global spinlock)
+  // and avoids any reader/writer spin, which otherwise starved the flusher and
+  // committer threads under oversubscription.  Kept after the hot SSN fields and
+  // the tuple body so it does not displace them from cache lines.
+  std::atomic<uint64_t> write_frontier_[ccbench::kInlineFrontierShards];
+  std::atomic<uint64_t> read_frontier_[ccbench::kInlineFrontierShards];
 
   Version() { init(); }
 
@@ -110,7 +120,29 @@ public:
     psstamp_.init(0, UINT32_MAX & ~(TIDFLAG));
     status_.store(VersionStatus::inflight, std::memory_order_release);
     readers_.store(0, std::memory_order_release);
-    write_frontier_.reset();
-    read_frontier_.reset();
+    for (uint32_t i = 0; i < ccbench::kInlineFrontierShards; ++i) {
+      write_frontier_[i].store(0, std::memory_order_relaxed);
+      read_frontier_[i].store(0, std::memory_order_relaxed);
+    }
+  }
+
+  // Lock-free per-entry accessors.
+  uint64_t loadWriteFrontier(uint32_t i) const {
+    return write_frontier_[i].load(std::memory_order_acquire);
+  }
+  uint64_t loadReadFrontier(uint32_t i) const {
+    return read_frontier_[i].load(std::memory_order_acquire);
+  }
+  // Set write_frontier_[i] (single publisher: the version's creator at commit).
+  void storeWriteFrontier(uint32_t i, uint64_t v) {
+    write_frontier_[i].store(v, std::memory_order_release);
+  }
+  // Monotonic max into read_frontier_[i] (multiple readers may publish).
+  void maxReadFrontier(uint32_t i, uint64_t v) {
+    uint64_t cur = read_frontier_[i].load(std::memory_order_relaxed);
+    while (cur < v &&
+           !read_frontier_[i].compare_exchange_weak(
+               cur, v, std::memory_order_release, std::memory_order_relaxed)) {
+    }
   }
 };

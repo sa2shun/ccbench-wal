@@ -8,6 +8,13 @@ namespace ccbench {
 
 constexpr uint32_t kWalFrontierMaxShards = 256;
 
+// Per-version inline frontier capacity (Ayame dependency-frontier mode).  The
+// frontier is indexed by WAL shard (= flusher), and Ayame uses far fewer shards
+// than worker threads, so a small fixed inline array can replace the heap
+// std::shared_ptr.  Must be >= the largest flusher count used with the
+// dependency-frontier acknowledgment.
+constexpr uint32_t kInlineFrontierShards = 64;
+
 struct WalFrontier {
   std::vector<uint64_t> seq;
 

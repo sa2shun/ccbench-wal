@@ -57,15 +57,22 @@ MARKERS = {
     "Ayame": "^",
 }
 
+# Flusher (= WAL shard) count for Ayame.  A handful of flushers already exceed
+# the drain capacity needed (one flusher sustains ~900K batched commits/s), so
+# the count is capped at 9 from 48 workers up.  Over-provisioning flushers only
+# oversubscribes the cores at high worker counts -- with the lock-free inline
+# frontier the workers are CPU-bound and 19 flushers at 96 workers (116 threads
+# on 96 cores) starved the flushers/committer and exploded the backlog.  Nine
+# also matches the ack-policy and dependency-density experiments.
 AYAME_LOGGERS = {
     12: 3,
     24: 5,
     36: 7,
     48: 9,
-    60: 12,
-    72: 14,
-    84: 17,
-    96: 19,
+    60: 9,
+    72: 9,
+    84: 9,
+    96: 9,
 }
 
 
