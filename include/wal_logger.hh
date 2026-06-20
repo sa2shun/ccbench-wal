@@ -114,10 +114,19 @@ class WalLogger {
                                         const WriteSet& write_set,
                                         const WalFrontier* dep_frontier) {
     ensureConfigured(thid + 1);
-    if (skip_read_only_ && write_set.empty() && isWorkerWaitMode(durable_mode_)) {
+    if (skip_read_only_ && write_set.empty()) {
+      // Read-only transactions write no log records and need no durability, so
+      // acknowledge them immediately in every mode.  Worker-wait modes account
+      // for them through `commits`; the asynchronous pipeline tracks acked vs
+      // pending through `async_acked_commits`, so credit that here too --
+      // otherwise a skipped read-only would be counted as perpetually pending
+      // and inflate the backlog and tail latency on read-heavy workloads.
       stats_.commits.fetch_add(1, std::memory_order_relaxed);
       stats_.read_only_commits.fetch_add(1, std::memory_order_relaxed);
       recordAckLatency(0);
+      if (!isWorkerWaitMode(durable_mode_)) {
+        stats_.async_acked_commits.fetch_add(1, std::memory_order_relaxed);
+      }
       return WalCommitResult{0, 0, 0};
     }
     if (mode_ == WalMode::Shared) {

@@ -194,11 +194,20 @@ def run_case(out_dir, workload, mode, repeat, worker, args):
     env["CCBENCH_WAL_MAX_PENDING"] = str(args.max_pending)
 
     if mode == "single_wal":
-        env["CCBENCH_WAL_MODE"] = "shared"
-        env["CCBENCH_WAL_LOGGER_NUM"] = str(worker)
+        # Single shared log with group commit + flush pipelining (FP): one stream
+        # (logger=1) batched by a single flusher; workers do not block on I/O and
+        # are acknowledged through the global durable prefix.  The single serial
+        # fdatasync stream is the [B2] bottleneck this baseline exposes.
+        env["CCBENCH_WAL_MODE"] = "per_thread"
+        env["CCBENCH_WAL_DURABLE_MODE"] = "async_global_lsn_prefix"
+        env["CCBENCH_WAL_LOGGER_NUM"] = "1"
         env["CCBENCH_WAL_COMMITTER_NUM"] = "1"
     elif mode == "pwal":
+        # P-WAL with group commit + flush pipelining (FP): per-shard batched flush,
+        # parallel fdatasync streams (solving [B2]), global durable prefix
+        # acknowledgment (same shard/flusher count as Ayame).
         env["CCBENCH_WAL_MODE"] = "per_thread"
+        env["CCBENCH_WAL_DURABLE_MODE"] = "async_global_lsn_prefix"
         env["CCBENCH_WAL_LOGGER_NUM"] = str(logger)
         env["CCBENCH_WAL_COMMITTER_NUM"] = "1"
     else:
@@ -206,6 +215,12 @@ def run_case(out_dir, workload, mode, repeat, worker, args):
         env["CCBENCH_WAL_DURABLE_MODE"] = "async_dep_frontier_cstamp"
         env["CCBENCH_WAL_LOGGER_NUM"] = str(logger)
         env["CCBENCH_WAL_COMMITTER_NUM"] = str(committer)
+
+    # Actual background-thread counts.  single_wal pins logger=1; under flush
+    # pipelining every system now runs flusher threads plus a committer, so the
+    # accounting below applies uniformly (not only to Ayame).
+    logger_used = int(env["CCBENCH_WAL_LOGGER_NUM"])
+    committer_used = int(env["CCBENCH_WAL_COMMITTER_NUM"])
 
     cmd = [
         "numactl", "--interleave=all",
@@ -217,7 +232,7 @@ def run_case(out_dir, workload, mode, repeat, worker, args):
         f"--ycsb_max_ope={preset['ycsb_max_ope']}",
         f"--ycsb_rratio={preset['ycsb_rratio']}",
     ]
-    label = f"{workload}_{mode}_worker{worker}_l{logger}_c{committer}_r{repeat}"
+    label = f"{workload}_{mode}_worker{worker}_l{logger_used}_c{committer_used}_r{repeat}"
     out_path = logs / f"{label}.out"
     err_path = logs / f"{label}.err"
     with out_path.open("w") as out, err_path.open("w") as err:
@@ -236,16 +251,16 @@ def run_case(out_dir, workload, mode, repeat, worker, args):
             "worker_threads": str(worker),
             "wal_streams": str(alloc["wal_streams"]),
             "flusher_threads": str(alloc["flusher_threads"]),
-            "logger_num": str(logger),
-            "committer_num": str(committer),
-            "background_threads": str(logger + committer if mode == "tidewal" else 0),
-            "total_active_threads": str(worker + logger + committer if mode == "tidewal" else worker),
+            "logger_num": str(logger_used),
+            "committer_num": str(committer_used),
+            "background_threads": str(logger_used + committer_used),
+            "total_active_threads": str(worker + logger_used + committer_used),
             "seconds": str(args.seconds),
             "ycsb_max_ope": str(preset["ycsb_max_ope"]),
             "ycsb_rratio": str(preset["ycsb_rratio"]),
-            "group_size": str(args.group_size if mode == "tidewal" else 0),
-            "flush_us": str(args.flush_us if mode == "tidewal" else 0),
-            "max_pending": str(args.max_pending if mode == "tidewal" else 0),
+            "group_size": str(args.group_size),
+            "flush_us": str(args.flush_us),
+            "max_pending": str(args.max_pending),
             "skip_read_only": "1",
             "binary": str(PWAL_YCSB_EXE.relative_to(ROOT)),
             "exit_code": str(proc.returncode),
