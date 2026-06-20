@@ -89,24 +89,24 @@ values, and keys were drawn from a uniform distribution.
   \label{tab:params}
   \small
   \begin{tabular}{llr}
-    \hline
+    \toprule
     Type & Parameter & Setting \\
-    \hline
+    \midrule
     DB & \#records & 100{,}000 \\
        & value size & 4\,B \\
        & key distribution & uniform \\
-    \hline
+    \midrule
     TX & \#operations & 10 \\
        & read ratio & 50 / 95 / 100\,\% \\
-    \hline
+    \midrule
     Run & worker threads & 1,12,24,36,48,60,72,84,96 \\
         & measurement time & 5\,s \\
         & repeats & 5 \\
-    \hline
+    \midrule
     Ayame & flush group size [commits] & 256 \\
           & flush interval & 50\,$\mu$s \\
           & max pending acks & 65{,}536 \\
-    \hline
+    \bottomrule
   \end{tabular}
 \end{table}
 
@@ -236,18 +236,7 @@ durable commits remain small (Table~\ref{tab:ycsbabc-48worker-summary})---so the
 flushers and committer are not the bottleneck; the ceiling is set by the
 concurrency-control layer that Ayame inherits through cstamp reuse.
 
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=0.86\linewidth]{figures/fig_scalability_breakdown.pdf}
-  \caption{
-  Per-committed-transaction CPU cost (solid, left axis) and abort rate
-  (dashed, right axis) versus worker threads for Ayame.  The rise in cycles
-  per committed transaction is consistent with cache-line contention on SSN's
-  central commit-timestamp counter and transaction-mapping table, while the
-  abort rate stays small; YCSB-B declines with a near-zero abort rate.
-  }
-  \label{fig:scalability-breakdown}
-\end{figure}
+% (Figure 4, scalability breakdown, removed.)
 
 \subsection{Acknowledgment-Policy Comparison}
 \label{sec:why-dep}
@@ -358,7 +347,7 @@ is therefore not that a transaction has many dependencies, but that it
 does not wait for the shards it does not depend on, and this value
 remains when frontiers are sparse.
 
-\input{tables/table_dependency_density}
+% (Table 3, dependency-density, removed.)
 
 \subsection{Hardware Counters and Overhead}
 \label{sec:overhead}
@@ -385,4 +374,4 @@ throughputs are lower (for instance, YCSB-C reads about 683K here versus 812K
 in Table~\ref{tab:ycsbabc-48worker-summary}); we use them only for the relative
 cross-system comparison.
 
-\input{tables/table_perf_stat_48worker}
+% (Table 4, perf-stat, removed.)
