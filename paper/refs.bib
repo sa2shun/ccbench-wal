@@ -280,3 +280,56 @@
   year      = {2016}
 }
 
+@article{aether,
+author = {Johnson, Ryan and Pandis, Ippokratis and Stoica, Radu and Athanassoulis, Manos and Ailamaki, Anastasia},
+title = {Aether: a scalable approach to logging},
+year = {2010},
+issue_date = {September 2010},
+publisher = {VLDB Endowment},
+volume = {3},
+number = {1–2},
+issn = {2150-8097},
+url = {https://doi.org/10.14778/1920841.1920928},
+doi = {10.14778/1920841.1920928},
+abstract = {The shift to multi-core hardware brings new challenges to database systems, as the software parallelism determines performance. Even though database systems traditionally accommodate simultaneous requests, a multitude of synchronization barriers serialize execution. Write-ahead logging is a fundamental, omnipresent component in ARIES-style concurrency and recovery, and one of the most important yet-to-be addressed potential bottlenecks, especially in OLTP workloads making frequent small changes to data.In this paper, we identify four logging-related impediments to database system scalability. Each issue challenges different level in the software architecture: (a) the high volume of small-sized I/O requests may saturate the disk, (b) transactions hold locks while waiting for the log flush, (c) extensive context switching overwhelms the OS scheduler with threads executing log I/Os, and (d) contention appears as transactions serialize accesses to in-memory log data structures. We demonstrate these problems and address them with techniques that, when combined, comprise a holistic, scalable approach to logging. Our solution achieves a 20\%-69\% speedup over a modern database system when running log-intensive workloads, such as the TPC-B and TATP benchmarks. Moreover, it achieves log insert throughput over 1.8GB/s for small log records on a single socket server, an order of magnitude higher than the traditional way of accessing the log using a single mutex.},
+journal = {Proc. VLDB Endow.},
+month = sep,
+pages = {681–692},
+numpages = {12}
+}
+
+@article{rethinking,
+author = {Huang, Jian and Schwan, Karsten and Qureshi, Moinuddin K.},
+title = {NVRAM-aware logging in transaction systems},
+year = {2014},
+issue_date = {December 2014},
+publisher = {VLDB Endowment},
+volume = {8},
+number = {4},
+issn = {2150-8097},
+url = {https://doi.org/10.14778/2735496.2735502},
+doi = {10.14778/2735496.2735502},
+abstract = {Emerging byte-addressable, non-volatile memory technologies (NVRAM) like phase-change memory can increase the capacity of future memory systems by orders of magnitude. Compared to systems that rely on disk storage, NVRAM-based systems promise significant improvements in performance for key applications like online transaction processing (OLTP). Unfortunately, NVRAM systems suffer from two drawbacks: their asymmetric read-write performance and the notable higher cost of the new memory technologies compared to disk. This paper investigates the cost-effective use of NVRAM in transaction systems. It shows that using NVRAM only for the logging subsystem (NV-Logging) provides much higher transactions per dollar than simply replacing all disk storage with NVRAM. Specifically, for NV-Logging, we show that the software overheads associated with centralized log buffers cause performance bottlenecks and limit scaling. The per-transaction logging methods described in the paper help avoid these overheads, enabling concurrent logging for multiple transactions. Experimental results with a faithful emulation of future NVRAM-based servers using the TPCC, TATP, and TPCB benchmarks show that NV-Logging improves throughput by 1.42 - 2.72x over the costlier option of replacing all disk storage with NVRAM. Results also show that NV-Logging performs 1.21 - 6.71x better than when logs are placed into the PMFS NVRAM-optimized file system. Compared to state-of-the-art distributed logging, NV-Logging delivers 20.4\% throughput improvements.},
+journal = {Proc. VLDB Endow.},
+month = dec,
+pages = {389–400},
+numpages = {12}
+}
+
+@article{IPL,
+author = {Kim, Kangnyeon and Lee, Sang-Won and Moon, Bongki and Park, Chanik and Hwang, Joo-Young},
+title = {IPL-P: in-page logging with PCRAM},
+year = {2011},
+issue_date = {August 2011},
+publisher = {VLDB Endowment},
+volume = {4},
+number = {12},
+issn = {2150-8097},
+url = {https://doi.org/10.14778/3402755.3402771},
+doi = {10.14778/3402755.3402771},
+abstract = {A great deal of research has been done on solid-state storage media such as flash memory and non-volatile memory in the past few years. While NAND-type flash memory is now considered a top alternative to magnetic disk drives, different types of non-volatile memory have also begun to appear in the market recently. Although some advocates of storage class memory (SCM) predicted that flash memory would give way to SCM in the very near future, we believe that they will co-exist, complementing each other, for a while until the hurdles in its manufacturing process are lifted and storage class memory becomes commercially competitive in both capacity and price. This demo presents an improved design of In-Page Logging (IPL) by augmenting it with Phase Change RAM (PCRAM) in its log area. IPL is a buffer and storage management strategy that has been proposed for flash memory database systems. Due to the byte-addressability of PCRAM and its faster speed for small reads and writes, the IPL scheme with PCRAM can improve the performance of flash memory database systems even further by storing frequent log records in PCRAM instead of flash memory. We report a few advantages of this new design that will make IPL more suitable for flash memory database systems.},
+journal = {Proc. VLDB Endow.},
+month = aug,
+pages = {1363–1366},
+numpages = {4}
+}
