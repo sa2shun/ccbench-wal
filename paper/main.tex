@@ -4,14 +4,24 @@
 %% This source follows the UTF-8 tech-jsample.tex in ipsj_v4-1.zip.
 %%
 
-\documentclass[english,submit,techrep]{ipsj}
+%\documentclass[english]{ipsj}
+%\documentclass[english,preprint]{ipsj}
+\documentclass[english,preprint,JIP]{ipsj}
 
-\usepackage[dvipdfmx]{graphicx}
+\usepackage{graphicx}
 \usepackage{latexsym}
-\usepackage{algorithm}
-\usepackage{algpseudocode}
+\usepackage{cite}
+\usepackage{booktabs}
 \usepackage{url}
 
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{amsthm}
+\usepackage[most]{tcolorbox}
+\usepackage{multirow}
+
+% Ayame-specific math macros (kept from the original preamble).
 \newcommand{\dep}{\mathit{dep}}
 \newcommand{\wfr}{\mathit{wf}}
 \newcommand{\rfr}{\mathit{rf}}
@@ -21,11 +31,86 @@
 \newtheorem{definition}{Definition}
 \newtheorem{theorem}{Theorem}
 \newtheorem{lemma}{Lemma}
-\newenvironment{proof}[1][Proof]{\par\noindent\textbf{#1.}\ }{\par}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
 
-%\setcounter{巻数}{59}
-%\setcounter{号数}{10}
-%\setcounter{page}{1}
+\tcolorboxenvironment{theorem}{%
+  enhanced, breakable,
+  colback=blue!5!white,
+  colframe=blue!40!black,
+  boxrule=0.8pt,
+  arc=3pt,
+  left=4pt, right=4pt, top=4pt, bottom=4pt,
+  before skip=\medskipamount, after skip=\smallskipamount}
+\tcolorboxenvironment{lemma}{%
+  enhanced, breakable,
+  colback=teal!5!white,
+  colframe=teal!45!black,
+  boxrule=0.8pt,
+  arc=3pt,
+  left=4pt, right=4pt, top=4pt, bottom=4pt,
+  before skip=\medskipamount, after skip=\smallskipamount}
+\tcolorboxenvironment{proposition}{%
+  enhanced, breakable,
+  colback=blue!5!white,
+  colframe=blue!40!black,
+  boxrule=0.8pt,
+  arc=3pt,
+  left=4pt, right=4pt, top=4pt, bottom=4pt,
+  before skip=\medskipamount, after skip=\smallskipamount}
+\tcolorboxenvironment{corollary}{%
+  enhanced, breakable,
+  colback=teal!5!white,
+  colframe=teal!45!black,
+  boxrule=0.8pt,
+  arc=3pt,
+  left=4pt, right=4pt, top=4pt, bottom=4pt,
+  before skip=\medskipamount, after skip=\smallskipamount}
+\tcolorboxenvironment{proof}{%
+  enhanced, breakable,
+  colback=gray!6!white,
+  colframe=gray!35,
+  boxrule=0.5pt,
+  arc=3pt,
+  left=4pt, right=4pt, top=4pt, bottom=4pt,
+  before skip=2pt, after skip=\medskipamount}
+
+\usepackage{multicol}
+\usepackage{listings}
+\usepackage{tablefootnote}
+\usepackage{threeparttable}
+\usepackage[subrefformat=parens]{subcaption}
+
+% Prevent figures from being exiled to dedicated float pages
+\renewcommand{\floatpagefraction}{0.85}
+\renewcommand{\topfraction}{0.85}
+\renewcommand{\bottomfraction}{0.70}
+\renewcommand{\dbltopfraction}{0.85}
+\renewcommand{\dblfloatpagefraction}{0.85}
+
+% Reduce space between figures and surrounding text
+\setlength{\textfloatsep}{6pt plus 2pt minus 2pt}
+\setlength{\floatsep}{4pt plus 2pt minus 2pt}
+\setlength{\intextsep}{4pt plus 2pt minus 2pt}
+\setlength{\dbltextfloatsep}{6pt plus 2pt minus 2pt}
+\setlength{\dblfloatsep}{4pt plus 2pt minus 2pt}
+
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, matrix, decorations.pathreplacing}
+
+\def\Underline{\setbox0\hbox\bgroup\let\\\endUnderline}
+\def\endUnderline{\vphantom{y}\egroup\smash{\underline{\box0}}\\}
+\def\|{\verb|}
+
+\setcounter{volume}{34}% vol34=2026
+\setcounter{number}{1}%
+\setcounter{page}{1}
+
+\usepackage[varg]{txfonts}%%!!
+\makeatletter%
+\input{ot1txtt.fd}
+\renewcommand{\alglinenumber}[1]{\textit{#1:}}
+\makeatother%
 
 \begin{document}
 
