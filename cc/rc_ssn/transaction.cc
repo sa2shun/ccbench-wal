@@ -616,7 +616,6 @@ void TxExecutor::ssn_parallel_commit() {
   /**
    * finalize eta.
    */
-  uint64_t one = 1;
   for (auto itr = write_set_.begin(); itr != write_set_.end(); ++itr) {
     if ((*itr).op_ == OpType::INSERT) continue;
     /**
@@ -626,9 +625,8 @@ void TxExecutor::ssn_parallel_commit() {
     while (ver->status_.load(memory_order_acquire) != VersionStatus::committed
         && ver->status_.load(memory_order_acquire) != VersionStatus::deleted)
       ver = ver->prev_;
-    uint64_t rdrs = ver->readers_.load(memory_order_acquire);
     for (unsigned int worker = 0; worker < TotalThreadNum; ++worker) {
-      if ((rdrs & (one << worker)) ? 1 : 0) {
+      if (ver->readers_.test(worker)) {
         tmt = loadAcquire(TMT[worker]);
         /**
          * It can ignore if the reader is committing.

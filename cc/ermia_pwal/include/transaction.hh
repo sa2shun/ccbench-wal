@@ -112,6 +112,8 @@ public:
 
   Status install_version(Tuple* tuple, Version *ver);
 
+  uint32_t allocateCstamp();
+
   void verify_exclusion_or_abort();
 
   void dispWS();
@@ -127,25 +129,11 @@ public:
   void publishFrontiers(const ccbench::WalFrontier& closed);
 
   void upReadersBits(Version *ver) {
-    uint64_t expected, desired;
-    expected = ver->readers_.load(memory_order_acquire);
-    for (;;) {
-      desired = expected | (1 << thid_);
-      if (ver->readers_.compare_exchange_weak(
-              expected, desired, memory_order_acq_rel, memory_order_acquire))
-        break;
-    }
+    ver->readers_.set(thid_);
   }
 
   void downReadersBits(Version *ver) {
-    uint64_t expected, desired;
-    expected = ver->readers_.load(memory_order_acquire);
-    for (;;) {
-      desired = expected & ~(1 << thid_);
-      if (ver->readers_.compare_exchange_weak(
-              expected, desired, memory_order_acq_rel, memory_order_acquire))
-        break;
-    }
+    ver->readers_.clear(thid_);
   }
 
   static INLINE Tuple *get_tuple(Tuple *table, uint64_t key) {

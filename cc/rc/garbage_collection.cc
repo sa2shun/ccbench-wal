@@ -88,7 +88,7 @@ void GarbageCollection::gcVersion([[maybe_unused]] Result *eres_) {
 
     bool has_reader = false;
     for (Version *v = delTarget; v != nullptr; v = v->prev_) {
-      if (v->readers_.load(std::memory_order_acquire) != 0) {
+      if (v->readers_.any()) {
         has_reader = true;
         break;
       }
