@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <atomic>
 #include <bitset>
+#include <cstdio>
+#include <cstdlib>
 #include <set>
 
 #include "../../include/atomic_wrapper.hh"
@@ -290,7 +292,6 @@ Status TxExecutor::update(Storage s, std::string_view key, TupleBody&& body) {
    * later than its begin timestamp.
    */
   Version *desired;
-  desired = new Version();
   if (gcobject_.reuse_version_from_gc_.empty()) {
     desired = new Version();
 #if ADD_ANALYSIS
@@ -323,22 +324,25 @@ Status TxExecutor::update(Storage s, std::string_view key, TupleBody&& body) {
     }
     mergeVersionFrontier(dep_ver);
     mergeVersionReadFrontier(dep_ver);
+
+    /**
+     * Insert my tid for the sstamp of the latest committed predecessor.
+     * desired->prev_ may be an aborted version; readers only ever access the
+     * committed one, so the successor mark and the w:r eta update must target
+     * it (commit/abort already walk to next_committed the same way).
+     */
+    Version *pred = dep_ver ? dep_ver : desired->prev_;
+    uint64_t tmpTID;
+    tmpTID = thid_;
+    tmpTID = tmpTID << 1;
+    tmpTID |= 1;
+    pred->psstamp_.atomicStoreSstamp(tmpTID);
+
+    /**
+     * Update eta with w:r edge
+     */
+    this->pstamp_ = max(this->pstamp_, pred->psstamp_.atomicLoadPstamp());
   }
-
-  /**
-   * Insert my tid for ver->prev_->sstamp_ 
-   */
-  uint64_t tmpTID;
-  tmpTID = thid_;
-  tmpTID = tmpTID << 1;
-  tmpTID |= 1;
-  desired->prev_->psstamp_.atomicStoreSstamp(tmpTID);
-
-  /**
-   * Update eta with w:r edge
-   */
-  this->pstamp_ =
-          max(this->pstamp_, desired->prev_->psstamp_.atomicLoadPstamp());
   write_set_.emplace_back(s, key, tuple, desired, OpType::UPDATE);
 
   verify_exclusion_or_abort();
@@ -437,7 +441,6 @@ Status TxExecutor::delete_record(Storage s, std::string_view key) {
   }
 
   Version *desired;
-  desired = new Version();
   if (gcobject_.reuse_version_from_gc_.empty()) {
     desired = new Version();
 #if ADD_ANALYSIS
@@ -471,21 +474,25 @@ Status TxExecutor::delete_record(Storage s, std::string_view key) {
     }
     mergeVersionFrontier(dep_ver);
     mergeVersionReadFrontier(dep_ver);
+
+    /**
+     * Insert my tid for the sstamp of the latest committed predecessor.
+     * desired->prev_ may be an aborted version; readers only ever access the
+     * committed one, so the successor mark and the w:r eta update must target
+     * it (commit/abort already walk to next_committed the same way).
+     */
+    Version *pred = dep_ver ? dep_ver : desired->prev_;
+    uint64_t tmpTID;
+    tmpTID = thid_;
+    tmpTID = tmpTID << 1;
+    tmpTID |= 1;
+    pred->psstamp_.atomicStoreSstamp(tmpTID);
+
+    /**
+     * Update eta with w:r edge
+     */
+    this->pstamp_ = max(this->pstamp_, pred->psstamp_.atomicLoadPstamp());
   }
-
-  /**
-   * Insert my tid for ver->prev_->sstamp_ 
-   */
-  uint64_t tmpTID;
-  tmpTID = thid_;
-  tmpTID = tmpTID << 1;
-  tmpTID |= 1;
-  desired->prev_->psstamp_.atomicStoreSstamp(tmpTID);
-
-  /**
-   * Update eta with w:r edge
-   */
-  this->pstamp_ = max(this->pstamp_, desired->prev_->psstamp_.atomicLoadPstamp());
   write_set_.emplace_back(s, key, tuple, desired, OpType::DELETE);
 
   verify_exclusion_or_abort();
@@ -558,7 +565,7 @@ void TxExecutor::ssn_commit() {
   TransactionTable *tmt = loadAcquire(TMT[thid_]);
   tmt->status_.store(TransactionStatus::committing);
 
-  this->cstamp_ = ++Lsn;
+  this->cstamp_ = allocateCstamp();
   tmt->cstamp_.store(this->cstamp_, memory_order_release);
 
   // begin pre-commit
@@ -661,7 +668,7 @@ void TxExecutor::ssn_parallel_commit() {
   TransactionTable *tmt = TMT[thid_];
   tmt->status_.store(TransactionStatus::committing);
 
-  this->cstamp_ = ++Lsn;
+  this->cstamp_ = allocateCstamp();
   // this->cstamp_ = 2; test for effect of centralized counter in YCSB-C (read
   // only workload)
 
@@ -715,7 +722,6 @@ void TxExecutor::ssn_parallel_commit() {
   /**
    * finalize eta.
    */
-  uint64_t one = 1;
   for (auto itr = write_set_.begin(); itr != write_set_.end(); ++itr) {
     if ((*itr).op_ == OpType::INSERT) continue;
     /**
@@ -725,9 +731,8 @@ void TxExecutor::ssn_parallel_commit() {
     while (ver->status_.load(memory_order_acquire) != VersionStatus::committed
         && ver->status_.load(memory_order_acquire) != VersionStatus::deleted)
       ver = ver->prev_;
-    uint64_t rdrs = ver->readers_.load(memory_order_acquire);
     for (unsigned int worker = 0; worker < TotalThreadNum; ++worker) {
-      if ((rdrs & (one << worker)) ? 1 : 0) {
+      if (ver->readers_.test(worker)) {
         tmt = loadAcquire(TMT[worker]);
         /**
          * It can ignore if the reader is committing.
@@ -785,6 +790,30 @@ void TxExecutor::ssn_parallel_commit() {
     }
   }
   RECORD_TX_BREAKDOWN_PHASE(NodeValidation);
+
+  /**
+   * Re-merge the frontiers of the overwritten committed predecessors.
+   * Readers publish their read_frontier_ only at their own commit, so the
+   * merge done at update()/delete_record() time can miss a reader that read
+   * the predecessor afterwards and committed with a smaller cstamp. The
+   * finalize-eta wait above guarantees every such reader has left the
+   * committing state, and readers publish frontiers before storing
+   * status_ = committed, so this re-merge observes them.
+   * NOTE: keep the order (log -> publishFrontiers -> status store) below;
+   * that publish-before-status ordering is what makes this guarantee hold
+   * for transactions that depend on us in turn.
+   */
+  for (auto itr = write_set_.begin(); itr != write_set_.end(); ++itr) {
+    if ((*itr).op_ == OpType::INSERT) continue;
+    Version *pred = (*itr).ver_->prev_;
+    while (pred &&
+           pred->status_.load(memory_order_acquire) != VersionStatus::committed &&
+           pred->status_.load(memory_order_acquire) != VersionStatus::deleted) {
+      pred = pred->prev_;
+    }
+    mergeVersionFrontier(pred);
+    mergeVersionReadFrontier(pred);
+  }
 
   if (write_set_.empty() && ccbench::WalLogger::dependencyFrontierRequested()) {
     ccbench::WalLogger::instance().ackReadOnlyWithFrontier(thid_, &dep_frontier_);
@@ -928,6 +957,17 @@ void TxExecutor::abort() {
 #endif
 }
 
+uint32_t TxExecutor::allocateCstamp() {
+  // cstamp doubles as the p-wal logical LSN, so its uniqueness must not be
+  // broken by silent 64->32 bit truncation of the global Lsn counter.
+  const uint64_t lsn = ++Lsn;
+  if (lsn > UINT32_MAX) {
+    std::fprintf(stderr, "cstamp/LSN overflowed 32 bits\n");
+    std::abort();
+  }
+  return static_cast<uint32_t>(lsn);
+}
+
 void TxExecutor::verify_exclusion_or_abort() {
   if (this->pstamp_ >= this->sstamp_) {
     this->status_ = TransactionStatus::aborted;
@@ -943,17 +983,10 @@ void TxExecutor::mergeVersionFrontier(Version *ver) {
     return;
   }
   const uint64_t collect_start = ccbench::TxBreakdownProfiler::nowNs();
-  auto frontier = std::atomic_load_explicit(&ver->write_frontier_,
-                                            std::memory_order_acquire);
+  ver->write_frontier_.mergeInto(dep_frontier_,
+                                 ccbench::WalLogger::instance().shardCount());
   ccbench::WalLogger::instance().recordFrontierCollect(
       ccbench::TxBreakdownProfiler::nowNs() - collect_start);
-  if (frontier) {
-    const uint64_t merge_start = ccbench::TxBreakdownProfiler::nowNs();
-    dep_frontier_.merge(*frontier,
-                        ccbench::WalLogger::instance().shardCount());
-    ccbench::WalLogger::instance().recordFrontierMerge(
-        ccbench::TxBreakdownProfiler::nowNs() - merge_start);
-  }
 }
 
 void TxExecutor::mergeVersionReadFrontier(Version *ver) {
@@ -963,51 +996,30 @@ void TxExecutor::mergeVersionReadFrontier(Version *ver) {
     return;
   }
   const uint64_t collect_start = ccbench::TxBreakdownProfiler::nowNs();
-  auto frontier = std::atomic_load_explicit(&ver->read_frontier_,
-                                            std::memory_order_acquire);
+  ver->read_frontier_.mergeInto(dep_frontier_,
+                                ccbench::WalLogger::instance().shardCount());
   ccbench::WalLogger::instance().recordFrontierCollect(
       ccbench::TxBreakdownProfiler::nowNs() - collect_start);
-  if (frontier) {
-    const uint64_t merge_start = ccbench::TxBreakdownProfiler::nowNs();
-    dep_frontier_.merge(*frontier,
-                        ccbench::WalLogger::instance().shardCount());
-    ccbench::WalLogger::instance().recordFrontierMerge(
-        ccbench::TxBreakdownProfiler::nowNs() - merge_start);
-  }
 }
 
 void TxExecutor::publishReadFrontier(Version *ver,
                                      const ccbench::WalFrontier& closed) {
   if (!ver || !ccbench::WalLogger::frontierPublishRequested()) return;
-  auto old_frontier = std::atomic_load_explicit(&ver->read_frontier_,
-                                                std::memory_order_acquire);
-  for (;;) {
-    if (old_frontier &&
-        old_frontier->covers(closed, ccbench::WalLogger::instance().shardCount())) {
-      return;
-    }
-    ccbench::WalFrontier merged;
-    if (old_frontier) merged = *old_frontier;
-    merged.merge(closed, ccbench::WalLogger::instance().shardCount());
-    auto new_frontier = std::make_shared<const ccbench::WalFrontier>(merged);
-    ccbench::WalLogger::instance().recordFrontierPublishMetadata(0, 0, 1, 1);
-    if (std::atomic_compare_exchange_weak_explicit(
-            &ver->read_frontier_, &old_frontier, new_frontier,
-            std::memory_order_acq_rel, std::memory_order_acquire)) {
-      return;
-    }
-  }
+  const uint32_t n = ccbench::WalLogger::instance().shardCount();
+  if (ver->read_frontier_.covers(closed, n)) return;
+  ver->read_frontier_.mergeFrom(closed, n);
 }
 
 void TxExecutor::publishFrontiers(const ccbench::WalFrontier& closed) {
   if (!ccbench::WalLogger::frontierPublishRequested()) return;
   const uint64_t publish_start = ccbench::TxBreakdownProfiler::nowNs();
-  auto closed_ptr = std::make_shared<const ccbench::WalFrontier>(closed);
+  const uint32_t n = ccbench::WalLogger::instance().shardCount();
   ccbench::WalLogger::instance().recordFrontierPublishMetadata(
-      0, write_set_.size(), 1, 1);
+      0, write_set_.size(), 0, 0);
   for (auto itr = write_set_.begin(); itr != write_set_.end(); ++itr) {
-    std::atomic_store_explicit(&(*itr).ver_->write_frontier_, closed_ptr,
-                               std::memory_order_release);
+    // Sole owner until the version's status_ turns committed below; the
+    // status_ release store publishes these plain stores to readers.
+    (*itr).ver_->write_frontier_.storeFrom(closed, n);
   }
   uint64_t read_updates = 0;
   for (auto itr = read_set_.begin(); itr != read_set_.end(); ++itr) {

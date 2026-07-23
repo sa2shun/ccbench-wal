@@ -80,6 +80,14 @@ class WalLogger {
         std::min<uint64_t>(envUint64("CCBENCH_WAL_COMMITTER_NUM", 1),
                            logger_num_));
     if (committer_num_ == 0) committer_num_ = 1;
+    if (frontierCollectRequested(durable_mode_) &&
+        shardCount() > kWalFrontierInlineShards) {
+      std::fprintf(stderr,
+                   "CCBENCH_WAL_LOGGER_NUM=%u exceeds inline frontier capacity "
+                   "%u; rebuild with -DCCBENCH_INLINE_FRONTIER_SHARDS=<n>\n",
+                   shardCount(), kWalFrontierInlineShards);
+      std::abort();
+    }
     skip_fdatasync_ = envBool("CCBENCH_WAL_SKIP_FDATASYNC", false);
     skip_read_only_ = envBool("CCBENCH_WAL_SKIP_READ_ONLY", false);
     straggler_logger_ = envInt("CCBENCH_WAL_STRAGGLER_LOGGER", -1);
@@ -319,10 +327,12 @@ class WalLogger {
     uint64_t commit_lsn;
   };
 
+  // NOTE: deliberately does NOT carry the dep frontier — the flusher never
+  // consumed it, so copying the vector into every queue entry was a pure
+  // per-commit heap allocation. Dep-ack registration keeps its own copy.
   struct AsyncLogEntry {
     std::string payload;
     std::vector<uint64_t> lsns;
-    WalFrontier dep_frontier;
     uint64_t commit_lsn = 0;
     uint64_t local_seq = 0;
     uint64_t enqueue_ns = 0;
@@ -917,39 +927,40 @@ class WalLogger {
     }
   }
 
+  // Append-style formatting with snprintf into a stack buffer: the previous
+  // per-record std::ostringstream did locale-aware formatting plus several
+  // heap allocations per log record.
   template <class WriteElement>
-  static std::string makeRecordLine(uint64_t lsn, uint32_t thid, uint32_t cstamp,
-                                    const WriteElement& we) {
-    std::ostringstream oss;
+  static void appendRecordLine(std::string& out, uint64_t lsn, uint32_t thid,
+                               uint32_t cstamp, const WriteElement& we) {
     const std::string_view key = we.key_;
     std::string_view val;
     if (we.op_ != OpType::DELETE) {
       val = we.ver_->body_.get_val();
     }
-    oss << "LSN=" << lsn
-        << " thid=" << thid
-        << " cstamp=" << cstamp
-        << " storage=" << static_cast<uint32_t>(we.storage_)
-        << " op=" << opChar(we.op_)
-        << " key_len=" << key.size()
-        << " val_len=" << val.size()
-        << " key=";
-    oss.write(key.data(), static_cast<std::streamsize>(key.size()));
+    char head[192];
+    const int n = std::snprintf(
+        head, sizeof(head),
+        "LSN=%llu thid=%u cstamp=%u storage=%u op=%c key_len=%zu val_len=%zu key=",
+        static_cast<unsigned long long>(lsn), thid, cstamp,
+        static_cast<unsigned>(we.storage_), opChar(we.op_), key.size(),
+        val.size());
+    out.append(head, static_cast<size_t>(n));
+    out.append(key.data(), key.size());
     if (!val.empty()) {
-      oss << " val=";
-      oss.write(val.data(), static_cast<std::streamsize>(val.size()));
+      out.append(" val=", 5);
+      out.append(val.data(), val.size());
     }
-    oss << "\n";
-    return oss.str();
+    out.push_back('\n');
   }
 
-  static std::string makeCommitLine(uint64_t lsn, uint32_t thid, uint32_t cstamp) {
-    std::ostringstream oss;
-    oss << "LSN=" << lsn
-        << " thid=" << thid
-        << " cstamp=" << cstamp
-        << " op=C\n";
-    return oss.str();
+  static void appendCommitLine(std::string& out, uint64_t lsn, uint32_t thid,
+                               uint32_t cstamp) {
+    char head[96];
+    const int n = std::snprintf(
+        head, sizeof(head), "LSN=%llu thid=%u cstamp=%u op=C\n",
+        static_cast<unsigned long long>(lsn), thid, cstamp);
+    out.append(head, static_cast<size_t>(n));
   }
 
   template <class WriteSet>
@@ -965,7 +976,8 @@ class WalLogger {
     for (const auto& we : write_set) {
       const uint64_t lsn = allocateLsn();
       const uint64_t build_start = nowNs();
-      const std::string line = makeRecordLine(lsn, thid, cstamp, we);
+      std::string line;
+      appendRecordLine(line, lsn, thid, cstamp, we);
       stats_.payload_build_ns.fetch_add(nowNs() - build_start, std::memory_order_relaxed);
       const uint64_t write_start = nowNs();
       writeAll(shared_fd_, line);
@@ -974,7 +986,8 @@ class WalLogger {
     }
     commit_lsn = allocateLsn();
     const uint64_t build_start = nowNs();
-    const std::string line = makeCommitLine(commit_lsn, thid, cstamp);
+    std::string line;
+    appendCommitLine(line, commit_lsn, thid, cstamp);
     stats_.payload_build_ns.fetch_add(nowNs() - build_start, std::memory_order_relaxed);
     const uint64_t write_start = nowNs();
     writeAll(shared_fd_, line);
@@ -1003,11 +1016,11 @@ class WalLogger {
     for (const auto& we : write_set) {
       const uint64_t lsn = allocateLsn();
       lsns.push_back(lsn);
-      payload += makeRecordLine(lsn, thid, cstamp, we);
+      appendRecordLine(payload, lsn, thid, cstamp, we);
     }
     const uint64_t commit_lsn = allocateLsn();
     lsns.push_back(commit_lsn);
-    payload += makeCommitLine(commit_lsn, thid, cstamp);
+    appendCommitLine(payload, commit_lsn, thid, cstamp);
     stats_.payload_build_ns.fetch_add(nowNs() - build_start, std::memory_order_relaxed);
 
     {
@@ -1075,17 +1088,19 @@ class WalLogger {
     lsns.reserve(write_set.size() + 1);
     std::string payload;
     const uint64_t build_start = nowNs();
-    uint64_t local_record_no = 0;
     for (const auto& we : write_set) {
-      const uint64_t lsn = cstamp_mode
-          ? (local_seq * 1000000ULL + (++local_record_no))
-          : allocateLsn();
+      // In cstamp mode the SSN commit timestamp IS the logical LSN, for the
+      // data records as well as the commit record. cstamp is globally unique
+      // per transaction, so records stay unambiguous across shards (the old
+      // local_seq * 1e6 + n scheme collided between shards); intra-transaction
+      // record order is the line order in the log.
+      const uint64_t lsn = cstamp_mode ? cstamp : allocateLsn();
       if (!cstamp_mode) lsns.push_back(lsn);
-      payload += makeRecordLine(lsn, thid, cstamp, we);
+      appendRecordLine(payload, lsn, thid, cstamp, we);
     }
     const uint64_t commit_lsn = cstamp_mode ? cstamp : allocateLsn();
     if (!cstamp_mode) lsns.push_back(commit_lsn);
-    payload += makeCommitLine(commit_lsn, thid, cstamp);
+    appendCommitLine(payload, commit_lsn, thid, cstamp);
     stats_.payload_build_ns.fetch_add(nowNs() - build_start, std::memory_order_relaxed);
 
     WalFrontier dep;
@@ -1113,7 +1128,7 @@ class WalLogger {
       const uint64_t enqueue_start = nowNs();
       AsyncQueue& q = *async_queues_[log_id];
       std::lock_guard<std::mutex> guard(q.mutex);
-      q.queue.push_back(AsyncLogEntry{std::move(payload), std::move(lsns), dep,
+      q.queue.push_back(AsyncLogEntry{std::move(payload), std::move(lsns),
                                       commit_lsn, local_seq, enqueue_ns});
       stats_.wal_enqueue_ns.fetch_add(nowNs() - enqueue_start,
                                       std::memory_order_relaxed);
@@ -1303,11 +1318,13 @@ class WalLogger {
   void enqueueDurableEvent(uint32_t logger_id, uint64_t local_seq,
                            std::vector<uint64_t>&& lsns) {
     const uint64_t start = nowNs();
+    // configure() creates commit_event_queues_[i] for every i < logger_num_
+    // before any flusher runs, and chooseLogId() only yields ids below
+    // logger_num_, so the queue must exist here. The old lazy double-checked
+    // creation was a data race on the unique_ptr.
     if (!commit_event_queues_[logger_id]) {
-      std::lock_guard<std::mutex> guard(init_mutex_);
-      if (!commit_event_queues_[logger_id]) {
-        commit_event_queues_[logger_id] = std::make_unique<CommitEventQueue>();
-      }
+      std::fprintf(stderr, "commit event queue %u missing\n", logger_id);
+      std::abort();
     }
     {
       std::lock_guard<std::mutex> guard(commit_event_queues_[logger_id]->mutex);
@@ -1433,6 +1450,7 @@ class WalLogger {
       std::vector<uint64_t> durable_lsns;
       durable_lsns.reserve(batch.size() * 2);
       uint64_t bytes = 0;
+      uint64_t batch_max_commit_lsn = 0;
       stats_.flusher_batches.fetch_add(1, std::memory_order_relaxed);
       stats_.flushed_commits.fetch_add(batch.size(), std::memory_order_relaxed);
       const uint64_t write_start = nowNs();
@@ -1440,6 +1458,7 @@ class WalLogger {
         writeAll(worker_fds_[thid], entry.payload);
         bytes += entry.payload.size();
         durable_lsns.insert(durable_lsns.end(), entry.lsns.begin(), entry.lsns.end());
+        batch_max_commit_lsn = std::max(batch_max_commit_lsn, entry.commit_lsn);
         if (entry.local_seq == next_contig_seq) {
           ++next_contig_seq;
           while (!flushed_ahead.empty() && flushed_ahead.top() == next_contig_seq) {
@@ -1462,6 +1481,15 @@ class WalLogger {
         fdatasync(worker_fds_[thid]);
         stats_.fdatasync_ns.fetch_add(nowNs() - fsync_start, std::memory_order_relaxed);
         stats_.fdatasync_count.fetch_add(1, std::memory_order_relaxed);
+      }
+      // cstamp modes never populate entry.lsns, so completed_lsn_ /
+      // durable_prefix_lsn_ would stay 0 and the durable-lsn stats would be
+      // meaningless. Track a durable cstamp high-water mark instead (acks are
+      // driven by durable_local_seq_, not by this value). NOTE: this is a
+      // high-water mark, not a contiguous prefix, since cstamps are not dense
+      // per shard.
+      if (usesCstampLogicalLsn(durable_mode_)) {
+        markDurableThrough(batch_max_commit_lsn);
       }
       enqueueDurableEvent(thid, next_contig_seq - 1, std::move(durable_lsns));
     }
