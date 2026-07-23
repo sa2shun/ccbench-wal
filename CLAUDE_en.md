@@ -39,6 +39,13 @@ Startup context for Claude when working in this repository (English mirror of [C
    (`_en.md` / `CLAUDE_en.md`) in the same commit. Single-side updates
    are not mergeable. Details in
    [contributing_en.md § Canonical responsibilities](docs/contributing_en.md).
+6. **Before any production experiment (measurements that go into a paper or
+   report), check CPU utilization and confirm the machine is quiet enough
+   that other processes won't add noise** (e.g. verify near-idle with `top` /
+   `mpstat`). Numbers taken under noise must not be used.
+7. **Write code simply, avoiding complex C++ styles — keep it readable by
+   anyone**. Prefer straightforward, easy-to-read code over clever templates,
+   heavy abstraction, or tricky idioms.
 
 ## Where to record what you learn (CLAUDE.md / docs vs Claude memory)
 
