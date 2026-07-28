@@ -100,6 +100,10 @@ public:
   std::atomic<uint64_t> readers_[2];
   std::atomic<uint32_t> cstamp_;  // Version creation stamp, c(V)
   std::atomic<VersionStatus> status_;
+  // Ayame: このバージョンを書いたワーカのスレッドID。依存待ちの宛先特定に使う。
+  // インストール時(書き手スレッド)に設定される。初期ロードのバージョンは
+  // cstamp==0 のため依存として参照されず、初期値のままでよい。
+  uint8_t writer_thid_ = 0;
 
   TupleBody body_;
 

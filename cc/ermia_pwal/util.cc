@@ -36,6 +36,29 @@ void chkArg() {
     ERR;
   }
 
+  if (FLAGS_pwal_flushers == 0) {
+    // 自動設定: 実測(2026-07-28, roles_formal.txt)より W:F ≈ 2:1 が
+    // 全K・両指標で最良。sync飽和(F≈32)を上限とする。
+    uint64_t f = FLAGS_thread_num / 2;
+    if (f < 2) f = 2;
+    if (f > 32) f = 32;
+    FLAGS_pwal_flushers = f;
+  }
+
+  if (FLAGS_pwal_mode == "self") {
+    PwalSelfMode = true;
+  } else if (FLAGS_pwal_mode == "pipeline") {
+    PwalSelfMode = false;
+  } else {
+    cout << "pwal_mode must be 'self' or 'pipeline'. so exit." << endl;
+    ERR;
+  }
+
+  if (PwalSelfMode && FLAGS_pwal_backpressure > 0) {
+    cout << "pwal_backpressure is only valid in pipeline mode. so exit." << endl;
+    ERR;
+  }
+
   if (TotalThreadNum > 128) {
     // Version::readers_ (readerビットマップ)が128bitのため
     cout << "reader bitmap supports up to 128 threads. so exit." << endl;

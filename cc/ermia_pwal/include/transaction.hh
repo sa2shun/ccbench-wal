@@ -1,5 +1,7 @@
 #pragma once
 
+#include <chrono>
+
 #include <cstdint>
 #include <map>
 #include <vector>
@@ -29,6 +31,8 @@ class TxExecutor {
 public:
   uint8_t thid_;                 // thread ID
   uint32_t cstamp_ = 0;          // Transaction end time, c(T)
+  bool tx_active_ = false;       // レイテンシ計測: 現txが進行中か(リトライ跨ぎ)
+  std::chrono::steady_clock::time_point tx_start_;  // 現txの開始時刻
   uint32_t pstamp_ = 0;          // Predecessor high-water mark, η (T)
   uint32_t sstamp_ = UINT32_MAX; // Successor low-water mark, pi (T)
   uint32_t pre_gc_threshold_ = 0;

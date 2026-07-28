@@ -95,3 +95,4 @@ tags
 
 # Experiment outputs (2.7GB of logs/CSVs; never tracked)
 results/
+pwal_logs_bench/

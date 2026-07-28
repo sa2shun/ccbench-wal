@@ -1,3 +1,5 @@
+#include <sched.h>
+
 #include <algorithm>
 #include <atomic>
 #include <bitset>
@@ -24,6 +26,13 @@ using namespace std;
  */
 void TxExecutor::begin() {
   TransactionTable *newElement, *tmt;
+
+  // レイテンシ計測: クライアント視点の開始時刻。アボート後のリトライは
+  // 同一トランザクションの継続なので、最初の試行の時刻を保持する。
+  if (!tx_active_) {
+    tx_active_ = true;
+    tx_start_ = std::chrono::steady_clock::now();
+  }
 
   tmt = loadAcquire(TMT[thid_]);
   uint32_t lastcstamp;
@@ -167,6 +176,9 @@ Version* TxExecutor::read_internal(Storage s, std::string_view key,
     // update pi with r:w edge
     this->sstamp_ = min(this->sstamp_, (v_sstamp >> TIDFLAG));
   }
+  // Ayame: RAW依存は「実際に読んだバージョン」すべてから収集する。
+  // 上書き済みバージョンを読んだ場合はread_set_に入らないため、ここで記録する。
+  pwalAddDep(ver);
   upReadersBits(ver);
 
   verify_exclusion_or_abort();
@@ -176,6 +188,7 @@ Version* TxExecutor::read_internal(Storage s, std::string_view key,
 }
 
 Status TxExecutor::install_version(Tuple* tuple, Version* desired) {
+  desired->writer_thid_ = thid_;  // Ayame: 依存待ちの宛先
   Version* vertmp;
   Version* expected = tuple->latest_.load(memory_order_acquire);
   for (;;) {
@@ -337,6 +350,7 @@ Status TxExecutor::insert(Storage s, std::string_view key, TupleBody&& body) {
   tuple = new Tuple();
   tuple->init(this->txid_, std::move(body));
   Version* ver = tuple->latest_.load(std::memory_order_acquire);
+  ver->writer_thid_ = thid_;  // Ayame: INSERTはinstall_versionを通らないためここで設定
   typename MasstreeWrapper<Tuple>::insert_info_t insert_info;
   Status stat =
       Masstrees[get_storage(s)].insert_value(key, tuple, &insert_info);
@@ -506,7 +520,7 @@ void TxExecutor::ssn_commit() {
   TransactionTable* tmt = loadAcquire(TMT[thid_]);
   tmt->status_.store(TransactionStatus::committing);
 
-  this->cstamp_ = ++Lsn;
+  this->cstamp_ = static_cast<uint32_t>(Lsn.next());
   tmt->cstamp_.store(this->cstamp_, memory_order_release);
 
   // begin pre-commit
@@ -600,9 +614,21 @@ void TxExecutor::ssn_parallel_commit() {
   TransactionTable* tmt = TMT[thid_];
   tmt->status_.store(TransactionStatus::committing);
 
-  this->cstamp_ = ++Lsn;
-  // this->cstamp_ = 2; test for effect of centralized counter in YCSB-C (read
-  // only workload)
+  // Ayame: cstampとWAL LSNの統合。write-set分+ENDログのLSNを1回のfetch_addで
+  // 一括予約し、ENDログのLSN(=ブロック末尾)をcstampとする。
+  // アボート時は予約したLSNが未使用になり欠番が生じるが、コミット条件
+  // commitLSN <= min(flushedLSN) は各ワーカのLSN順flushのみに依存するため安全。
+  {
+    size_t wcnt = write_set_.size();
+    if (wcnt > 0) {
+      // 予約はWorker経由で行い、flusherのアイドル前進との競合をガードする
+      pwal_base_lsn_ = PwalWorkers[thid_]->reserveBlock(wcnt + 1);
+      this->cstamp_ = static_cast<uint32_t>(pwal_base_lsn_ + wcnt);
+    } else {
+      // read-only: 予約LSNは使われず欠番になる(欠番は安全)ためガード不要
+      this->cstamp_ = static_cast<uint32_t>(Lsn.next());
+    }
+  }
 
   tmt->cstamp_.store(this->cstamp_, memory_order_release);
 
@@ -755,14 +781,19 @@ void TxExecutor::ssn_parallel_commit() {
   verSstamp &= ~(TIDFLAG);
 
   for (auto itr = write_set_.begin(); itr != write_set_.end(); ++itr) {
-    if ((*itr).op_ == OpType::UPDATE) {
+    if ((*itr).op_ == OpType::UPDATE || (*itr).op_ == OpType::DELETE) {
       Version* next_committed = (*itr).ver_->prev_;
       while (next_committed->status_.load(memory_order_acquire) !=
                  VersionStatus::committed &&
              next_committed->status_.load(memory_order_acquire) !=
                  VersionStatus::deleted)
         next_committed = next_committed->prev_;
-      next_committed->psstamp_.atomicStoreSstamp(verSstamp);
+      if ((*itr).op_ == OpType::UPDATE) {
+        next_committed->psstamp_.atomicStoreSstamp(verSstamp);
+      }
+      // Ayame: WAW依存は「上書きした最新のcommitted版」の書き手から収集する。
+      // (物理的なprev_はaborted版を指しうるためnext_committedを使う。DELETEも上書き)
+      pwalAddDep(next_committed);
     }
     (*itr).ver_->cstamp_.store(this->cstamp_, memory_order_release);
     (*itr).ver_->psstamp_.atomicStorePstamp(this->cstamp_);
@@ -787,8 +818,33 @@ void TxExecutor::ssn_parallel_commit() {
   // queue front cstamp so other threads' gcRecord can advance safely.
   gcobject_.publishMinQueuedCstamp();
 
-  // logging
-  //?*
+  // logging (P-WAL): write-setをワーカ専用WALバッファに積む。
+  // LSNはcstamp採番時に一括予約済み(pwal_base_lsn_から連番、末尾がENDログ=cstamp)。
+  // ログを書かないtx(read-only)は永続化待ちが不要なので即confirm扱い。
+  {
+    pwal::Worker* pw = PwalWorkers[thid_];
+    if (write_set_.empty()) {
+      // read-only: ログを書かないため即confirm(ermia_pwalと同じ既知の単純化)
+      pw->notifyDirectlyRo(tx_start_);
+      pwal_deps_.clear();
+    } else {
+      // Ayame最適化2: 依存(RAW: read_internalで、WAW: 上のnext_committed走査で
+      // 収集済みの pwal_deps_)をCommitEntryへ渡す。
+      uint64_t lsn = pwal_base_lsn_;
+      for (auto itr = write_set_.begin(); itr != write_set_.end(); ++itr) {
+        uint64_t key = 0;
+        std::memcpy(&key, (*itr).key_.data(),
+                    std::min<size_t>(sizeof(key), (*itr).key_.size()));
+        pw->append(lsn, pwal::LogType::Update, cstamp_, key);
+        lsn++;
+      }
+      uint64_t commit_lsn = lsn;  // == pwal_base_lsn_ + write_set_.size()
+      pw->append(commit_lsn, pwal::LogType::End, cstamp_, 0);
+      pw->pushCommit(cstamp_, commit_lsn, tx_start_, std::move(pwal_deps_));
+      pwal_deps_ = {};
+    }
+    tx_active_ = false;  // このトランザクションのコミット処理は完了
+  }
 
   read_set_.clear();
   write_set_.clear();
@@ -828,6 +884,8 @@ void TxExecutor::abort() {
     }
     (*itr).ver_->status_.store(VersionStatus::aborted, memory_order_release);
   }
+  pwal_deps_.clear();  // Ayame: リトライで読み直すため依存もリセット
+  PwalWorkers[thid_]->clearReservation();  // 予約済みLSNブロックを解放(欠番化)
   write_set_.clear();
 
   /**
@@ -912,6 +970,22 @@ bool TxExecutor::commit() {
    * Maintenance phase
    */
   mainte();
+
+  // モードにより完了処理が異なる。
+  if (PwalSelfMode) {
+    // self: 旧方式。ワーカ自身がNコミットごとにflushし、毎コミット通知判定する。
+    pwal::Worker* pw = PwalWorkers[thid_];
+    pw->flushPending(FLAGS_pwal_flush_ntx);
+    pw->confirmAyame(PwalWorkers, std::chrono::steady_clock::now());
+  } else if (FLAGS_pwal_backpressure > 0) {
+    // pipeline+バックプレッシャー: 未確定txがK以上の間、ワーカを停止する。
+    pwal::Worker* pw = PwalWorkers[thid_];
+    // 待機中はコアを譲る(_mm_pauseのビジースピンだと停止ワーカが96コアを
+    // 占有し、flusher/committerがデスケジュールされて巡回が止まるため)
+    while (!loadAcquire(quit_) && pw->inflight() >= FLAGS_pwal_backpressure) {
+      sched_yield();
+    }
+  }
   return true;
 }
 

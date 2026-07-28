@@ -1,5 +1,7 @@
 #pragma once
 
+#include <chrono>
+
 #include <cstdint>
 #include <map>
 #include <vector>
@@ -29,6 +31,30 @@ class TxExecutor {
 public:
   uint8_t thid_;                 // thread ID
   uint32_t cstamp_ = 0;          // Transaction end time, c(T)
+  uint64_t pwal_base_lsn_ = 0;   // Ayame: 予約したLSNブロックの先頭
+  bool tx_active_ = false;       // レイテンシ計測: 現txが進行中か(リトライ跨ぎ)
+  std::chrono::steady_clock::time_point tx_start_;  // 現txの開始時刻
+  // Ayame: このtxの依存先(RAW/WAWの書き手)。読み/上書き時に収集し、
+  // コミット時にCommitEntryへ移す。abort時はクリア。
+  std::vector<pwal::Dep> pwal_deps_;
+
+  // 依存先を記録する。同一ワーカはmaxに集約。自ワーカと初期ロード(cstamp==0)は不要。
+  // 注意: parallel commitはバージョンのcstamp_をシフトせず格納するため、
+  // 値をそのまま依存LSNとして使う(シフト格納するのは未使用のserial版のみ)。
+  void pwalAddDep(const Version* v) {
+    if (v == nullptr) return;
+    uint64_t lsn = v->cstamp_.load(memory_order_acquire);
+    if (lsn == 0) return;
+    uint8_t w = v->writer_thid_;
+    if (w == thid_) return;
+    for (auto& d : pwal_deps_) {
+      if (d.thid == w) {
+        if (lsn > d.lsn) d.lsn = lsn;
+        return;
+      }
+    }
+    pwal_deps_.push_back({w, lsn});
+  }
   uint32_t pstamp_ = 0;          // Predecessor high-water mark, η (T)
   uint32_t sstamp_ = UINT32_MAX; // Successor low-water mark, pi (T)
   uint32_t pre_gc_threshold_ = 0;

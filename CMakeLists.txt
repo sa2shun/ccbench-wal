@@ -69,7 +69,7 @@ target_link_libraries(ccbench_common PUBLIC
 # All concurrency-control protocols live under cc/. Each one's
 # CMakeLists.txt is just a single ccbench_add_protocol(...) call.
 include(ProtocolHelpers)
-foreach(_proto cicada d2pl ermia mocc mvto oze si silo ss2pl tictoc)
+foreach(_proto cicada d2pl ermia ermia_pwal ermia_ayame mocc mvto oze si silo ss2pl tictoc)
   add_subdirectory(cc/${_proto})
 endforeach()
 

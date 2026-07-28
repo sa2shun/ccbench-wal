@@ -1,3 +1,5 @@
+#include <sched.h>
+
 #include <algorithm>
 #include <atomic>
 #include <bitset>
@@ -24,6 +26,13 @@ using namespace std;
  */
 void TxExecutor::begin() {
   TransactionTable *newElement, *tmt;
+
+  // レイテンシ計測: クライアント視点の開始時刻。アボート後のリトライは
+  // 同一トランザクションの継続なので、最初の試行の時刻を保持する。
+  if (!tx_active_) {
+    tx_active_ = true;
+    tx_start_ = std::chrono::steady_clock::now();
+  }
 
   tmt = loadAcquire(TMT[thid_]);
   uint32_t lastcstamp;
@@ -787,8 +796,24 @@ void TxExecutor::ssn_parallel_commit() {
   // queue front cstamp so other threads' gcRecord can advance safely.
   gcobject_.publishMinQueuedCstamp();
 
-  // logging
-  //?*
+  // logging (P-WAL): write-setをワーカ専用WALバッファに積む。
+  // ログを書かないtx(read-only)は永続化待ちが不要なので即confirm扱い。
+  {
+    pwal::Worker* pw = PwalWorkers[thid_];
+    if (write_set_.empty()) {
+      pw->notifyDirectlyRo(tx_start_);
+    } else {
+      for (auto itr = write_set_.begin(); itr != write_set_.end(); ++itr) {
+        uint64_t key = 0;
+        std::memcpy(&key, (*itr).key_.data(),
+                    std::min<size_t>(sizeof(key), (*itr).key_.size()));
+        pw->append(pwal::LogType::Update, cstamp_, key);
+      }
+      uint64_t commit_lsn = pw->append(pwal::LogType::End, cstamp_, 0);
+      pw->pushCommit(cstamp_, commit_lsn, tx_start_);
+    }
+    tx_active_ = false;  // このトランザクションのコミット処理は完了
+  }
 
   read_set_.clear();
   write_set_.clear();
@@ -912,6 +937,29 @@ bool TxExecutor::commit() {
    * Maintenance phase
    */
   mainte();
+
+  // P-WAL: モードにより完了処理が異なる。
+  if (PwalSelfMode) {
+    // self: 旧方式。ワーカ自身がNコミットごとにflushし、毎コミット通知判定する。
+    pwal::Worker* pw = PwalWorkers[thid_];
+    pw->flushPending(FLAGS_pwal_flush_ntx);
+    uint64_t min_flushed = UINT64_MAX;
+    for (const auto* w : PwalWorkers) {
+      uint64_t f = w->flushedLsn();
+      if (f < min_flushed) min_flushed = f;
+    }
+    pw->confirmUpTo(min_flushed, pw->flushedLsn(),
+                    std::chrono::steady_clock::now());
+  } else if (FLAGS_pwal_backpressure > 0) {
+    // pipeline+バックプレッシャー: 未確定txがK以上の間、ワーカを停止する。
+    // これがレイテンシ⇔スループットの制御ノブになる(quitで必ず脱出)。
+    pwal::Worker* pw = PwalWorkers[thid_];
+    // 待機中はコアを譲る(_mm_pauseのビジースピンだと停止ワーカが96コアを
+    // 占有し、flusher/committerがデスケジュールされて巡回が止まるため)
+    while (!loadAcquire(quit_) && pw->inflight() >= FLAGS_pwal_backpressure) {
+      sched_yield();
+    }
+  }
   return true;
 }
 
