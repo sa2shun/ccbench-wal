@@ -162,7 +162,7 @@ We also evaluate YCSB-C, where all transactions are read-only and WAL records
 are skipped.  Durability work largely disappears: with the same binary and a
 read-only empty-frontier fast path, the three systems land within about 8\% of
 one another at 48 worker threads (872K for Single WAL, 808K for P-WAL, and 812K
-for Ayame in Table~\ref{tab:ycsbabc-48worker-summary}); Ayame is marginally
+for Ayame in ); Ayame is marginally
 below Single WAL because it may still execute lightweight read-path frontier
 bookkeeping.  We therefore use YCSB-C as a sanity check for read-only
 bookkeeping overhead rather than as evidence of WAL persistence performance.
@@ -180,16 +180,11 @@ bookkeeping overhead rather than as evidence of WAL persistence performance.
   \label{fig:ycsbabc-worker-throughput}
 \end{figure}
 
-Table~\ref{tab:ycsbabc-48worker-summary} summarizes the main 48-worker
-end-to-end results.  For YCSB-C, Tx/sync is not applicable because no WAL
-records are flushed.
-
-\input{tables/table_ycsbabc_48worker_summary}
 
 \subsubsection{Tail Latency and Pending Durable Commits Remain Small}
 
 Ayame keeps pending durable commits small
-(Table~\ref{tab:ycsbabc-48worker-summary}): at 48 worker threads it holds 318
+: at 48 worker threads it holds 318
 pending commits with a 2\,ms p99 acknowledgment latency on YCSB-A, and 83 with
 a 0.5\,ms p99 on YCSB-B.  Figure~\ref{fig:ycsbabc-worker-latency} shows that this
 p99 stays low across the whole sweep.  The asynchronous pipeline therefore keeps
@@ -232,22 +227,9 @@ decline thread oversubscription: P-WAL carries no background flush threads, so a
 them, yet its throughput falls in parallel with Ayame's.  Finally, the limit is
 upstream of durability---the p99 acknowledgment latency stays at or below 2\,ms
 across the whole sweep (Figure~\ref{fig:ycsbabc-worker-latency}) and the pending
-durable commits remain small (Table~\ref{tab:ycsbabc-48worker-summary})---so the
+durable commits remain small ---so the
 flushers and committer are not the bottleneck; the ceiling is set by the
 concurrency-control layer that Ayame inherits through cstamp reuse.
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=0.86\linewidth]{figures/fig_scalability_breakdown.pdf}
-  \caption{
-  Per-committed-transaction CPU cost (solid, left axis) and abort rate
-  (dashed, right axis) versus worker threads for Ayame.  The rise in cycles
-  per committed transaction is consistent with cache-line contention on SSN's
-  central commit-timestamp counter and transaction-mapping table, while the
-  abort rate stays small; YCSB-B declines with a near-zero abort rate.
-  }
-  \label{fig:scalability-breakdown}
-\end{figure}
 
 \subsection{Acknowledgment-Policy Comparison}
 \label{sec:why-dep}
@@ -269,7 +251,7 @@ many dependencies; it appears when a transaction does \emph{not} depend on some
 slow or lagging WAL shards, because global-prefix acknowledgment still waits for
 those shards whereas the dependency frontier does not.
 
-Figure~\ref{fig:ack-policy-ablation} reports the result.
+reports the result.
 On YCSB-A the contrast is sharp: once multiple WAL shards are active, the
 global-prefix variant stays pinned near the 65{,}536 backpressure limit with a
 131\,ms p99 acknowledgment latency, whereas the dependency-frontier variant
@@ -286,7 +268,7 @@ pending count under about 100 and the p99 at 1\,ms across the whole sweep,
 while the global-prefix rule drains at low-to-mid worker counts but
 saturates beyond 48 workers as shard progress fluctuates.  (Pending counts
 here are the measurement-window snapshot, as in
-Table~\ref{tab:ycsbabc-48worker-summary}; these acknowledgment-policy
+; these acknowledgment-policy
 runs are separate from the main worker-scaling runs, so values differ
 slightly due to run-to-run variation.)  This comparison also decomposes the end-to-end gain.  Moving from P-WAL's
 worker-wait commit to Ayame's asynchronous worker/flusher/committer pipeline
@@ -305,18 +287,6 @@ durable commits from 64{,}197 to 455 and the p99 from 131\,ms to 2\,ms.  Because
 the acknowledgment condition, this comparison isolates the effect of
 \textbf{A3}.
 
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/fig_ack_policy_ablation.pdf}
-  \caption{
-  Acknowledgment-policy comparison (top: p99 latency; bottom: pending durable
-  commits).  Both variants use the same asynchronous WAL pipeline and differ
-  only in the acknowledgment condition.  The global-prefix rule saturates on
-  YCSB-A once multiple WAL shards are active, while the dependency-frontier rule
-  keeps pending commits and p99 acknowledgment latency bounded.
-  }
-  \label{fig:ack-policy-ablation}
-\end{figure}
 
 \subsubsection{Avoiding Unrelated-Shard Waits Helps Even with Sparse Frontiers}
 
@@ -337,12 +307,12 @@ a remote partition it inherits that partition's own frontier---so even a 1\%
 remote-access probability pulls in almost all shards.  Because this
 abort-free workload commits---and therefore logs---on every transaction,
 it is the most write-intensive workload in our evaluation; the flush group
-of 256 commits (Table~\ref{tab:params}) keeps the flush pipeline unsaturated
+of 256 commits () keeps the flush pipeline unsaturated
 for \emph{both} acknowledgment policies, so the remaining difference
 reflects only the acknowledgment rule rather than flush-pipeline
 saturation.
 
-Table~\ref{tab:dep-density} reports the result.  The global-prefix rule
+reports the result.  The global-prefix rule
 essentially saturates the pending-ack queue and holds a 131\,ms p99 at
 every density, including the fully sparse case, because it waits for the
 global durable prefix regardless of what a transaction actually depends
@@ -358,12 +328,11 @@ is therefore not that a transaction has many dependencies, but that it
 does not wait for the shards it does not depend on, and this value
 remains when frontiers are sparse.
 
-\input{tables/table_dependency_density}
 
 \subsection{Hardware Counters and Overhead}
 \label{sec:overhead}
 
-Table~\ref{tab:perf-stat-48worker} reports a perf-stat comparison of the three
+ reports a perf-stat comparison of the three
 systems at 48 worker threads, showing two sources of Ayame's throughput
 improvement and one overhead.
 First, Ayame amortizes storage synchronization: it makes 23 commits durable per
@@ -382,7 +351,6 @@ still incurs more context switches due to the background pipeline, but this does
 not materially affect read-only throughput.  These perf-stat runs are separate from
 the main throughput runs and carry profiling overhead, so their absolute
 throughputs are lower (for instance, YCSB-C reads about 683K here versus 812K
-in Table~\ref{tab:ycsbabc-48worker-summary}); we use them only for the relative
+in ; we use them only for the relative
 cross-system comparison.
 
-\input{tables/table_perf_stat_48worker}
