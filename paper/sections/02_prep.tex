@@ -14,13 +14,13 @@ otherwise violate serializability.  Pessimistic protocols such as two-phase
 locking block conflicting operations as they occur, whereas optimistic protocols
 let transactions execute first and validate them at commit time, aborting those
 whose interleaving cannot be serialized.  Main-memory multicore databases favor
-optimistic and multiversion designs because they avoid the lock-manager and
-latch contention that limit scalability on many
+optimistic and multiversion designs because they avoid the lock manager and
+latch contention that limits scalability on many
 cores~\cite{tu2013silo,kim2016ermia,tanabe2020ccbench}.
 
-\subsection{Timestamp-based Protocols}
+\subsection{Multiversion Protocols and Timestamp}
 
-Multiversion concurrency control retains several versions of each record so that
+Multiversion concurrency control protocols retain several versions of each record so that
 reads need not block writes.  Snapshot isolation (SI) runs each transaction
 against a consistent snapshot taken at its start and, at commit, checks only for
 write--write conflicts; it is efficient but admits write-skew anomalies and is
@@ -29,50 +29,31 @@ SI by detecting the dangerous read--write antidependency structures that can
 lead to non-serializable schedules~\cite{ports2012ssi}.  These protocols order
 transactions with timestamps: a transaction reads as of a begin timestamp and
 commits at a commit timestamp, and the commit timestamps induce a logical
-version order.  For serializable executions this version order is also a
+version order.  For serializable executions, this version order is also a
 serialization order, and a recovery protocol can reuse it as the order in which
 to replay committed transactions after a crash.
 
 \subsubsection{Serial Safety Net}
 
-The Serial Safety Net (SSN) is a certifier layered on top of a multiversion
-engine such as SI or ERMIA to guarantee
-serializability~\cite{wang2017ssn,kim2016ermia}.  Rather than maintaining the
-full dependency graph, SSN summarizes, for each transaction $T$, the commit
-timestamps of its predecessors and successors in the dependency graph into a
-pair of watermarks, and it refuses to commit $T$ when these watermarks reveal
-that committing $T$ would close a non-serializable cycle.  Each committing
-transaction receives a commit timestamp ($\mathit{cstamp}$) that fixes its
-position in the serialization order, and the read and write footprints of
-in-flight and recently committed transactions are tracked through a shared
-transaction-mapping table so that validation can read the relevant
-predecessors' and successors' timestamps.  SSN admits more concurrency than
-two-phase locking while remaining serializable, which makes it a strong but
-demanding target for a recovery protocol.  The recovery layer must respect the
-same commit-timestamp order that SSN uses for serialization, yet it must do so
-without introducing new centralized bottlenecks of its own.  The shared
-commit-timestamp counter and transaction-mapping table are also the structures
-whose cache-line contention ultimately bounds throughput at high core counts, a
-known scalability limit of SSN-style certification~\cite{tanabe2020ccbench}.
+The Serial Safety Net (SSN) is a serializable certifier-based protocol~\cite{wang2017ssn,kim2016ermia} layered on top of a variety of conventional protocols, including read-committed and snapshot isolation (SI).
+%
+Rather than maintaining the full dependency graph, SSN summarizes, for each transaction $T$, the commit
+timestamps of its predecessors and successors in the dependency graph into a pair of watermarks, and it refuses to commit $T$ when these watermarks reveal that committing $T$ would close a non-serializable cycle.  Each committing transaction receives a \textit{commit timestamp ($\mathit{cstamp}$)} that fixes its position in the serialization order, and the read and write footprints of in-flight and recently committed transactions are tracked through a shared transaction-mapping table so that validation can read the relevant predecessors' and successors' timestamps.  
+%
+SSN admits more concurrency than two-phase locking, which makes it a strong but demanding target for a recovery protocol.  The recovery layer must respect the same commit-timestamp order that SSN uses for serialization, yet it must do so without introducing new centralized bottlenecks of its own.  The shared commit-timestamp counter and transaction-mapping table are also the structures whose cache-line contention ultimately bounds throughput at high core counts, a known scalability limit of SSN-style certification~\cite{tanabe2020ccbench}.
 
 \subsection{Write-Ahead Logging for Recovery}
 
-Durability and atomicity across crashes are provided by write-ahead logging
-(WAL).  Under the WAL rule, a transaction's log records are forced to stable
-storage before the transaction is reported as committed, so that a crash can be
-recovered by replaying the log.  ARIES is the classical WAL design: each log
-record carries a monotonically increasing log sequence number (LSN), recovery
-repeats history in a redo pass and then rolls back loser transactions in an undo
-pass, and fuzzy checkpoints bound the amount of log that must be
-scanned~\cite{haerder1983principles,mohan1992aries}.  Forcing the log on every
-commit is costly because it requires a storage synchronization
-(\texttt{fdatasync}) on the commit path; group commit amortizes this cost by
-making a single synchronization durable for a batch of commits.  In a
-main-memory database the redo log is the dominant persistence cost, so the rate
-at which log records can be made durable---and the latency of doing so---directly
-bounds commit throughput.
+Durability and atomicity across crashes are provided by write-ahead logging (WAL).  Under the WAL rule, a transaction's log records are transferred to stable storage before the transaction is reported as committed, so that a crash can be recovered by replaying the log.  
+%
+ARIES~\cite{mohan1992aries} is the classical WAL design: each log record carries a monotonically increasing log sequence number (LSN), recovery repeats history in a redo pass and then rolls back loser transactions in an undo
+pass, and fuzzy checkpoints bound the amount of log that must be scanned~\cite{haerder1983principles, mohan1992aries}. Synchronizing a log record on every commit is costly because it requires the storage I/O
+(\texttt{fdatasync}) on the commit path. 
+%
+The group commits protocol amortizes this cost by making a single synchronization durable for a batch of commits.  
+%In a main-memory database, the redo log is the dominant persistence cost, so the rate at which log records can be made durable---and the latency of doing so---directly bounds commit throughput.
 
-\subsection{Parallel Logging}
+\subsection{P-WAL}
 \label{sec:pwal}
 
 A single shared log serializes every commit through one log tail, which becomes
@@ -80,51 +61,88 @@ a bottleneck on many cores.  Parallel WAL designs remove this bottleneck by
 partitioning the log into multiple streams that are appended and flushed
 independently~\cite{zheng2014silor,wang2014nvm,kamiya2017pwal}.
 
-\subsubsection{P-WAL}
+%\subsubsection{P-WAL}
 
-P-WAL gives each worker its own log stream, which we hereafter call a
-\emph{WAL shard}, so that workers append commit and redo records without
-contending on a shared log tail~\cite{kamiya2017pwal}.
-Algorithm~\ref{alg:pwal} shows the resulting commit path.  Because the shards
-are independent, P-WAL re-establishes a single global order across them: every
-record is stamped with a value drawn from a global LSN counter $L$, and each
-shard publishes a durable position $f[i]$ whose minimum over all shards forms a
-global durable prefix $P = \min_i f[i]$.  A transaction is acknowledged once the
-global prefix reaches its commit LSN, which guarantees that every earlier
-record, on every shard, is already durable.  P-WAL underlies Shirakami, the
-transaction engine of Tsurugi~\cite{kamiya2017pwal,kawashima2025tsurugi}.
-
+P-WAL gives each worker thread its own log stream, which we hereafter call a \emph{WAL shard}, so that workers append commit and redo records without contending on a shared log tail~\cite{kamiya2017pwal}.
+%
+Algorithm~\ref{alg:pwal} shows the P-WAL commit protocol. Because the shards are independent, P-WAL re-establishes a single global order across them: every record is stamped with a value drawn from a global log sequence number (LSN) counter $L$, and each shard publishes a durable position $f[i]$ whose minimum over all shards forms a global durable prefix $P = \min_i f[i]$.  A transaction is acknowledged once the global prefix reaches its commit LSN, which guarantees that every earlier record on every shard is durable.  P-WAL underlies Shirakami, the transaction engine of the Tsurugi relational database system~\cite{kamiya2017pwal, kawashima2025tsurugi}.
+%
 This design makes log insertion parallel, but combining it with a timestamp-based
-certifier such as SSN raises the three problems (P1--P3) detailed in
-Section~\ref{sec:introduction-problem}.
+certifier such as SSN raises the three problems (P1--P3) detailed in $\S\ref{sec:introduction-problem}$.
 
 \begin{algorithm}[t]
-\caption{\bfseries Per-Thread WAL Commit for Update Transactions (P-WAL)}
-\label{alg:pwal}
+\caption{\bfseries P-WAL: Normal Execution Protocol}
+\label{alg:pwal-normal}
 \begin{algorithmic}[1]
-\State \textbf{Shared:} global LSN counter $L$; per-stream durable LSN
-       $f[i]$; global durable prefix $P = \min_i f[i]$
-\Function{PwalCommit}{$T$, worker $w$}
-    \State $\mathit{records} \gets$ \Call{BuildLogRecords}{$T$}
-           \Comment{writes and commit record}
-    \ForAll{$r \in \mathit{records}$}
-        \State $r.\mathit{lsn} \gets$ \Call{FetchInc}{$L$}
-               \Comment{global LSN allocation}
-        \State \Call{Append}{$\mathit{stream}[w],\, r$}
-               \Comment{worker-private WAL stream}
-    \EndFor
-    \State $T.\ell \gets \max \{\, r.\mathit{lsn} \mid r \in \mathit{records} \,\}$
-           \Comment{commit LSN}
-    \State \Call{Write}{$\mathit{stream}[w]$};
-           \Call{Fdatasync}{$\mathit{stream}[w]$}
-           \Comment{worker waits for persistence}
-    \State $f[w] \gets \max(f[w],\, T.\ell)$
-    \State $P \gets \min_i f[i]$
-           \Comment{global durable prefix}
-    \While{$P < T.\ell$}
-        \State $P \gets \min_i f[i]$
+
+\State \textbf{Shared:} workers
+\State \textbf{Per worker:} $\mathit{flushedLSN}$; $\mathit{commitQueue}$
+
+\Function{Run}{}
+    \State $\mathit{ntx} \gets 0$
+    \While{\Call{Runnable}{}}
+        \State $\mathit{tx} \gets$ \Call{AttachTx}{}
+        \State \Call{ExecuteTransaction}{$\mathit{tx}$}
+        \State $\mathit{ntx} \gets \mathit{ntx} + 1$
+        \If{$\mathit{ntx} = N$}
+            \State $\mathit{self.flushedLSN} \gets$ \Call{FlushLog}{}
+            \State $\mathit{ntx} \gets 0$
+        \EndIf
+        \State \Call{ControlNotification}{}
     \EndWhile
-    \State \Call{Acknowledge}{$T$}
 \EndFunction
+
+\Statex
+
+\Function{ExecuteTransaction}{$\mathit{tx}$}
+    \State $\mathit{lockQueue} \gets \langle\,\rangle$
+           \Comment{empty queue}
+    \State \Call{BeginTx}{}
+    \ForAll{$op \in \mathit{tx.ops}$}
+        \State $\mathit{locks} \gets$ \Call{ExecuteOperation}{$op$}
+        \State \Call{Push}{$\mathit{lockQueue}, \mathit{locks}$}
+    \EndFor
+    \State $\mathit{tx.commitLSN} \gets$ \Call{EndTx}{}
+    \State \Call{Push}{$\mathit{self.commitQueue}, \mathit{tx}$}
+    \State \Call{ReleaseLocks}{$\mathit{lockQueue}$}
+           \Comment{early lock release}
+\EndFunction
+
+\Statex
+
+\Function{ExecuteOperation}{$op$}
+    \State $\mathit{locks} \gets \langle\,\rangle$
+           \Comment{empty queue}
+    \ForAll{$rid \in op.rids$}
+        \State $\mathit{lock} \gets$ \Call{AcquireLock}{$rid$}
+        \State \Call{Push}{$\mathit{locks}, \mathit{lock}$}
+    \EndFor
+    \State \Call{InsertLogRecord}{$op$}
+    \State \Call{Operate}{$op$}
+    \State \Return $\mathit{locks}$
+\EndFunction
+
+\Statex
+
+\Function{ControlNotification}{}
+    \State $\mathit{min} \gets \textsc{TypeMax}$
+           \Comment{available maximum value}
+    \ForAll{$worker \in workers$}
+        \If{$\mathit{min} > worker.\mathit{flushedLSN}$}
+            \State $\mathit{min} \gets worker.\mathit{flushedLSN}$
+        \EndIf
+    \EndFor
+
+    \While{\Call{NotEmpty}{$\mathit{self.commitQueue}$}}
+        \State $\mathit{tx} \gets$ \Call{Front}{$\mathit{self.commitQueue}$}
+        \If{$\mathit{min} \ge \mathit{tx.commitLSN}$}
+            \State \Call{Reply}{$\mathit{tx}$}
+            \State \Call{Pop}{$\mathit{self.commitQueue}$}
+        \Else
+            \State \textbf{break}
+        \EndIf
+    \EndWhile
+\EndFunction
+
 \end{algorithmic}
 \end{algorithm}
